@@ -1,0 +1,67 @@
+name: Good first issue (maintainer task draft)
+description: Draft a bounded, boundary-safe task for a new contributor
+title: "[good-first-issue] "
+labels: ["good first issue"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This template is for **maintainers writing a good first issue** — a task
+        a new contributor can land in one sitting. Before publishing it, walk
+        through every section below. Contributors: start with
+        [CONTRIBUTING.md](../../CONTRIBUTING.md); the checks below are the same
+        bar your PR will be reviewed against.
+  - type: textarea
+    id: task
+    attributes:
+      label: The task
+      description: One concrete thing to change, build, or fix — completable in a single sitting.
+      placeholder: |
+        e.g. Add an ATS platform pattern for <platform> to the additive pattern
+        table in engines/ats.py, with a test in tests/.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope bounds
+      description: Files the task touches (IN) and files it must not touch (OUT). Keep the task small.
+      value: |
+        IN:
+        OUT:
+    validations:
+      required: true
+  - type: textarea
+    id: boundary
+    attributes:
+      label: Boundary check
+      description: |
+        Confirm per SPLIT.md that this task lives entirely in the public half.
+        Detection is public; submission behavior (form-event sequencing,
+        commit techniques, CAPTCHA handling, credential/verification flows,
+        live submission transports) is private and out of bounds.
+      value: |
+        - [ ] Touches only the public half per SPLIT.md — no submission-behavior methods, no private-side probing or reverse-engineering.
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Definition of done
+      description: How the contributor and reviewer both know the task is finished. Name the exact test command and any artifacts.
+      value: |
+        - `python3 -m unittest discover -s tests` passes (new tests added and named).
+        - No personal data in the diff (example.com placeholders only — see CONTRIBUTING.md).
+        - Docs updated if behavior changed (README / docs / CHANGELOG entry under `[Unreleased]`).
+        - No invented claims or numbers in any copy (every figure verifiable).
+    validations:
+      required: true
+  - type: textarea
+    id: pointers
+    attributes:
+      label: Pointers for the contributor
+      description: Links into CONTRIBUTING.md, docs/ARCHITECTURE.md, relevant modules — so the contributor never has to ask where things live.
+      placeholder: |
+        - CONTRIBUTING.md — dev setup and ground rules
+        - docs/ARCHITECTURE.md — where this module sits
+        - engines/<module>.py — the file to change

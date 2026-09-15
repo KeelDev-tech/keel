@@ -1,0 +1,50 @@
+name: Feature request
+description: Propose a new capability for Keel
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Read [SPLIT.md](../../SPLIT.md) and the
+        [open-core boundary section of CONTRIBUTING.md](../../CONTRIBUTING.md)
+        before proposing: this repo is the public half, and detection is public
+        while submission behavior is private. Never paste personal data.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What real problem does this solve? Who hits it?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How should it work? Be specific about behavior, not just intent.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches, and why they're worse.
+  - type: textarea
+    id: truthfulness
+    attributes:
+      label: Fit with the honest-automation contract
+      description: |
+        Keel automates only what it can do truthfully — truthfulness gates and
+        fail-closed behavior are load-bearing, not optional. Explain how your
+        proposal keeps them intact.
+      value: |
+        - **Truthfulness gates:** Does this change add any path that could present unverified claims (about a candidate, a posting, an outcome) as fact? If so, where is the gate that stops it?
+        - **Fail-closed:** If the new feature can't verify something it needs, what does it do? (Acceptable answer: stop, park, or degrade loudly — never guess silently.)
+        - **Open-core boundary:** Does this belong in the public repo, or would it touch submission-behavior methods that live in the private execution layer per SPLIT.md? If the latter, say so explicitly.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Mockups, references, examples from other tools. No personal data.

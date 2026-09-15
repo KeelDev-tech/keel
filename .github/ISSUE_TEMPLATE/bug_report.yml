@@ -1,0 +1,88 @@
+name: Bug report
+description: Something in Keel isn't working as documented
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing: security issues do **not** go here — see [SECURITY.md](../../SECURITY.md)
+        and use GitHub Security Advisories. Never paste personal data in an issue
+        (no names, emails, phone numbers, addresses, social profile URLs, or real
+        employer names). The pipeline's rule applies to issues too: only claim
+        what you can show.
+  - type: input
+    id: version
+    attributes:
+      label: Keel version
+      description: Output of `cat VERSION`, or the release tag
+      placeholder: e.g. 0.1.0
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      description: Output of `python3 --version`
+      placeholder: e.g. 3.11
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: e.g. Ubuntu 24.04, macOS 15, Windows 11 WSL2
+  - type: dropdown
+    id: module
+    attributes:
+      label: Module
+      description: Which part of Keel is misbehaving?
+      options:
+        - Discovery / scoring
+        - Answer bank
+        - Prescreen
+        - ATS detection / capability radar
+        - Apply loop / launch packets
+        - Verification retry
+        - Telemetry / outcome analytics
+        - Dashboard builder
+        - Setup wizard / personalization
+        - Other (describe below)
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Numbered steps, starting from a fresh clone or the sample data where possible
+      placeholder: |
+        1. ./setup.sh
+        2. KEEL_HOME=$PWD python3 engines/...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead? Include the exact error text.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Paste relevant log output, REDACTED — no personal data, no real employer names, no application history.
+      render: shell
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Sanitized config, sample inputs, anything else relevant

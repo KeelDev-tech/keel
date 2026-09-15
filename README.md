@@ -62,10 +62,13 @@ ATS vendors. See [SPLIT.md](SPLIT.md).
 - **Keel never invents qualifications.** Anything your profile can't support
   is reported as a gap, never bridged with fiction.
 - **Keel makes no submission claims.** The public repo is the discipline and
-  the tools. The 53-in-48-hours figure belongs to the private production
+  the tools. The 55-submissions figure belongs to the private production
   pipeline that proved the discipline works.
 
-## Quick start (~5 minutes, from the downloaded zip)
+## Quick start (~5 minutes)
+
+From the [v0.1.0 release](docs/releases/v0.1.0.md) zip — or a clone
+(`git clone https://github.com/KeelDev-tech/keel && cd keel`):
 
 ```bash
 ./setup.sh          # "Make it mine" — personalizes your working copy
