@@ -32,4 +32,4 @@ claims — it's the tools, the gates, and the telemetry behind them.
 6/ Looking for: feedback on the honest-automation contract, contributors who
 know ATS behavior or want to sharpen answer-bank ergonomics, and seed-stage
 conversations with people who care about automation that refuses to lie.
-This is KEEL — honest automation, end to end. Repo in comments.
+This is Keel — honest automation, end to end. Repo in comments.
