@@ -4,3 +4,14 @@ __pycache__/
 *.pyo
 .DS_Store
 engines/briefs/
+
+# Internal planning docs with private references — never public
+DEPARTMENTS.md
+INTEGRATION_PLAN.md
+KEEL_DOCTRINE.md
+credentials/
+distribution/
+marketing-engine/
+launch/muse-campaign-plan.md
+launch/hn-warmup-log.md
+launch/instagram/
