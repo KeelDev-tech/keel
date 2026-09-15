@@ -1,7 +1,7 @@
 # Keel
 
-<!-- Replace YOUR-ORG/keel below with the real org/repo once the repo is created. -->
-[![CI](https://github.com/YOUR-ORG/keel/actions/workflows/ci.yml/badge.svg)](.github/workflows/ci.yml)
+<!-- Repo is live at keelsh/keel. -->
+[![CI](https://github.com/keelsh/keel/actions/workflows/ci.yml/badge.svg)](.github/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.1.0-informational.svg)](CHANGELOG.md)
 
