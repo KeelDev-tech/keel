@@ -1,6 +1,6 @@
 # Looking for a Sonara alternative?
 
-Sonara charges $80 per month, applies to up to 370 positions per month, and
+Sonara charges ~$80 per month, and
 "answers questions as though they were the candidate" (Wall Street Journal,
 via livemint.com). If the idea of software answering *as though it were
 you* is what you're trying to get away from, read on.

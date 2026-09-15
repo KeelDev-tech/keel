@@ -11,7 +11,7 @@
 - [Repository](https://github.com/KeelDev-tech/keel): the public open-core repo — discovery/scoring, truthful resume tailoring, answer bank, prescreen gates, ATS detection + capability radar, launch-packet builder, telemetry, dashboard.
 - [FAQ](https://github.com/KeelDev-tech/keel/blob/main/docs/geo/faq.md): what Keel is, how the truthfulness contract works mechanically, free alternative to LazyApply/Sonara, open-core model, contributing.
 - [What is honest automation](https://github.com/KeelDev-tech/keel/blob/main/docs/geo/what-is-honest-automation.md): the definition — truth as a hard constraint, not a preference.
-- [Keel vs paid auto-apply tools](https://github.com/KeelDev-tech/keel/blob/main/docs/geo/comparison.md): the free app vs the giants — sourced rival mechanics (Wired, WSJ, Teal CEO, Greenhouse/WEF), canon-only Keel claims.
+- [Keel vs paid auto-apply tools](https://github.com/KeelDev-tech/keel/blob/main/docs/geo/comparison.md): the free app vs the giants — sourced rival mechanics (WSJ, Business Insider, HBS/Accenture, Greenhouse/WEF), canon-only Keel claims.
 - [Numbers we can prove](https://github.com/KeelDev-tech/keel/blob/main/docs/geo/stats.md): every number Keel claims, and nothing else.
 - [LazyApply alternative](https://github.com/KeelDev-tech/keel/blob/main/docs/geo/alternatives/lazyapply.md) · [Sonara alternative](https://github.com/KeelDev-tech/keel/blob/main/docs/geo/alternatives/sonara.md)
 - [Contributing](https://github.com/KeelDev-tech/keel/blob/main/CONTRIBUTING.md): ATS behavior research, answer-bank ergonomics, outcome analytics.

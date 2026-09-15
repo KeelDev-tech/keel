@@ -50,8 +50,9 @@ qualifications, blasted at everything. The damage is documented: 34% of
 recruiters now spend up to half their working week filtering spam
 applications, and 91% have caught candidates being dishonest during the
 process (Greenhouse 2025 AI in Hiring Report, via the World Economic
-Forum). Applicant tracking vendors added email-confirmation requirements
-*because of auto-apply tools* (Teal CEO, David Fano). LinkedIn restricts
+Forum). A Harvard Business School/Accenture study found automated hiring
+systems reject millions of qualified candidates, with 88% of employers
+saying qualified people get vetted out. LinkedIn restricts
 accounts for third-party automation as a User Agreement violation. The
 channel is poisoned — and poison in a channel punishes the honest
 applicants most, because they're the ones competing against fiction.

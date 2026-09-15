@@ -43,15 +43,17 @@ rates, revenue, funding status, or time-windowed figures.
 ## The frame: free app challenges giants
 
 Paid auto-apply tools sell volume. Documented mechanics: LazyApply's paid
-tier applied to nearly 1,000 jobs in one night in Wired's test (~20
-interviews, ~0.5% vs 10% manual; answers "seemed guessed" — TechTimes);
-TrustPilot 2.1 stars (via jobcopilot.com). Sonara: $80/month, up to 370
-applications/month, "answers questions as though they were the candidate"
-(Wall Street Journal, via livemint.com). Fallout: Teal's CEO notes ATS
-email-confirmation requirements exist *because of auto-apply tools*; 34% of
-recruiters spend up to half their week filtering spam and 91% caught
-dishonesty (Greenhouse 2025 AI in Hiring Report, via WEF); LinkedIn's help
-pages state third-party automation violates its User Agreement.
+tiers start at $99 with 2.1 stars on TrustPilot; a Business Insider test
+found 126 applications → 7 responses (~6%), and reviewers report the tool
+submitting inaccurate details. One industry review puts mass-application
+success at 0.5%. Sonara: ~$80/month, "answers questions as though they
+were the candidate" (Wall Street Journal, via livemint.com). The industry
+backdrop: a Harvard Business School/Accenture study found automated hiring
+systems reject millions of qualified candidates, with 88% of employers
+saying qualified people get vetted out; 34% of recruiters spend up to half
+their week filtering spam and 91% caught dishonesty (Greenhouse 2025 AI in
+Hiring Report, via WEF); LinkedIn's help pages state third-party
+automation violates its User Agreement.
 
 Keel's answer: a free, open-source alternative that refuses the volume game
 — fewer applications, every one of them true. Not a drop-in replacement for

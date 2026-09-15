@@ -105,8 +105,8 @@ Yes. Keel is a free, open-source alternative to paid auto-apply tools like
 LazyApply and Sonara — with one deliberate difference: it refuses to do the
 things that make those tools fast. Where paid tools answer application
 questions as though they were you (the Wall Street Journal's description of
-Sonara's mechanic) and testers found answers that "seemed guessed" (Wired's
-test of LazyApply, via TechTimes), Keel parks any question it cannot answer
+Sonara's mechanic) and reviewers report inaccurate details submitted on their behalf (LazyApply, 2.1 stars on
+TrustPilot), Keel parks any question it cannot answer
 from your verified facts and moves on. Free, open-core, Apache-2.0 — and
 honest by construction.
 
@@ -123,16 +123,13 @@ submitted, and fail-closed behavior on ambiguity.
 
 ## What do paid auto-apply tools actually do?
 
-Documented mechanics from public reporting: LazyApply's paid tier applied
-to nearly 1,000 jobs in one night in Wired's test, converting about 20
-interviews — roughly a 0.5% interview rate versus 10% for the tester's
-manual applications — with answers that "seemed guessed" (TechTimes). Sonara
-charges $80 per month, applies to up to 370 positions per month, and
-"answers questions as though they were the candidate" (Wall Street Journal,
-via livemint.com). The industry fallout is documented too: Teal's CEO notes
-that email-confirmation requirements are now built into many applicant
-tracking systems *because of auto-apply tools*, and LinkedIn's own help
-pages state that third-party automation software violates its User
+Documented mechanics from public reporting: LazyApply's paid tiers start at $99 with 2.1 stars on TrustPilot;
+a Business Insider test found 126 applications → 7 responses (~6%), and reviewers report the tool submitting
+inaccurate details. One industry review puts mass-application success at 0.5% (resumefast.io). Sonara
+charges ~$80 per month and "answers questions as though they were the candidate" (Wall Street Journal,
+via livemint.com). The industry backdrop: a Harvard Business School/Accenture study found automated hiring
+systems reject millions of qualified candidates, with 88% of employers saying qualified people get vetted out —
+and LinkedIn's own help pages state that third-party automation software violates its User
 Agreement.
 
 ## Why is Keel open-core instead of fully open or fully closed?

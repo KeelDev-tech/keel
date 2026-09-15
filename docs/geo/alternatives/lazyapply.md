@@ -1,10 +1,9 @@
 # Looking for a LazyApply alternative?
 
 If you're leaving LazyApply, you're probably leaving for one of the
-documented reasons: in Wired's test of the paid tier, it fired nearly 1,000
-applications in one night for about 20 interviews — roughly a 0.5%
-interview rate versus 10% manual — with answers that "seemed guessed"
-(TechTimes). TrustPilot sits at 2.1 stars (via jobcopilot.com review).
+documented reasons: paid tiers from $99, 2.1 stars on TrustPilot (via jobcopilot.com review) — a Business
+Insider test found 126 applications → 7 responses (~6%), and reviewers report the tool submitting
+inaccurate details. One industry review puts mass-application success at 0.5% (resumefast.io).
 
 ## The free, open-source alternative
 
@@ -21,7 +20,7 @@ by the page itself.
 
 ## The honest trade
 
-Keel will not fire 1,000 applications in a night. If volume is what you
+Keel will not fire hundreds of applications in a night. If volume is what you
 want, Keel is the wrong tool on purpose. If you want automation that
 refuses to lie — fewer applications, every one of them true — that's the
 trade, stated plainly.
