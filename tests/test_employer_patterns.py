@@ -70,4 +70,7 @@ check("new employer recorded", ep.get_patterns("Fresh Startup", "ashby") is not 
 check("new employer blockers kept", fresh["blockers"] == ["blocker x"])
 
 print(f"\n{len(PASS)} passed, {len(FAIL)} failed")
-sys.exit(1 if FAIL else 0)
+# Guarded so `python3 -m unittest discover -s tests` (CI) can import this
+# module without SystemExit killing collection. Direct runs keep exit-code behavior.
+if __name__ == "__main__":
+    sys.exit(1 if FAIL else 0)
