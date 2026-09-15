@@ -5,6 +5,14 @@ All notable changes to Keel are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- Pre-launch hygiene: CONTRIBUTING test command now matches the README
+  (`python3 -m unittest discover -s tests`; stdlib only, no pytest).
+- Sample docs cross-references are now working relative links
+  (`docs/samples/` → `../SPLIT.md`, `README.md`).
+- Launch working docs: removed private-business naming from the
+  no-mention rule and private workspace paths from measurement notes.
+
 ## [0.1.0] — 2026-09-14
 
 First public release of the Keel open-core job-application autopilot.

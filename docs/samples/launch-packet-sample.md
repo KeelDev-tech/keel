@@ -3,7 +3,7 @@
 > **DEMO DATA ONLY.** Every employer, URL, number, question, and answer in
 > this file is invented for demonstration. No real application was
 > submitted, no real posting was verified, and nothing here succeeded.
-> See `docs/samples/README.md`.
+> See [README.md](README.md).
 
 role_id: MVCR-OPS-SPECIALIST-REMOTE-SAMPLE | fit 68
 Posting URL: https://example.com/jobs/ops-specialist-mvcr-0000 (fictional)
@@ -26,7 +26,7 @@ ATS: greenhouse-legacy embed (synthetic detection result)
 - Custom questions detected over HTTP: 4 (see Screening Q&A). No Enterprise
   board markers observed; no CAPTCHA marker observed in the mocked probe.
 - Note: detection is read-only identification. Submission behavior is the
-  private execution layer's concern (see SPLIT.md).
+  private execution layer's concern (see [SPLIT.md](../SPLIT.md)).
 
 ## Materials (placeholders — not real files)
 
@@ -84,7 +84,7 @@ program from scratch, with specific headcount numbers."**
 
 ## Executor contract
 
-The real Keel pipeline stops at this packet (per SPLIT.md). A private
+The real Keel pipeline stops at this packet (per [SPLIT.md](../SPLIT.md)). A private
 execution layer (or the applicant's own implementation) may take the packet
 only if **all** of the following hold:
 
@@ -103,7 +103,7 @@ only if **all** of the following hold:
 
 - The packet is a **data handoff**, not a submission script: verified
   values, gates, and a verification protocol, with zero execution
-  internals (those are the private half — SPLIT.md).
+  internals (those are the private half — [SPLIT.md](../SPLIT.md)).
 - Fail-closed behavior is a first-class outcome: Q4 parks the lead rather
   than risking a dishonest answer. A parked lead is never silently
   retried; it waits on the applicant or is dropped.

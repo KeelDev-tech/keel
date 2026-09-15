@@ -29,7 +29,7 @@ applications were submitted, and no real personal data appears here.
 
 ## Why the real pipeline stops at the packet
 
-Per `SPLIT.md`, Keel is open-core. The public half ends at the launch
+Per [`SPLIT.md`](../SPLIT.md), Keel is open-core. The public half ends at the launch
 packet: verified form values, banded rules, hard gates, and the per-field
 verification protocol. Everything needed to submit honestly — and nothing
 about *how* the commit sequence is executed — is in the packet. The

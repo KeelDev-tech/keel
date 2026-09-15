@@ -24,8 +24,8 @@ is private.
 ## Development
 
 ```bash
-python3 -m pytest tests/        # full suite
-python3 -m py_compile engines/*.py   # syntax check
+python3 -m unittest discover -s tests   # full suite
+python3 -m py_compile engines/*.py      # syntax check
 ```
 
 Keep modules import-safe (no side effects on import), config-driven via
