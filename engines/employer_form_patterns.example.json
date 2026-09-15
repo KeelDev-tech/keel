@@ -1,0 +1,25 @@
+{
+  "_meta": {
+    "note": "EXAMPLE employer form-pattern memory. Priors only \u2014 the live rendered form always rules. Record patterns learned from YOUR verified encounters here. Schema: list of {employer, ats, blockers[], questions[], confidence, evidence{date, encounters, source}}.",
+    "updated": "2026-09-15"
+  },
+  "patterns": [
+    {
+      "employer": "ExampleCorp",
+      "ats": "greenhouse",
+      "blockers": [
+        "requires work-authorization attestation with no decline option"
+      ],
+      "questions": [
+        "How many years of operations experience?",
+        "Are you willing to relocate?"
+      ],
+      "confidence": "medium",
+      "evidence": {
+        "date": "2026-09-15",
+        "encounters": 1,
+        "source": "example encounter: form enumerated from rendered page"
+      }
+    }
+  ]
+}

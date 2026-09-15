@@ -1,0 +1,48 @@
+[
+  {
+    "role_id": "EXAMPLE-001",
+    "company": "Example Corp",
+    "title": "Operations Manager",
+    "location": "Remote (US)",
+    "application_url": "https://job-boards.greenhouse.io/example/jobs/0000000",
+    "ats": "greenhouse",
+    "fit_score": 84,
+    "action_band": "APPLY",
+    "status": "READY",
+    "resume_lane": "OPS",
+    "materials": {
+      "resume": "data/resumes/example_resume.pdf"
+    },
+    "hard_requirements": [
+      {
+        "name": "3+ years operations experience",
+        "status": "VERIFIED"
+      },
+      {
+        "name": "Bachelor's degree",
+        "status": "UNKNOWN"
+      }
+    ]
+  },
+  {
+    "role_id": "EXAMPLE-002",
+    "company": "Sample Startup",
+    "title": "AI Implementation Lead",
+    "location": "San Francisco, CA (hybrid)",
+    "application_url": "https://jobs.ashbyhq.com/sample/00000000-0000-0000-0000-000000000000",
+    "ats": "ashby",
+    "fit_score": 76,
+    "action_band": "STRATEGIC",
+    "status": "READY",
+    "resume_lane": "OPS",
+    "materials": {
+      "resume": "data/resumes/example_resume.pdf"
+    },
+    "hard_requirements": [
+      {
+        "name": "Customer-facing implementation experience",
+        "status": "PARTIAL"
+      }
+    ]
+  }
+]

@@ -1,0 +1,12 @@
+{
+  "_note": "STOCK CONFIG. ./setup.sh personalizes this into your own config. No secrets belong here.",
+  "workspace_name": "Keel Workspace",
+  "owner_name": "YOUR NAME",
+  "timezone": "America/Los_Angeles",
+  "home_geo": "YOUR METRO AREA",
+  "target_lanes": ["operations", "customer success", "program management"],
+  "maildir": "data/mail",
+  "max_applications_per_day": 10,
+  "dashboard_refresh_minutes": 30,
+  "log_telemetry": true
+}

@@ -1,0 +1,12 @@
+{
+  "_meta": {
+    "note": "EXAMPLE employer application budgets. Copy to rate_limits.json and record budgets from YOUR verified encounters. Format: employer -> {limit, window_days, evidence, notes}.",
+    "updated": "2026-09-15"
+  },
+  "example-corp": {
+    "limit": 3,
+    "window_days": 180,
+    "evidence": "example: stated on the employer's application form",
+    "notes": "record only what the employer's own form or policy states"
+  }
+}

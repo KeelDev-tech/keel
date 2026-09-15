@@ -1,0 +1,38 @@
+{
+  "_meta": {
+    "note": "EXAMPLE registry — replace sample_urls with real postings you probe. Never commit live personal application data here.",
+    "updated": "2026-09-15"
+  },
+  "entries": [
+    {
+      "platform": "greenhouse_modern",
+      "status": "browser_only",
+      "note": "Boards rendering the reCAPTCHA Enterprise endpoint require a real browser session.",
+      "sample_urls": ["https://job-boards.greenhouse.io/EXAMPLE/jobs/0000000"]
+    },
+    {
+      "platform": "greenhouse_legacy_embed",
+      "status": "viable_direct",
+      "note": "Older boards.example.com embeds without the Enterprise marker may accept direct HTTP submission (dry-run first).",
+      "sample_urls": ["https://boards.greenhouse.io/EXAMPLE/jobs/0000000"]
+    },
+    {
+      "platform": "lever",
+      "status": "refused",
+      "note": "Keyed API plus platform-wide hCaptcha on every submit — not viable over pure HTTP.",
+      "sample_urls": []
+    },
+    {
+      "platform": "ashby",
+      "status": "browser_only",
+      "note": "Application pages are not HTTP-renderable; enumerate questions from the rendered form.",
+      "sample_urls": []
+    },
+    {
+      "platform": "workday",
+      "status": "browser_only",
+      "note": "UNTESTABLE without sample URLs — onboard as unknown until probed.",
+      "sample_urls": []
+    }
+  ]
+}
