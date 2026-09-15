@@ -41,13 +41,21 @@ fi
 
 echo
 echo "--- Identity (these flow into your answer bank and briefs) ---"
-read -rp "Your full name: " FULLNAME
-read -rp "Your email: " EMAIL
-read -rp "Your phone (e.g. +1-555-0100): " PHONE
-read -rp "Your location (City, State, Country): " LOCATION
-read -rp "Your LinkedIn URL: " LINKEDIN
-read -rp "Timezone (default America/Los_Angeles): " TZ; TZ="${TZ:-America/Los_Angeles}"
+if [ -t 0 ]; then
+  read -rp "Your full name: " FULLNAME
+  read -rp "Your email: " EMAIL
+  read -rp "Your phone (e.g. +1-555-0100): " PHONE
+  read -rp "Your location (City, State, Country): " LOCATION
+  read -rp "Your LinkedIn URL: " LINKEDIN
+  read -rp "Timezone (default America/Los_Angeles): " TZ; TZ="${TZ:-America/Los_Angeles}"
+else
+  echo "  (non-interactive stdin: identity prompts skipped)"
+  echo "  Placeholders kept — edit data/applicant_profile.json,"
+  echo "  data/answer_bank.json, and keel.config.json with YOUR truth afterward."
+  FULLNAME=""; EMAIL=""; PHONE=""; LOCATION=""; LINKEDIN=""; TZ=""
+fi
 
+if [ -n "${FULLNAME:-}" ]; then
 python3 - "$FULLNAME" "$EMAIL" "$PHONE" "$LOCATION" "$LINKEDIN" "$TZ" << 'PYEOF'
 import json, sys
 name, email, phone, loc, li, tz = sys.argv[1:7]
@@ -69,6 +77,7 @@ prof["contact"].update({"email": email, "phone": phone,
 json.dump(prof, open("data/applicant_profile.json", "w"), indent=2)
 print("  wrote your identity into keel.config.json, data/answer_bank.json, data/applicant_profile.json")
 PYEOF
+fi
 
 # Point engines at the data-dir answer bank via a symlink-free approach:
 # copy the personalized answer bank where prescreen/apply_loop look.

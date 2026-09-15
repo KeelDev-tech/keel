@@ -377,7 +377,11 @@ def scan_packets(packet_dir=None, answer_bank=None, employer_patterns=None):
     pdir = packet_dir or PACKET_DIR
     bank = answer_bank
     if bank is None:
-        bank_path = os.path.join(BASE, "answer_bank.json")
+        # Prefer the personalized working copy in data/ (edited after setup.sh);
+        # the engines/ copy is only a fallback for runs outside a workspace.
+        data_bank = os.path.join(PIPELINE, "data", "answer_bank.json")
+        engines_bank = os.path.join(BASE, "answer_bank.json")
+        bank_path = data_bank if os.path.exists(data_bank) else engines_bank
         bank = json.load(open(bank_path)) if os.path.exists(bank_path) else {}
     patterns = employer_patterns if employer_patterns is not None else load_employer_patterns()
     results = []

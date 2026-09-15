@@ -21,7 +21,7 @@ def load(p):
 def items(d):
     return d if isinstance(d, list) else (d or {}).get("entries", d.get("items", [])) if d else []
 
-bank = load(os.path.join(home, "engines", "answer_bank.json")) or load(os.path.join(home, "data", "answer_bank.json"))
+bank = load(os.path.join(home, "data", "answer_bank.json")) or load(os.path.join(home, "engines", "answer_bank.json"))
 bank_ok = bool(bank) and "YOUR_FIRST_NAME" not in json.dumps(bank.get("answers", {}))
 print(f"  answer bank personalized: {'yes' if bank_ok else 'NO — run ./setup.sh'}")
 

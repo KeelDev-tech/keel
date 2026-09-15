@@ -65,6 +65,11 @@ import record_outcome  # noqa: E402 — outcome telemetry
 
 
 def load_answer_bank():
+    # Prefer the personalized working copy in data/ (edited after setup.sh);
+    # the engines/ copy is only a fallback for runs outside a workspace.
+    data_bank = os.path.join(HOME, "data", "answer_bank.json")
+    if os.path.exists(data_bank):
+        return json.load(open(data_bank))
     for name in ("answer_bank.json", "answer_bank.example.json"):
         p = os.path.join(BASE, name)
         if os.path.exists(p):
