@@ -173,7 +173,7 @@ marked (INFERRED) are contrasts drawn from those sources, not quotes.
 ## 6. Gaps — where Keel has no evidence yet
 
 1. **No head-to-head conversion data.** Keel's proof figure is
-   53 verified submissions in ~48h — a volume/throughput figure from the
+   55 verified submissions at launch — a volume figure from the
    private pipeline, not a comparison vs. spam cannons or vs. manual
    applying. The claim "discipline converts better" is asserted, not
    measured. Keel's own outcome analytics (outcome_analytics.py) is the
@@ -194,7 +194,7 @@ marked (INFERRED) are contrasts drawn from those sources, not quotes.
 4. **Execution-layer efficacy is private and unverified publicly.** The
    repo's central promise — that the private execution layer avoids
    fingerprinting — is asserted via SPLIT.md design, not demonstrated in
-   the public repo. 53-in-48h is the only public evidence it works at all.
+   the public repo. The 55-verified-submissions figure is the only public evidence it works at all.
 5. **Numbers are 2024–2025 vintage.** The headline stats (45.5%,
    34%, 91%, 11,000/min, 0.5%) come from 2024–2025 reporting; freshness
    caveat if opponents cite newer data.
@@ -206,7 +206,7 @@ marked (INFERRED) are contrasts drawn from those sources, not quotes.
 - Should Keel name names (LazyApply, Sonara, Simplify) in public copy,
   or keep the attack generic ("spam cannons")? Naming invites rebuttal
   and review-bomb dynamics; generic keeps the Show HN post above the fray.
-- Does the 53-in-48h figure risk sounding like a spam-cannon boast?
+- Does the 55-verified-submissions figure risk sounding like a spam-cannon boast?
   Current framing ("traction figure, not the product") handles this — keep
   it verbatim everywhere.
 - JobRollo is the closest credible competitor: evaluate whether to cite

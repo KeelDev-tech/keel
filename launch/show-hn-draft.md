@@ -36,8 +36,7 @@ the submission-behavior techniques that ATS vendors could fingerprint and
 block — stays private deliberately; publishing it would degrade the
 pipeline for everyone running it.
 
-The private production pipeline verified 53 submitted applications in about
-48 hours — that's the proof the discipline works, not the product. The repo
+The private production pipeline holds 55 verified submissions at launch — that's the proof the discipline works, not the product. The repo
 itself makes no submission claims; it's the tools, the gates, and the
 telemetry that produced them.
 

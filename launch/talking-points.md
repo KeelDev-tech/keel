@@ -13,8 +13,8 @@ numbers, no projections, no personal data.
   and hard gates that stop the run when a question can't be answered
   honestly. Nothing counts as submitted without explicit page confirmation,
   and the system fails closed on ambiguity.
-- **Proof:** The private production pipeline verified 53 submitted
-  applications in about 48 hours. That's the traction figure — proof the
+- **Proof:** The private production pipeline's ledger holds 55 verified
+  submissions at launch. That's the traction figure — proof the
   discipline works. The public repo itself makes no submission claims;
   it's the tools, the gates, and the telemetry, not the submissions.
 - **Open-core model:** Public (Apache-2.0) = discovery/scoring, truthful
