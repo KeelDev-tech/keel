@@ -128,7 +128,8 @@ dist/           built zips (from ./package.sh)
 
 ## Contributing
 
-See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md). Bug reports and feature
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contributor guide
+(the technical ground rules also live in [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)). Bug reports and feature
 requests live under [.github/ISSUE_TEMPLATE/](.github/ISSUE_TEMPLATE/);
 security reports go through GitHub Security Advisories —
 see [SECURITY.md](SECURITY.md). Changes are tracked in

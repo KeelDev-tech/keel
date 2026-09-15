@@ -1,4 +1,7 @@
-# Contributing
+# Contributing — technical ground rules
+
+> Full contributor onboarding lives in the root [CONTRIBUTING.md](../CONTRIBUTING.md).
+> This file is the technical checklist.
 
 ## What belongs in the public repo
 
