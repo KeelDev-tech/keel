@@ -1,5 +1,5 @@
 <!--
-COUNTING METHODOLOGY v2 (2026-09-15 14:28 PT) — read before trusting a number.
+COUNTING METHODOLOGY v2 (2026-09-15 14:44 PT) — read before trusting a number.
 Sources: ~/workspace/job-pipeline/ledger/application-ledger.json (list of rows),
          ~/workspace/job-pipeline/telemetry/events.jsonl (append-only log).
 - "Verified submissions" = rows with status SUBMITTED. Submission is only
@@ -35,7 +35,7 @@ append-only telemetry log, aggregated with no identifying detail. Every
 figure carries its count time. The public repo makes no submission claims;
 it's the tools, the gates, and the telemetry.
 
-*Counted: 2026-09-15 14:28 PT. Sources: `application-ledger.json` +
+*Counted: 2026-09-15 14:44 PT. Sources: `application-ledger.json` +
 `telemetry/events.jsonl`.*
 
 ---
@@ -45,17 +45,17 @@ it's the tools, the gates, and the telemetry.
 | Figure | Value | What it means |
 |---|---|---|
 | Verified submissions at launch | **55** | Counted 2026-09-15 00:17 PT; applications count only on explicit page-confirmation evidence |
-| Verified submissions now | **90** | Counted 2026-09-15 14:28 PT; the pipeline runs continuously, so the live count only grows |
+| Verified submissions now | **92** | Counted 2026-09-15 14:44 PT; the pipeline runs continuously, so the live count only grows |
 | Fabrication gates tripped | **4** | Distinct real leads where the system stopped rather than invent an answer (test fixtures excluded) |
-| Leads stopped by any gate | **366** | Distinct leads × gates blocked; backfilled-only stops counted, repeats deduped |
-| Telemetry events logged | **4,199** | Append-only; every discovery, gate, and outcome recorded |
+| Leads stopped by any gate | **367** | Distinct leads × gates blocked; backfilled-only stops counted, repeats deduped |
+| Telemetry events logged | **4,213** | Append-only; every discovery, gate, and outcome recorded |
 | Interview invites | **2** | Ledger rows in INTERVIEW_INVITED status |
 | Rejections recorded | **5** | Ledger rows in REJECTED status — losses logged with the same discipline as wins |
 
 ## The gates: where the pipeline said no
 
 Honest automation is measured in refusals. Distinct leads stopped per gate
-(`gate_blocked` events, deduped by lead × gate, counted 2026-09-15 14:28 PT):
+(`gate_blocked` events, deduped by lead × gate, counted 2026-09-15 14:44 PT):
 
 | Gate | Leads stopped | Meaning |
 |---|---|---|
@@ -91,8 +91,8 @@ lies on your behalf.
 
 ## What we don't claim
 
-- The 55-at-launch figure was counted at 00:17 PT on 2026-09-15. Thirty-five more
-  submissions have landed since (90 counted 2026-09-15 14:28 PT) — each timestamped
+- The 55-at-launch figure was counted at 00:17 PT on 2026-09-15. Thirty-seven more
+  submissions have landed since (92 counted 2026-09-15 14:44 PT) — each timestamped
   in the ledger, none backdated.
 - Gate figures count distinct leads stopped, with backfilled and repeat
   events deduped — they are not raw event totals.

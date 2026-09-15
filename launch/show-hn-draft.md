@@ -36,7 +36,7 @@ the submission-behavior techniques that ATS vendors could fingerprint and
 block — stays private deliberately; publishing it would degrade the
 pipeline for everyone running it.
 
-The private production pipeline holds 90 verified submissions (ledger-verified 2026-09-15 14:28 PT) — that's the proof the discipline works, not the product. The repo
+The private production pipeline holds 92 verified submissions (ledger-verified 2026-09-15 14:44 PT) — that's the proof the discipline works, not the product. The repo
 itself makes no submission claims; it's the tools, the gates, and the
 telemetry that produced them.
 

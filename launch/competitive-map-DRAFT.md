@@ -173,7 +173,7 @@ marked (INFERRED) are contrasts drawn from those sources, not quotes.
 ## 6. Gaps — where Keel has no evidence yet
 
 1. **No head-to-head conversion data.** Keel's proof figure is
-   90 verified submissions (ledger-verified 2026-09-15 14:28 PT) — a volume figure from the
+   92 verified submissions (ledger-verified 2026-09-15 14:44 PT) — a volume figure from the
    private pipeline, not a comparison vs. spam cannons or vs. manual
    applying. The claim "discipline converts better" is asserted, not
    measured. Keel's own outcome analytics (outcome_analytics.py) is the

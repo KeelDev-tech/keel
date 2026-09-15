@@ -25,7 +25,7 @@ radar, the launch-packet builder, telemetry, dashboard. Private by design:
 the submission techniques ATS vendors could fingerprint — publishing those
 would get everyone's pipeline blocked.
 
-5/ Proof the discipline works: the private production pipeline's ledger holds 90 verified submissions (ledger-verified 2026-09-15 14:28 PT; the pipeline runs continuously, so the live count only grows). The repo itself makes no submission
+5/ Proof the discipline works: the private production pipeline's ledger holds 92 verified submissions (ledger-verified 2026-09-15 14:44 PT; the pipeline runs continuously, so the live count only grows). The repo itself makes no submission
 claims — it's the tools, the gates, and the telemetry behind them.
 
 6/ Looking for: feedback on the honest-automation contract, contributors who

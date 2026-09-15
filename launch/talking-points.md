@@ -13,8 +13,8 @@ numbers, no projections, no personal data.
   and hard gates that stop the run when a question can't be answered
   honestly. Nothing counts as submitted without explicit page confirmation,
   and the system fails closed on ambiguity.
-- **Proof:** The private production pipeline's ledger holds 90 verified
-  submissions (ledger-verified 2026-09-15 14:28 PT; the pipeline runs
+- **Proof:** The private production pipeline's ledger holds 92 verified
+  submissions (ledger-verified 2026-09-15 14:44 PT; the pipeline runs
   continuously, so the live count only grows). That's the traction figure — proof the
   discipline works. The public repo itself makes no submission claims;
   it's the tools, the gates, and the telemetry, not the submissions.
