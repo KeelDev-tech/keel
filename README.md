@@ -12,7 +12,7 @@ verification → launch packets — with honest automation as the product: it on
 ever claims what you tell it is true.
 
 Keel is the public half of a real production pipeline that verified
-**53 submitted applications in ~48 hours** using this exact discipline: fit
+**55 submitted applications** using this exact discipline: fit
 scoring, truthfulness gates, clean-form checks, and fail-closed handling.
 The execution layer (how applications are actually submitted) stays private by
 design — publishing submission fingerprints would get the pipeline blocked by
