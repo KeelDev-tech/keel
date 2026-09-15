@@ -1,4 +1,4 @@
-# Launch thread — FINAL (awaiting Trent's approval to post)
+# Launch thread — FINAL (awaiting the founder's approval to post)
 
 Status: FINAL copy. Platform TBD at approval time. Nothing published.
 
@@ -25,8 +25,7 @@ radar, the launch-packet builder, telemetry, dashboard. Private by design:
 the submission techniques ATS vendors could fingerprint — publishing those
 would get everyone's pipeline blocked.
 
-5/ Proof the discipline works: the private production pipeline verified 53
-submitted applications in ~48 hours. The repo itself makes no submission
+5/ Proof the discipline works: the private production pipeline's ledger holds 55 verified submissions at launch. The repo itself makes no submission
 claims — it's the tools, the gates, and the telemetry behind them.
 
 6/ Looking for: feedback on the honest-automation contract, contributors who

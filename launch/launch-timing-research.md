@@ -26,18 +26,18 @@ Compiled 2026-09-14. Research only; no posting scheduled.
 
 ## Convergence
 
-- **Day: Tuesday or Wednesday.** (Today is Monday 2026-09-14; Monday also still needs Trent's approval flow, so Tuesday is the earliest realistic option.)
+- **Day: Tuesday or Wednesday.** (Today is Monday 2026-09-14; Monday also still needs the founder's approval flow, so Tuesday is the earliest realistic option.)
 - **Time: 8:00–9:30 AM ET = 5:00–6:30 AM PT** — sits inside both the arXiv 12–17 UTC window (12:00–17:00 UTC = 5:00 AM–12:00 PM PT) and the 157k-posts weekday 11:00–16:00 UTC window (4:00–9:00 AM PT), and matches the playbook norm of HN at 8–9:30 AM ET.
 - Weekend vs weekday is statistically negligible, so don't push to the weekend on timing grounds alone; weekday gives the biggest overlap of US + EU eyeballs.
 - Content >> timing (10x weight per the 157k analysis). The finalized copy is already the higher-leverage asset.
-- **Human-availability requirement:** Trent (or the responding agent) must be online and responding for 4+ hours after posting; every comment answered within an hour, never defensively. This is the single biggest non-copy lever.
+- **Human-availability requirement:** the founder (or the responding agent) must be online and responding for 4+ hours after posting; every comment answered within an hour, never defensively. This is the single biggest non-copy lever.
 
 ## Recommended posting window (this week)
 
-- **Primary: Wednesday 2026-09-16, 8:00 AM ET / 5:00 AM PT.** Tuesday 2026-09-15, same time, is the backup if copy approval lands early and Trent wants it out sooner.
+- **Primary: Wednesday 2026-09-16, 8:00 AM ET / 5:00 AM PT.** Tuesday 2026-09-15, same time, is the backup if copy approval lands early and the founder wants it out sooner.
 - Avoid Friday (launch-day troubleshooting playbook flags Friday launches as a classic mistake) and avoid any day with a major tech announcement or holiday.
-- Posting at 5 AM PT is early for Trent — if 5:00 AM PT is not workable, 8:00–9:00 AM PT (11:00 AM–12:00 PM ET / 15:00–16:00 UTC) is still inside both evidence-backed windows, but do not push past ~9:00 AM PT: the US-morning/EU-afternoon overlap decays after 17:00 UTC.
-- **Note on today's date:** Monday 2026-09-14 is still in progress at plan time; the Show HN copy is FINALIZED but unapproved. No posting is authorized regardless of day until Trent's explicit go-ahead.
+- Posting at 5 AM PT is early for the founder — if 5:00 AM PT is not workable, 8:00–9:00 AM PT (11:00 AM–12:00 PM ET / 15:00–16:00 UTC) is still inside both evidence-backed windows, but do not push past ~9:00 AM PT: the US-morning/EU-afternoon overlap decays after 17:00 UTC.
+- **Note on today's date:** Monday 2026-09-14 is still in progress at plan time; the Show HN copy is FINALIZED but unapproved. No posting is authorized regardless of day until the founder's explicit go-ahead.
 
 ## What this research does NOT support
 

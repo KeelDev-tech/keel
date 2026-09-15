@@ -1,5 +1,5 @@
 # Keel Launch — Measurement Checklist
-**Status:** Show HN post FINALIZED, NOT yet posted (awaiting Trent's go-ahead).
+**Status:** Show HN post FINALIZED, NOT yet posted (awaiting the founder's go-ahead).
 **Purpose:** Pre-registered measurement plan. What to record, when, where to read it, and which benchmark band it gets compared against. **Do not execute any measurement until its checkpoint.**
 **Rules:** Record actuals; never invent numbers. Benchmarks are sourced averages, not guarantees. Nothing here authorizes posting.
 
@@ -26,7 +26,7 @@
 ---
 
 ## Checkpoint T=0 — Post time
-Record the moment the Show HN post goes live (Trent's go-ahead only). Metrics:
+Record the moment the Show HN post goes live (the founder's go-ahead only). Metrics:
 
 | # | Metric | Where to read | Compare against |
 |---|---|---|---|
@@ -82,7 +82,7 @@ Record the moment the Show HN post goes live (Trent's go-ahead only). Metrics:
 
 ## Known measurement caveats
 1. **Per-post vs. account-level IG likes do not reconcile.** Hydrated per-post likes summed to 19 while account-level 7d likes = 91 (2026-09-14 snapshot). The post-level `likes` field is partial/rolling or a different counter than the insights metric. **Report both; do not sum or substitute one for the other.**
-2. **GitHub traffic API needs auth.** Stars/forks/watchers are public; traffic/visitor counts require an authenticated token. Until Trent authorizes one, repo-traffic expectations (B4/B6) are inference only — mark any traffic figure as INFERRED, never measured.
+2. **GitHub traffic API needs auth.** Stars/forks/watchers are public; traffic/visitor counts require an authenticated token. Until the founder authorizes one, repo-traffic expectations (B4/B6) are inference only — mark any traffic figure as INFERRED, never measured.
 3. **HN benchmarks are public-source averages (2023–2026), not guarantees.** The arXiv study explicitly found the Show HN tag adds no measured star advantage — content and the honesty contract carry the post. Label averages as averages.
 4. **Interaction dimension codes unverified.** `interactions_by_media_type` returns numeric dimension codes ('2', '3', '16') with no legend — leave uninterpreted, not used in comparisons.
 5. **Comment reads:** zero comments existed on all six posts at last snapshot; if comments appear on the thread or posts, use `fetch-post-comments` for post comments. Thread comment quality is qualitative signal, not a benchmark.

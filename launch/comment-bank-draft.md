@@ -1,8 +1,8 @@
-# Comment bank — DRAFT ONLY. Never post anything without Trent's explicit go-ahead.
+# Comment bank — DRAFT ONLY. Never post anything without the founder's explicit go-ahead.
 
 Repo: https://github.com/KeelDev-tech/keel (KeelDev-tech/keel, public, Apache-2.0)
 
-Voice: Trent's hand — first person, terse, direct, grounded. No defending, no hype,
+Voice: the founder's hand — first person, terse, direct, grounded. No defending, no hype,
 no invented numbers. When the sources don't answer, say so.
 
 ---
@@ -79,20 +79,21 @@ that the boundary is drawn where I say it is, and I respect that that's an
 ask. The contract rules that keep the system honest are all inspectable; only
 the fingerprintable mechanics are withheld.
 
-### 3. "Where's the proof? / How do I verify the 53 submissions claim?"
+### 3. "Where's the proof? / How do I verify the 55 submissions claim?"
 
-**Objection restated:** You claim 53 verified submissions in about 48 hours
+**Objection restated:** You claim 55 verified submissions
 from a private pipeline nobody can see. How is anyone supposed to check that?
 
 **Answer:** Fair question, and I'll state the limits plainly. The figure is
-from my private production pipeline — 53 submitted applications verified in
-about 48 hours. You can't independently re-run that pipeline; the public repo
+the SUBMITTED row count in my private production pipeline's ledger at launch
+— 55 submissions, each counted only on explicit page-confirmation evidence.
+You can't independently re-run that pipeline; the public repo
 isn't it, and the repo itself makes no submission claims. What's verifiable
 is the discipline: the explicit-confirmation rule (nothing counts as
 submitted unless the page itself confirms it; the ledger increments only on
 real confirmation evidence) and the append-only telemetry with fail-closed
 reporting rules (rates with denominators under 5 read "insufficient outcome
-data"; hypotheses are hedged and labeled) are all public code. The 53 is a
+data"; hypotheses are hedged and labeled) are all public code. The 55 is a
 traction figure for the discipline, not a claim the repo asks you to take on
 faith about the code. Don't trust the number — inspect the gates and tell me
 what's missing.
@@ -162,7 +163,7 @@ and the public contract it must obey.
 
 ### 7. "Why should I believe the number isn't inflated?"
 
-**Objection restated:** Metrics get inflated. Why should anyone take the 53
+**Objection restated:** Metrics get inflated. Why should anyone take the 55
 at face value?
 
 **Answer:** The reporting rules are designed against exactly that. The ledger
@@ -181,7 +182,7 @@ something you'll have to take my word for. I won't oversell it.
 
 ---
 
-## Notes for Trent
+## Notes for the founder
 
 - All 7 FAQ objections covered, each with objection restated + grounded
   answer + honest boundary.

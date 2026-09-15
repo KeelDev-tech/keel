@@ -1,6 +1,6 @@
 # Launch approval packet — Keel
 
-The ordered list of approvals needed from Trent. Each item is a gate: the item below it is blocked until it gets a yes. Nothing in the launch sequence executes without his explicit word at the relevant gate.
+The ordered list of approvals needed from the founder. Each item is a gate: the item below it is blocked until it gets a yes. Nothing in the launch sequence executes without his explicit word at the relevant gate.
 
 ## Gate 1 — Copy approval (BLOCKS EVERYTHING)
 
@@ -32,11 +32,11 @@ Explicit authorization to publish the Show HN post, plus the window choice:
 
 ## Gate 5 — Launch-day amplification (DEPENDS ON GATE 2)
 
-- Who else shares/amplifies (supporter list, first-hour commenters) — names and outreach are Trent's call; agents do no outreach.
-- Whether Trent wants an IG launch tie-in: copy not yet drafted — his content call (voice, caption, asset). Note: IG automation publish path has been HTTP-500 since 2026-09-13; treat IG launch posts as manual-post-by-Trent until the outage is resolved and verified.
+- Who else shares/amplifies (supporter list, first-hour commenters) — names and outreach are the founder's call; agents do no outreach.
+- Whether the founder wants an IG launch tie-in: copy not yet drafted — his content call (voice, caption, asset). Note: IG automation publish path has been HTTP-500 since 2026-09-13; treat IG launch posts as manual-post-by-the founder until the outage is resolved and verified.
 
 ## Standing notes for the packet
 
 - **One HN account, one submission.** Reposting/deleting and resubmitting is penalized by the community; if the post flops, the T+3 retrospective and T+7 patch release carry the sustainment, not a repost.
 - **Respondent coverage:** whoever covers HN comments for 4+ hours post-launch must have this FAQ doc and the boundary rules (no private business detail, no claims beyond the files, never defensive).
-- **Product Hunt and any platform not named above are OUT** unless Trent adds them.
+- **Product Hunt and any platform not named above are OUT** unless the founder adds them.

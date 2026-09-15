@@ -1,4 +1,4 @@
-# Show HN — FINAL (awaiting Trent's approval to post)
+# Show HN — FINAL (awaiting the founder's approval to post)
 
 ## Title
 Show HN: Keel — automated job applications that refuse to lie
@@ -31,8 +31,7 @@ the public pipeline stops at the launch packet. The private execution layer
 block — stays private deliberately. Publishing it would degrade the pipeline
 for everyone running it.
 
-Proof the discipline works: the private production pipeline verified 53
-submitted applications in about 48 hours. That's the traction figure, not
+Proof the discipline works: the private production pipeline's ledger holds 55 verified submissions at launch. That's the traction figure, not
 the product — the repo itself makes no submission claims. It's the tools,
 the gates, and the telemetry.
 
