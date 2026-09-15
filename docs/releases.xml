@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Keel releases — public docs and site</title>
+    <link>https://github.com/KeelDev-tech/keel</link>
+    <description>Public-facing releases for Keel, the open-source job-application autopilot that refuses to lie. One item per commit touching public docs or the site.</description>
+    <language>en-us</language>
+    <item>
+      <title>Launch push: audited data-story, launch-copy corrections</title>
+      <link>https://github.com/KeelDev-tech/keel/commit/15b7d75</link>
+      <guid>https://github.com/KeelDev-tech/keel/commit/15b7d75</guid>
+      <pubDate>Tue, 15 Sep 2026 09:11:19 +0000</pubDate>
+      <description>docs/data-story.md published with every figure counted directly from the ledger and telemetry (55 submissions at launch, 60 now, 5 fabrication-gate leads, 198 leads stopped, 1,109 telemetry events). Launch drafts corrected to the 55-at-launch canon.</description>
+    </item>
+    <item>
+      <title>GEO layer: replace unverified rival claims with verified set</title>
+      <link>https://github.com/KeelDev-tech/keel/commit/1e4c55a</link>
+      <guid>https://github.com/KeelDev-tech/keel/commit/1e4c55a</guid>
+      <pubDate>Tue, 15 Sep 2026 08:42:10 +0000</pubDate>
+      <description>Two rival-side claims found unsupported were removed from the GEO docs and replaced with the verified source set. Canon claims only.</description>
+    </item>
+    <item>
+      <title>GEO layer: llms.txt, citation-ready docs/geo, JSON-LD structured data</title>
+      <link>https://github.com/KeelDev-tech/keel/commit/9890a0c</link>
+      <guid>https://github.com/KeelDev-tech/keel/commit/9890a0c</guid>
+      <pubDate>Tue, 15 Sep 2026 08:41:30 +0000</pubDate>
+      <description>llms.txt and llms-full.txt added; docs/geo Q&amp;A set (FAQ, honest automation explainer, comparison, alternatives, stats, spot-check protocol); JSON-LD structured data on the site.</description>
+    </item>
+    <item>
+      <title>Repo polish: contributor funnel</title>
+      <link>https://github.com/KeelDev-tech/keel/commit/519cf42</link>
+      <guid>https://github.com/KeelDev-tech/keel/commit/519cf42</guid>
+      <pubDate>Tue, 15 Sep 2026 08:02:34 +0000</pubDate>
+      <description>Contributor onboarding and repo polish: README, CONTRIBUTING, issue templates, changelog.</description>
+    </item>
+    <item>
+      <title>Add Keel web home (site/): static GitHub-Pages-ready page</title>
+      <link>https://github.com/KeelDev-tech/keel/commit/4df5ee7</link>
+      <guid>https://github.com/KeelDev-tech/keel/commit/4df5ee7</guid>
+      <pubDate>Tue, 15 Sep 2026 08:00:48 +0000</pubDate>
+      <description>Static site for GitHub Pages: proof figure, truthfulness contract, open-core model, one-brand note.</description>
+    </item>
+    <item>
+      <title>Fix README: ledger-verified 55 submissions, drop unprovable 48h window</title>
+      <link>https://github.com/KeelDev-tech/keel/commit/1d06a3d</link>
+      <guid>https://github.com/KeelDev-tech/keel/commit/1d06a3d</guid>
+      <pubDate>Tue, 15 Sep 2026 07:35:48 +0000</pubDate>
+      <description>README corrected to the ledger-verified 55-submissions figure; the unprovable 48-hour window claim removed.</description>
+    </item>
+  </channel>
+</rss>

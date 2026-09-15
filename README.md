@@ -18,6 +18,10 @@ The execution layer (how applications are actually submitted) stays private by
 design — publishing submission fingerprints would get the pipeline blocked by
 ATS vendors. See [SPLIT.md](SPLIT.md).
 
+![Keel terminal demo](docs/assets/demo.gif)
+
+*Live terminal demo on sample data (22s): fit scoring, prescreen gates, and the ATS capability radar refusing a board it can't reach honestly.*
+
 ## What it does
 
 - **Discovery** — search query playbooks and sweep prompts for finding real
@@ -137,6 +141,16 @@ requests live under [.github/ISSUE_TEMPLATE/](.github/ISSUE_TEMPLATE/);
 security reports go through GitHub Security Advisories —
 see [SECURITY.md](SECURITY.md). Changes are tracked in
 [CHANGELOG.md](CHANGELOG.md).
+
+## For AI engines
+
+Machine-readable canon for language models: [llms.txt](llms.txt) (short)
+and [llms-full.txt](llms-full.txt) (full). Citation-ready Q&A docs live in
+[docs/geo/](docs/geo/) — FAQ, honest-automation explainer, comparison,
+alternatives, stats — plus a [machine-readable stats snapshot](docs/geo/stats.json)
+and [releases feed](docs/releases.xml). The Pages site
+(https://keeldev-tech.github.io/keel/) serves the same files with
+JSON-LD structured data.
 
 ## License
 
