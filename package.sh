@@ -24,16 +24,16 @@ mkdir -p /tmp/keel-pkg/dist
 
 # Pre-flight personal-data scan on the package payload.
 # Personal patterns live OUTSIDE the repo (~/.config/keel/scrub-patterns) so
-  # this script never embeds personal identifiers itself. The fallback is a
-  # generic shape-based pattern (emails, phone-like numbers, SSNs) with no names.
-  SCRUB_FILE="$HOME/.config/keel/scrub-patterns"
-  if [ -f "$SCRUB_FILE" ]; then
-    PATTERN="$(cat "$SCRUB_FILE")"
-  else
-    PATTERN='[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}|(\+?1[-. ]?)?\(?[0-9]{3}\)?[-. ][0-9]{3}[-. ][0-9]{4}|[0-9]{3}-[0-9]{2}-[0-9]{4}'
-  fi
+# this script never embeds personal identifiers itself. The fallback is a
+# generic shape-based pattern (emails, phone-like numbers, SSNs) with no names.
+SCRUB_FILE="$HOME/.config/keel/scrub-patterns"
+if [ -f "$SCRUB_FILE" ]; then
+  PATTERN="$(cat "$SCRUB_FILE")"
+else
+  PATTERN='[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}|(\+?1[-. ]?)?\(?[0-9]{3}\)?[-. ][0-9]{3}[-. ][0-9]{4}|[0-9]{3}-[0-9]{2}-[0-9]{4}'
+fi
 HITS="$(grep -rliE "$PATTERN" /tmp/keel-pkg 2>/dev/null | grep -v '/package.sh$' || true)"
-SELF="$(grep -iE "$PATTERN" /tmp/keel-pkg/package.sh 2>/dev/null | grep -v '^PATTERN=' || true)"
+SELF="$(grep -iE "$PATTERN" /tmp/keel-pkg/package.sh 2>/dev/null | grep -v '^PATTERN=\|^SCRUB_FILE=\|^# Personal patterns' || true)"
 if [ -n "$HITS" ] || [ -n "$SELF" ]; then
   echo "BLOCKED: personal-data hits in package payload:"
   echo "$HITS"
