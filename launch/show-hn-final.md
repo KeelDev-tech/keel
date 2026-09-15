@@ -31,7 +31,7 @@ the public pipeline stops at the launch packet. The private execution layer
 block — stays private deliberately. Publishing it would degrade the pipeline
 for everyone running it.
 
-Proof the discipline works: the private production pipeline's ledger holds 55 verified submissions at launch. That's the traction figure, not
+Proof the discipline works: the private production pipeline's ledger holds 90 verified submissions (ledger-verified 2026-09-15 14:28 PT; the pipeline runs continuously, so the live count only grows). That's the traction figure, not
 the product — the repo itself makes no submission claims. It's the tools,
 the gates, and the telemetry.
 

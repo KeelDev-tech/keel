@@ -1,1 +1,54 @@
-{"counted_at":"2026-09-15T02:15:00-07:00","fabrication_gate_leads":5,"interview_invites":2,"leads_stopped_by_any_gate":198,"license":"Apache-2.0","methodology":"Counts taken directly from the private production pipeline's ledger and append-only telemetry log. Gate figures are distinct (role_id, gate) pairs in gate_blocked events. Full methodology in docs/data-story.md.","refresh_policy":"Figures update only by direct ledger recount at the time of publication. Never estimated, projected, or extrapolated.","rejections_recorded":4,"repo":"https://github.com/KeelDev-tech/keel","sources":["application-ledger.json","telemetry/events.jsonl"],"telemetry_events":1109,"verified_submissions_at_launch":55,"verified_submissions_now":60}
+{
+  "counted_at": "2026-09-15T14:28:09-07:00",
+  "verified_submissions_at_launch": 55,
+  "verified_submissions_now": 90,
+  "evidence": {
+    "evidenced": 87,
+    "url_only": 3,
+    "unevidenced": 0
+  },
+  "fabrication_gate_leads": 4,
+  "leads_stopped_by_any_gate": 366,
+  "per_gate": {
+    "needs_input": 105,
+    "eligibility": 54,
+    "inflight_cap": 40,
+    "technique_blocked": 34,
+    "travel": 22,
+    "discarded_by_applicant": 18,
+    "materials_missing": 13,
+    "essay": 12,
+    "lever_preflight": 12,
+    "unverifiable": 11,
+    "packet_shelved": 7,
+    "materials_demoted": 7,
+    "location": 5,
+    "attest": 4,
+    "malformed_ready": 4,
+    "fabrication": 4,
+    "account": 2,
+    "recording_consent": 1,
+    "recaptcha_enterprise": 1,
+    "ai_attestation": 1,
+    "gh_code_approval_unavailable": 1,
+    "relocation_commitment": 1,
+    "ashby_spam_flag": 1,
+    "duplicate_of_submitted": 1,
+    "email_verification_code": 1,
+    "captcha": 1,
+    "resume_s3_upload": 1,
+    "verification_code": 1,
+    "breezy_blocked": 1
+  },
+  "telemetry_events": 4199,
+  "interview_invites": 2,
+  "rejections_recorded": 5,
+  "sources": [
+    "application-ledger.json",
+    "telemetry/events.jsonl"
+  ],
+  "methodology": "Counts taken directly from the private production pipeline's ledger and append-only telemetry log. Verified submissions = SUBMITTED rows (explicit page-confirmation rule; the ledger is counted, confirmations are not re-verified). Gate figures are distinct (role_id, gate) pairs in gate_blocked events; backfilled events dedupe on the pair (backfilled-only pairs are real historical stops and count); queue-level events without role_id and TEST- fixtures are excluded. Launch figure 55 is the historical canon counted 2026-09-15 00:17 PT. Full methodology in docs/data-story.md.",
+  "refresh_policy": "Figures update only by direct ledger recount at the time of publication. Never estimated, projected, or extrapolated.",
+  "repo": "https://github.com/KeelDev-tech/keel",
+  "license": "Apache-2.0"
+}

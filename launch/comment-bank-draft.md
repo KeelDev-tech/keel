@@ -79,21 +79,21 @@ that the boundary is drawn where I say it is, and I respect that that's an
 ask. The contract rules that keep the system honest are all inspectable; only
 the fingerprintable mechanics are withheld.
 
-### 3. "Where's the proof? / How do I verify the 55 submissions claim?"
+### 3. "Where's the proof? / How do I verify the 90 submissions claim?"
 
-**Objection restated:** You claim 55 verified submissions
+**Objection restated:** You claim 90 verified submissions
 from a private pipeline nobody can see. How is anyone supposed to check that?
 
 **Answer:** Fair question, and I'll state the limits plainly. The figure is
-the SUBMITTED row count in my private production pipeline's ledger at launch
-— 55 submissions, each counted only on explicit page-confirmation evidence.
+the SUBMITTED row count in my private production pipeline's ledger
+— 90 submissions (ledger-verified 2026-09-15 14:28 PT), each counted only on explicit page-confirmation evidence.
 You can't independently re-run that pipeline; the public repo
 isn't it, and the repo itself makes no submission claims. What's verifiable
 is the discipline: the explicit-confirmation rule (nothing counts as
 submitted unless the page itself confirms it; the ledger increments only on
 real confirmation evidence) and the append-only telemetry with fail-closed
 reporting rules (rates with denominators under 5 read "insufficient outcome
-data"; hypotheses are hedged and labeled) are all public code. The 55 is a
+data"; hypotheses are hedged and labeled) are all public code. The 90 is a
 traction figure for the discipline, not a claim the repo asks you to take on
 faith about the code. Don't trust the number — inspect the gates and tell me
 what's missing.
@@ -163,7 +163,7 @@ and the public contract it must obey.
 
 ### 7. "Why should I believe the number isn't inflated?"
 
-**Objection restated:** Metrics get inflated. Why should anyone take the 55
+**Objection restated:** Metrics get inflated. Why should anyone take the 90
 at face value?
 
 **Answer:** The reporting rules are designed against exactly that. The ledger
