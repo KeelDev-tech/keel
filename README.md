@@ -5,6 +5,8 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.1.0-informational.svg)](CHANGELOG.md)
 
+<p align="center"><img src="docs/assets/keel-logo.png" width="160" alt="Keel logo"></p>
+
 ![Keel wordmark](docs/assets/keel-wordmark.svg)
 
 An open-core job-application pipeline. Discovery → scoring → materials →
