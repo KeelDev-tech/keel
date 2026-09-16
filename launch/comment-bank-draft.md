@@ -79,14 +79,14 @@ that the boundary is drawn where I say it is, and I respect that that's an
 ask. The contract rules that keep the system honest are all inspectable; only
 the fingerprintable mechanics are withheld.
 
-### 3. "Where's the proof? / How do I verify the 92 submissions claim?"
+### 3. "Where's the proof? / How do I verify the 94 submissions claim?"
 
-**Objection restated:** You claim 92 verified submissions
+**Objection restated:** You claim 94 verified submissions
 from a private pipeline nobody can see. How is anyone supposed to check that?
 
 **Answer:** Fair question, and I'll state the limits plainly. The figure is
 the SUBMITTED row count in my private production pipeline's ledger
-— 92 submissions (ledger-verified 2026-09-15 14:44 PT), each counted only on explicit page-confirmation evidence.
+— 94 submissions (as of 2026-09-15), each counted only on explicit page-confirmation evidence.
 You can't independently re-run that pipeline; the public repo
 isn't it, and the repo itself makes no submission claims. What's verifiable
 is the discipline: the explicit-confirmation rule (nothing counts as

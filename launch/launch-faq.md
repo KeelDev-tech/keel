@@ -14,11 +14,11 @@ Answered by SPLIT.md and talking-points.md.
 
 The split is defensive, not commercial trickery. The private half contains submission-behavior methods ATS vendors could fingerprint: form-event sequencing, per-platform commit techniques, CAPTCHA-handling specifics, credential/verification-code flows, the live API-direct submission transport. SPLIT.md's rule of thumb: "If a method's publication would help a vendor block automated applications, it is private. If it helps an applicant run an honest, verifiable, fail-closed pipeline, it is public." Publishing the private half would degrade the pipeline for everyone running it. The open half (Apache-2.0) is everything that doesn't carry that risk: discovery/scoring, truthful resume tailoring, the answer bank, prescreen gates, ATS detection and capability radar, the launch-packet builder, telemetry, and the dashboard.
 
-## "Where's the proof? / How do I verify the 92 submissions claim?"
+## "Where's the proof? / How do I verify the 94 submissions claim?"
 
 Answered by talking-points.md and README.md.
 
-The figure is: the private production pipeline's ledger holds **92 verified submissions** (SUBMITTED rows counted 2026-09-15 14:44 PT; the pipeline runs continuously, so the live count only grows). Ground rules around it, stated in the files: (1) it belongs to the private production pipeline, not the public repo — the repo itself makes no submission claims; (2) the claim is built on the explicit-confirmation rule — nothing counts as submitted unless the page itself confirms it, and the ledger increments only on real confirmation evidence; (3) every event lands in an append-only telemetry log with fail-closed reporting rules for outcome analytics. Honest detail on the number: the canonical evidence audit (`engines/outcome-tracking/evidence_gate.py`) reads 92 SUBMITTED rows — 92 with explicit confirmation evidence on file, 0 with posting-URL evidence only, 0 unevidenced. Be honest about the limit: a reader of the public repo cannot independently re-run the private production pipeline. The verifiable part is the discipline (the gates, the telemetry, the fail-closed reporting rules are all public code) — the 92 figure is the traction claim for the discipline, not something the repo asks anyone to take on faith about the code.
+The figure is: the private production pipeline's ledger holds **94 verified submissions** (as of 2026-09-15; the pipeline runs continuously, so the live count only grows). Ground rules around it, stated in the files: (1) it belongs to the private production pipeline, not the public repo — the repo itself makes no submission claims; (2) the claim is built on the explicit-confirmation rule — nothing counts as submitted unless the page itself confirms it, and the ledger increments only on real confirmation evidence; (3) every event lands in an append-only telemetry log with fail-closed reporting rules for outcome analytics. Honest detail on the number: the canonical evidence audit (`engines/outcome-tracking/evidence_gate.py`) reads 94 SUBMITTED rows — 94 with explicit confirmation evidence on file, 0 with posting-URL evidence only, 0 unevidenced. Be honest about the limit: a reader of the public repo cannot independently re-run the private production pipeline. The verifiable part is the discipline (the gates, the telemetry, the fail-closed reporting rules are all public code) — the 94 figure is the traction claim for the discipline, not something the repo asks anyone to take on faith about the code.
 
 ## "How do you avoid ATS fingerprinting?"
 
@@ -53,6 +53,6 @@ The ledger increments only on explicit confirmation evidence — that is the sta
 ## OPEN (for the founder — not answered in the files)
 
 - Exact business model beyond "managed execution is the hosted tier" and seed conversations.
-- Whether to name the private pipeline's scale (beyond the 92 figure), tech stack, or employer response rates.
+- Whether to name the private pipeline's scale (beyond the 94 figure), tech stack, or employer response rates.
 - Product Hunt: in or out?
 - Whether to publish a sanitized sample launch packet / dashboard screenshot as demo material (a screenshot exists at docs/assets/dashboard-screenshot.png — confirm it's launch-ready).

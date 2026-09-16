@@ -26,7 +26,7 @@ gates, ATS detection + capability radar, the launch-packet builder, and
 telemetry. What stays private: the submission techniques ATS vendors could
 fingerprint — publishing those would get everyone's pipeline blocked.
 
-5/ The private pipeline holds 92 verified submissions (ledger-verified 2026-09-15 14:44 PT).
+5/ The private pipeline holds 94 verified submissions (as of 2026-09-15).
 That's proof the discipline works. The repo itself makes no submission
 claims — it's the tools, the gates, and the telemetry behind them.
 
