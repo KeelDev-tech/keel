@@ -14,7 +14,7 @@ verification → launch packets — with honest automation as the product: it on
 ever claims what you tell it is true.
 
 Keel is the public half of a real production pipeline that holds
-**130 verified submissions** in its ledger (ledger-verified, as of 2026-09-16)
+**94 verified submissions** in its ledger (ledger-verified, as of 2026-09-15)
 using this exact discipline: fit scoring, truthfulness gates, clean-form
 checks, and fail-closed handling.
 The execution layer (how applications are actually submitted) stays private by
@@ -69,7 +69,7 @@ ATS vendors. See [SPLIT.md](SPLIT.md).
 - **Keel never invents qualifications.** Anything your profile can't support
   is reported as a gap, never bridged with fiction.
 - **Keel makes no submission claims.** The public repo is the discipline and
-  the tools. The 130-submissions figure belongs to the private production
+  the tools. The 94-submissions figure belongs to the private production
   pipeline that proved the discipline works.
 
 ## Quick start (~5 minutes)
