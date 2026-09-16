@@ -132,6 +132,6 @@ submission claims of its own.
 
 ---
 
-This file supersedes `docs/ROADMAP.md`. It is the repo-root public roadmap;
-the issue tracker carries the fine-grained task list. No timelines are
-promised — items move from Later to Next when evidence arrives, not before.
+This is the repo's public roadmap; the issue tracker carries the
+fine-grained task list. No timelines are promised — items move from Later
+to Next when evidence arrives, not before.
