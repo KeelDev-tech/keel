@@ -13,9 +13,10 @@ An open-core job-application pipeline. Discovery → scoring → materials →
 verification → launch packets — with honest automation as the product: it only
 ever claims what you tell it is true.
 
-Keel is the public half of a real production pipeline that verified
-**55 submitted applications** using this exact discipline: fit
-scoring, truthfulness gates, clean-form checks, and fail-closed handling.
+Keel is the public half of a real production pipeline that holds
+**94 verified submissions** in its ledger (ledger-verified, as of 2026-09-15)
+using this exact discipline: fit scoring, truthfulness gates, clean-form
+checks, and fail-closed handling.
 The execution layer (how applications are actually submitted) stays private by
 design — publishing submission fingerprints would get the pipeline blocked by
 ATS vendors. See [SPLIT.md](SPLIT.md).
@@ -68,7 +69,7 @@ ATS vendors. See [SPLIT.md](SPLIT.md).
 - **Keel never invents qualifications.** Anything your profile can't support
   is reported as a gap, never bridged with fiction.
 - **Keel makes no submission claims.** The public repo is the discipline and
-  the tools. The 55-submissions figure belongs to the private production
+  the tools. The 94-submissions figure belongs to the private production
   pipeline that proved the discipline works.
 
 ## Quick start (~5 minutes)
@@ -88,10 +89,40 @@ Then (run from the workspace root):
 
 ```bash
 KEEL_HOME=$PWD python3 engines/score_roles.py --in sample_data/discovered_roles.example.json --out data/scored.json
-KEEL_HOME=$PWD python3 engines/apply_loop.py          # build one launch packet
-KEEL_HOME=$PWD python3 engines/build_dashboard.py    # render the dashboard
 python3 -m unittest discover -s tests                 # run the test suite
 ```
+
+To watch the full loop end-to-end on demo data, seed one scored lead into
+the queue and build its launch packet. (The sample roles score SKIP under
+the template rubric — its lane weights are yours to fill — so the demo
+forces the top-scoring one to READY/APPLY with a placeholder resume, purely
+to show the packet mechanics. `apply_loop` makes read-only HTTP
+liveness/form-intel probes as documented.)
+
+```bash
+KEEL_HOME=$PWD python3 - <<'EOF'
+import json, os
+home = os.environ["KEEL_HOME"]
+scored = json.load(open(f"{home}/data/scored.json"))
+rows = scored if isinstance(scored, list) else scored.get("entries", [])
+lead = max(rows, key=lambda r: r.get("fit_score", 0))
+lead["status"] = "READY"          # demo override: scoring said SKIP
+lead["action_band"] = "APPLY"     # demo override
+os.makedirs(f"{home}/data/resumes", exist_ok=True)
+open(f"{home}/data/resumes/demo-resume.pdf", "w").write("demo placeholder")
+lead["materials"] = {"resume": "data/resumes/demo-resume.pdf"}
+json.dump({"entries": [lead]},
+          open(f"{home}/data/queues/standard-queue.json", "w"), indent=2)
+print("seeded", lead["role_id"])
+EOF
+KEEL_HOME=$PWD python3 engines/apply_loop.py          # build one launch packet
+KEEL_HOME=$PWD python3 engines/build_dashboard.py    # render the dashboard
+```
+
+`data/launch-packets/<role_id>.json` is the finished product: verified form
+values, banded rules, hard gates, and the EXECUTOR CONTRACT your own
+submission layer (browser automation, ATS APIs, or manual review) runs
+behind. The dashboard renders at `dashboard/dashboard.html`.
 
 Requirements: Python 3.10+ — stdlib only, no dependencies to install.
 CI runs the same suite on 3.10 / 3.11 / 3.12

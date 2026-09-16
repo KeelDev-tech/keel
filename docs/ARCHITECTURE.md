@@ -26,7 +26,7 @@
                  EXECUTOR CONTRACT                     see SPLIT.md)
                         |
                         v
-              record_outcome.py → telemetry/events.jsonl
+              record_outcome.py → data/telemetry/events.jsonl
               log_event.py      → append-only gate/lead events
                         |
                         v
@@ -53,6 +53,7 @@
 | `edge_probe.py` | detection | Monthly capability radar: CONFIRMED/FLIP/INCONCLUSIVE probes |
 | `api_direct_detect.py` | detection | Detects direct-board URL candidates (detection only) |
 | `form_intel.py` | intel | Pre-launch form intelligence over HTTP (read-only probes) |
+| `keel_paths.py` | paths | Single resolver for the workspace root: `KEEL_HOME`, default `~/keel`. No module hardcodes a path. |
 | `apply_loop.py` | packet | Builds launch packets for eligible READY leads |
 | `log_event.py` | telemetry | Append-only event logging; never rewrites history |
 | `record_outcome.py` | telemetry | Outcome telemetry writer (technique-library hooks stubbed) |
@@ -62,18 +63,21 @@
 
 ## Data flow
 
-1. Discovery produces raw leads → `data/scored.json` via `score_roles.py`.
+1. Discovery produces raw leads → `data/scored.json` via `score_roles.py`
+   (carries `fit_score`, `action_band`, `score_breakdown` — no `status`).
 2. Scored leads enter `data/queues/*.json` with `fit_score`, `action_band`,
-   `status`.
+   and `status` (the queue owns status; `score_roles` does not set it).
 3. `apply_loop.py` picks the highest-fit eligible lead (`status` READY,
-   `action_band` APPLY, blocklist/ledger/rate-limit/materials/live-posting
-   gates), runs `form_intel`, builds a generic brief, writes
+   `action_band` APPLY, blocklist/ledger/rate-limit/materials gates, plus a
+   pre-launch live re-verify: HTTP 200 proceeds, 404/410 skips as dead,
+   anything else unverifiable proceeds with a note and the executor
+   re-verifies), runs `form_intel`, builds a generic brief, writes
    `data/launch-packets/<role_id>.json`, marks the lead IN-FLIGHT.
 4. `prescreen.py` screens every packet first; PARK verdicts park the lead in
    your input queue — the packet never reaches an executor.
 5. Your executor (private layer, or your own) consumes the packet under the
    EXECUTOR CONTRACT in the brief, then reports the outcome.
-6. Outcomes land in the ledger + `telemetry/events.jsonl`; analytics and the
+6. Outcomes land in the ledger + `data/telemetry/events.jsonl`; analytics and the
    dashboard read from there. History is append-only — corrections are new
    events, never rewrites.
 
@@ -98,7 +102,7 @@
 
 ## Telemetry schema
 
-`telemetry/events.jsonl` — one JSON object per line:
+`data/telemetry/events.jsonl` (KEEL_HOME-relative) — one JSON object per line:
 
 ```json
 {"ts": "2026-09-15T02:00:00Z", "type": "brief_built",
@@ -106,7 +110,11 @@
  "source": "apply_loop", "details": {"fit_score": 84}}
 ```
 
-Event types: `lead_discovered`, `lead_verified`, `gate_blocked`,
-`brief_built`, `prescreen_parked`, `submitted`, `employer_response`,
-`edge_flip`, `new_ats_detected`, `feeder_empty`, `stale_inflight`.
-Gate vocabulary is centralized in `log_event.py`.
+Event types (the stable list documented in `log_event.py`): `lead_discovered`,
+`lead_verified`, `lead_dead`, `brief_built`, `browser_launched`,
+`gate_encountered`, `gate_cleared`, `gate_blocked`, `account_created`,
+`submitted`, `employer_response`, `error`. The fine-grained vocabulary
+(`edge_flip`, `new_ats_detected`, `feeder_empty`, `stale_inflight`, …) lives in
+`details.gate`, centralized in `log_event.py`'s `GATE_TYPES` — those are gate
+names, not event types. Secret-looking detail keys (passwords, tokens, codes,
+cookies) are scrubbed and never logged.
