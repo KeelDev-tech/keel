@@ -1,0 +1,19 @@
+# Keel sponsorship entry points.
+# Kept to platforms actually set up — empty keys stay commented out so no
+# dead buttons ever render.
+#
+# Approved by Trent 2026-09-15 (yes-to-all): tiers $5/$50/$500/$2,000 ·
+# payout via Open Collective fiscal host (10%) · solo admin.
+# NOTE: the open_collective slug is PROVISIONAL — correct it to the real
+# slug on Open Source Collective approval, and enable the `github` key only
+# after the GitHub Sponsors org profile is live.
+
+github: [KeelDev-tech]          # GitHub Sponsors org profile (activate first)
+
+open_collective: keel           # PROVISIONAL slug — confirm on OSC approval
+
+# ko_fi:                        # not set up — leave disabled
+# patreon:                      # not set up — leave disabled
+
+custom:
+  - "https://opencollective.com/keel"   # PROVISIONAL — mirrors open_collective until confirmed
