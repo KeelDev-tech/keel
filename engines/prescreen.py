@@ -1,6 +1,6 @@
 """Pre-launch packet screening gate for the Keel.
 
-Scans launch packets (hidden_files/apply-launch-packets/<role_id>.json) BEFORE a
+Scans launch packets (data/launch-packets/<role_id>.json) BEFORE a
 browser task is spawned and PARKs anything that needs the applicant's own words/answers
 instead of burning a browser run on it.
 
