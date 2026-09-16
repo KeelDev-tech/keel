@@ -72,8 +72,8 @@ LEVER_HCAPTCHA_MARKERS = ("hcaptcha", "e33f87f8-88ec-4e1a-9a13-df9bbb1d8120")
 CAPTCHA_MARKERS = ("recaptcha", "hcaptcha", "turnstile", "enterprise.js",
                    "captcha")
 
-# Hostnames that are job boards / aggregators / classifieds, not ATS
-# platforms — never auto-onboard these as "new ATS".
+# Legacy exact-match set, kept for backward compatibility; the denylist below
+# (with suffix matching) is the authoritative check in scan_new_ats.
 SKIP_HOSTS = {
     "jobicy.com", "www.jobicy.com", "indeed.com", "www.indeed.com",
     "linkedin.com", "www.linkedin.com", "talent.com", "www.talent.com",
@@ -81,6 +81,48 @@ SKIP_HOSTS = {
     "www.hcareers.com", "ziprecruiter.com", "www.ziprecruiter.com",
     "glassdoor.com", "www.glassdoor.com",
 }
+
+# Hostnames that are job boards / aggregators / classifieds, not ATS
+# platforms — never auto-onboard these as "new ATS".
+# Standing aggregator/board denylist (P-2026-09-14 22:35-arm4-1, human-approved):
+# matched hosts go straight to dismissed_hosts with reason "aggregator/job-board"
+# BEFORE any new_ats_detected gate event fires. Suffix-matched, so subdomains
+# and www-variants are covered.
+AGGREGATOR_DENYLIST = {
+    "jobicy.com", "indeed.com", "linkedin.com", "talent.com",
+    "winebusiness.com", "hcareers.com", "ziprecruiter.com",
+    "glassdoor.com",
+    "dynamitejobs.com", "dailyremote.com", "startup.jobs", "builtin.com",
+    "jooble.org", "remoteok.com", "weworkremotely.com", "winejobsusa.com",
+    "culinaryagents.com",
+    "speculativeliterature.org", "artistcommunities.org", "cityofnapa.org",
+}
+
+
+def _is_denied_host(host):
+    """True if host is on the standing aggregator/board denylist (exact or
+    subdomain match)."""
+    host = (host or "").lower().strip().rstrip(".")
+    return any(host == d or host.endswith("." + d)
+               for d in AGGREGATOR_DENYLIST)
+
+
+# Conditional discovery sources (P-2026-09-15-arm18-3, human-approved):
+# accepted/conditional sweep sources whose hosts may look board-like in
+# scan_new_ats sightings but must NEVER be hard-denylisted. Suffix-matched,
+# so subdomains and www-variants are covered.
+CONDITIONAL_SOURCES = {
+    "remotive.com",
+    "remoterocketship.com",
+}
+
+
+def _is_conditional_host(host):
+    """True if host belongs to a roster-listed conditional discovery source
+    (exact or subdomain match)."""
+    host = (host or "").lower().strip().rstrip(".")
+    return any(host == d or host.endswith("." + d)
+               for d in CONDITIONAL_SOURCES)
 
 
 class FetchError(Exception):
@@ -461,28 +503,66 @@ def scan_new_ats(registry, fetch, log_fn, url_source=None):
             continue
         host_urls.setdefault(host, []).append(url)
     for host, seen in host_urls.items():
+        if _is_conditional_host(host):
+            # Tier 2 (P-2026-09-15-arm18-3): roster-listed conditional
+            # discovery sources are never hard-denylisted and never
+            # dismissed as aggregators. They need stronger evidence —
+            # application-form markers AND >= 3 sightings — before a
+            # new_ats_detected gate event can fire. Checked before the
+            # denylist so a data conflict fails safe toward the source.
+            if len(seen) < 3:
+                continue
+            d = dismissed.get(host)
+            if d and d.get("reason") != "unreachable":
+                continue  # already evaluated — stay quiet
+            _probe_host_markers(registry, dismissed, host, seen, fetch,
+                                log_fn, new_keys,
+                                "conditional-source: no application-form "
+                                "markers")
+            continue
+        if _is_denied_host(host):
+            # Standing aggregator/board denylist: dismiss before any
+            # new_ats_detected gate event can fire (P-2026-09-14 22:35-arm4-1).
+            # Applies regardless of sighting count — a known board is noise.
+            d = dismissed.get(host)
+            if not d or d.get("reason") != "aggregator/job-board":
+                dismissed[host] = {"reason": "aggregator/job-board",
+                                   "date": today(),
+                                   "detail": "standing aggregator/board "
+                                             "denylist (arm4-1)"}
+            continue
         if len(seen) < 2 or host in SKIP_HOSTS:
             continue
         d = dismissed.get(host)
         if d and d.get("reason") != "unreachable":
             continue  # already evaluated and dismissed — stay quiet
-        key = f"auto_host_{_slug(host)}"
-        if key in registry.get("entries", {}):
-            continue
-        findings = unknown_probe_findings(fetch, seen[:2])
-        forms = findings.get("form_actions") or []
-        apis = findings.get("api_hints") or []
-        errors = [s for s in findings.get("samples", []) if s.get("error")]
-        if forms or apis:
-            new_keys.append(_onboard_new_ats(registry, key, host, seen[:2],
-                                             fetch, log_fn, findings))
-        elif errors and len(errors) == len(findings.get("samples", [])):
-            dismissed[host] = {"reason": "unreachable", "date": today(),
-                               "detail": errors[0]["error"][:120]}
-        else:
-            dismissed[host] = {"reason": "no application-form markers",
-                               "date": today()}
+        _probe_host_markers(registry, dismissed, host, seen, fetch, log_fn,
+                            new_keys, "no application-form markers")
     return new_keys
+
+
+def _probe_host_markers(registry, dismissed, host, seen, fetch, log_fn,
+                        new_keys, no_markers_reason):
+    """Probe an unknown host for application-form markers and either onboard
+    it (new_ats_detected), mark it unreachable, or dismiss it quietly.
+    Shared by tier 2 (conditional sources) and tier 3 (unknown hosts); only
+    the dismissal reason differs."""
+    key = f"auto_host_{_slug(host)}"
+    if key in registry.get("entries", {}):
+        return
+    findings = unknown_probe_findings(fetch, seen[:2])
+    forms = findings.get("form_actions") or []
+    apis = findings.get("api_hints") or []
+    errors = [s for s in findings.get("samples", []) if s.get("error")]
+    if forms or apis:
+        new_keys.append(_onboard_new_ats(registry, key, host, seen[:2],
+                                         fetch, log_fn, findings))
+    elif errors and len(errors) == len(findings.get("samples", [])):
+        dismissed[host] = {"reason": "unreachable", "date": today(),
+                           "detail": errors[0]["error"][:120]}
+    else:
+        dismissed[host] = {"reason": no_markers_reason,
+                           "date": today()}
 
 
 def _onboard_new_ats(registry, key, name, samples, fetch, log_fn,

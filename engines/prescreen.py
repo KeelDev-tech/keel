@@ -1,6 +1,6 @@
 """Pre-launch packet screening gate for the Keel.
 
-Scans launch packets (hidden_files/apply-launch-packets/<role_id>.json) BEFORE a
+Scans launch packets (data/launch-packets/<role_id>.json) BEFORE a
 browser task is spawned and PARKs anything that needs the applicant's own words/answers
 instead of burning a browser run on it.
 
@@ -64,6 +64,11 @@ OFFICE_RELOCATION_RE = [
     re.compile(r"hybrid.{0,50}in-?office|in-?office.{0,50}arrangement", re.I),
     re.compile(r"willing to (travel|relocate)", re.I),
     re.compile(r"travel.{0,30}(required|commitment|%\s*of)", re.I),
+    # 4/5-day and full-time on-site exceed the EXAMPLE_MAX_OFFICE_DAYS_PER_WEEK
+    # policy ceiling (see the operator-set constants above). Hyphen-aware:
+    # "4-days-per-week" must catch too.
+    re.compile(r"(4|four|5|five)\s*[-\u2013]?\s*days?.{0,30}(in.?office|on.?site|office)", re.I),
+    re.compile(r"full.?time.{0,30}(in.?office|on.?site)", re.I),
 ]
 
 ESSAY_RE = [
@@ -82,6 +87,54 @@ ATTEST_RE = [
     re.compile(r"unaided", re.I),
     re.compile(r"without.{0,25}ai.{0,25}(assistance|help|aid)", re.I),
     re.compile(r"\battest\w*", re.I),
+]
+
+# Hard-stop attestation classes — never pre-authorized, always park:
+# no-AI / unaided-work / personally-completed attestations would be FALSE
+# if an agent answered them, and travel/office/relocation commitments are
+# gated by the location/travel policy below.
+NO_AI_ATTEST_RE = [
+    re.compile(r"personally completed", re.I),
+    re.compile(r"\bno-?ai\b", re.I),
+    re.compile(r"unaided", re.I),
+    re.compile(r"without.{0,25}ai.{0,25}(assistance|help|aid)", re.I),
+]
+
+# Pre-authorized attestation scope. These answer-bank keys correspond to
+# STANDARD application-form legal attestations (arbitration agreement,
+# background-check consent, at-will acknowledgment,
+# information-truthfulness attestation, data-privacy consent) that the
+# operator has pre-approved as standing answers. The screen_packet
+# ATTEST_RE loop skips the park ONLY when the attestation text maps to one
+# of these banked keys; the keys must exist in the operator's own
+# answer_bank.json — the shipped answer_bank.example.json carries none, so
+# nothing is pre-authorized out of the box.
+PREAUTHORIZED_ATTEST_KEYS = frozenset({
+    "arbitration_agreement",
+    "background_check_consent",
+    "at_will_acknowledgment",
+    "information_truthfulness_attestation",
+    "data_privacy_consent",
+})
+
+# ---------------------------------------------------------------------------
+# Configurable location/travel policy (OPERATOR-SET — sanitized from the
+# private pipeline's personal policy).
+#
+# The private pipeline encodes one operator's personal relocation/travel
+# caps here. This repo ships EXAMPLE values only: set your own before
+# running, matching what you would honestly answer on a form. The screen
+# uses these constants everywhere a commitment question is adjudicated —
+# never invents a % cap or a day count for you.
+# ---------------------------------------------------------------------------
+EXAMPLE_TRAVEL_CAP_PCT = 25          # example: max travel % you accept
+EXAMPLE_MAX_OFFICE_DAYS_PER_WEEK = 3  # example: max in-office days/week
+
+# Operator-configured state-exclusion patterns for posting_eligibility_screen.
+# Example (uncomment and adapt): a posting that explicitly excludes hires in
+# your state is a permanent eligibility block, not the applicant's call.
+#   re.compile(r"\bcalifornia\b.{0,40}(residents?|hires?) not eligible", re.I),
+STATE_EXCLUSION_RES = [
 ]
 
 # ---------------------------------------------------------------------------
@@ -111,6 +164,20 @@ BANK_MAP = [
     (re.compile(r"years of (professional )?experience|total.*years|how many years", re.I), "total_professional_years"),
     (re.compile(r"team size|direct reports|how many (people|reports)", re.I), "team_size"),
     (re.compile(r"years.{0,20}(manag|lead)", re.I), "years_leading"),
+    # Generic domain-tenure rule (operator-configured example): domain-tenure
+    # questions in domains you can truthfully claim map to the bank's
+    # domain-tenure key. Domain-specific tenure outside your domains does not
+    # match -- stays unmapped and parks per the tenure rule. Replace the
+    # example domains below with your own.
+    (re.compile(r"years.{0,25}(operations|consulting|program[-\s]?ops|founder).{0,25}experience", re.I), "domain_tenure"),
+    # Full-autopilot attestation keys (operator pre-authorization, see
+    # PREAUTHORIZED_ATTEST_KEYS above). Placed last -- specific
+    # identity/domain rules above always take precedence.
+    (re.compile(r"arbitration", re.I), "arbitration_agreement"),
+    (re.compile(r"background check|consumer report|investigative report", re.I), "background_check_consent"),
+    (re.compile(r"\bat[\s-]?will\b", re.I), "at_will_acknowledgment"),
+    (re.compile(r"(certify|attest).{0,40}information.{0,40}(true|accurate|complete)|information.{0,40}(is|are).{0,20}(true|accurate|complete)", re.I), "information_truthfulness_attestation"),
+    (re.compile(r"privacy (policy|notice)|data (privacy|processing).{0,20}consent|consent.{0,20}(data|privacy).{0,20}(processing|use)", re.I), "data_privacy_consent"),
 ]
 
 # Fallback employer form patterns. A JSON file `employer_form_patterns.json`
@@ -148,6 +215,256 @@ def load_employer_patterns():
         except Exception as e:
             print(f"  prescreen: could not load {PATTERNS_FILE}: {e}", file=sys.stderr)
     return patterns
+
+
+# ---------------------------------------------------------------------------
+# Location/travel policy adjudication (operator-set; see the EXAMPLE_*
+# constants above). Answers only when the question carries explicit,
+# parseable commitments; anything ambiguous parks — never invent a cap.
+# ---------------------------------------------------------------------------
+
+def policy_travel_ok(question):
+    """Travel gate: Yes only when the question explicitly states travel at or
+    below EXAMPLE_TRAVEL_CAP_PCT on a defined schedule.
+
+    Returns (True, note) or (False, park_reason). Generic, regular,
+    unspecified, or open-ended travel parks — never invent a commitment."""
+    percents = [int(x) for x in re.findall(r"(\d+)\s*%", question or "")]
+    if percents:
+        asked = max(percents)
+        if asked <= EXAMPLE_TRAVEL_CAP_PCT:
+            return True, "asked %d%% within policy cap %d%%" % (
+                asked, EXAMPLE_TRAVEL_CAP_PCT)
+        return False, "asked %d%% exceeds policy cap %d%%" % (
+            asked, EXAMPLE_TRAVEL_CAP_PCT)
+    return False, "no parseable travel percentage — park (never invent a cap)"
+
+
+_DAY_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5}
+
+
+def _office_days_in_span(text):
+    """Day counts (digits or English words) in a text span; [] when none."""
+    nums = [int(x) for x in re.findall(r"(\d+)", text or "")]
+    for w, n in _DAY_WORDS.items():
+        if re.search(r"\b%s\b" % w, text or "", re.I):
+            nums.append(n)
+    return nums
+
+
+def policy_office_ok(question):
+    """Office gate: Yes when the question explicitly states on-site/hybrid at
+    or below EXAMPLE_MAX_OFFICE_DAYS_PER_WEEK.
+
+    Returns (True, note) or (False, park_reason). Higher frequencies,
+    full-time on-site, or unparseable non-frequency content park."""
+    q = question or ""
+    day_nums = []
+    for m in re.finditer(r"(\d+)\s*[-\u2013]?\s*days?", q, re.I):
+        # Hyphen-aware: hyphenated "4-days-per-week" must parse as 4, not
+        # fall through to "no parseable frequency".
+        day_nums.append(int(m.group(1)))
+    for w, n in _DAY_WORDS.items():
+        if re.search(r"\b%s\s*days?\b" % w, q, re.I):
+            day_nums.append(n)
+    # Parenthesized Anchor Day lists, e.g. "(Mon/Tue/Thu)" = 3 days.
+    anchor = re.search(r"\((Mon|Tue|Wed|Thu|Fri)(/(Mon|Tue|Wed|Thu|Fri)){1,4}\)", q)
+    if anchor:
+        day_nums.append(anchor.group(0).count("/") + 1)
+    if day_nums:
+        asked = max(day_nums)  # conservative: the highest stated frequency
+        if asked <= EXAMPLE_MAX_OFFICE_DAYS_PER_WEEK:
+            return True, "asked %d days/week within policy ceiling %d" % (
+                asked, EXAMPLE_MAX_OFFICE_DAYS_PER_WEEK)
+        return False, "asked %d days/week exceeds policy ceiling %d" % (
+            asked, EXAMPLE_MAX_OFFICE_DAYS_PER_WEEK)
+    if re.search(r"full.?time.{0,25}(on.?site|in.?office)", q, re.I):
+        return False, "full-time on-site/in-office exceeds policy ceiling"
+    return False, "no parseable office day frequency — park"
+
+
+def _posting_office_violation(text):
+    """Policy office-cap on posting text.
+
+    Returns a reason fragment or None. Conservative by design: a day count
+    only counts with office-context nearby, and an explicit at-or-below-cap
+    frequency short-circuits clean before the full-time pattern can fire
+    (so "full-time hybrid, 3 days in office" stays clean).
+    """
+    t = text or ""
+    day_nums = []
+    for mm in re.finditer(r"(\d+)\s*days?", t, re.I):
+        ctx = t[max(0, mm.start() - 50):mm.end() + 50]
+        if re.search(r"\boffice\b|on.?site|in.?person|workplace", ctx, re.I):
+            day_nums.append(int(mm.group(1)))
+    for w, n in _DAY_WORDS.items():
+        for mm in re.finditer(r"\b%s\s*days?\b" % w, t, re.I):
+            ctx = t[max(0, mm.start() - 50):mm.end() + 50]
+            if re.search(r"\boffice\b|on.?site|in.?person|workplace", ctx, re.I):
+                day_nums.append(n)
+    if day_nums:
+        asked = max(day_nums)
+        if asked > EXAMPLE_MAX_OFFICE_DAYS_PER_WEEK:
+            return ("%d days/week in-office/on-site requirement "
+                    "(policy cap is %d)" % (asked, EXAMPLE_MAX_OFFICE_DAYS_PER_WEEK))
+        return None
+    m = re.search(r"full.?time.{0,30}(in.?person|in.?office|on.?site)", t, re.I)
+    if m:
+        return ("full-time %s requirement (policy: full-time "
+                "on-site/in-person parks)" % m.group(1))
+    return None
+
+
+def posting_eligibility_screen(text):
+    """Hard eligibility blockers in posting text.
+
+    Returns [reason, ...]; empty = clean. Pure function, no network.
+    These are permanent eligibility blocks, not the applicant's call, so
+    they park as PARKED (recoverable), never needs_input."""
+    reasons = []
+    t = text or ""
+    for pat in STATE_EXCLUSION_RES:
+        m = pat.search(t)
+        if m:
+            reasons.append(
+                "posting explicitly excludes hires/residents in your state "
+                "(eligibility): \"%s\"" % m.group(0).strip()[:120])
+            break
+    office_hit = _posting_office_violation(t)
+    if office_hit:
+        reasons.append(
+            "posting office requirement exceeds policy cap (eligibility): %s"
+            % office_hit)
+    return reasons
+
+
+# ---------------------------------------------------------------------------
+# Field-Requirement Protocol (FRP) packet write-back
+# ---------------------------------------------------------------------------
+
+def _frp_write_packet_back(packet):
+    """Persist a packet that FRP annotated, back to its packet file.
+
+    Atomic tmp+replace. No-op when the packet carries no role_id or the
+    packet file is gone (buffer/archived packets are out of scope).
+    """
+    role_id = packet.get("role_id")
+    if not role_id:
+        return
+    path = os.path.join(PACKET_DIR, f"{role_id}.json")
+    if not os.path.exists(path):
+        return
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(packet, f, indent=1)
+    os.replace(tmp, path)
+
+
+def _frp_unmapped(question, packet, answer_bank):
+    """Route one unmapped required question through the Field-Requirement
+    Protocol. Returns "answered" (do not park), a reason string (park), or
+    None (FRP absent/failed/skipped — caller uses the legacy reason)."""
+    try:
+        import field_question_protocol as frp
+    except Exception:
+        return None
+    try:
+        res = frp.handle_unmapped_question(
+            question, packet.get("company", ""), packet.get("role_id", ""),
+            packet.get("ats", ""), bank=answer_bank)
+    except Exception as e:
+        print(f"  prescreen: FRP hook failed (non-fatal): {e}", file=sys.stderr)
+        return None
+    action = res.get("action")
+    if action == "answered":
+        d = res.get("derived") or {}
+        try:
+            packet.setdefault("frp_derived_answers", {})[question] = {
+                "bank_key": d.get("bank_key"),
+                "answer": d.get("answer"),
+                "provenance": d.get("provenance"),
+            }
+            _frp_write_packet_back(packet)
+        except Exception as e:
+            print(f"  prescreen: FRP packet write-back failed (non-fatal): {e}",
+                  file=sys.stderr)
+        return "answered"
+    if action in ("instant-park", "park"):
+        return res.get("reason")
+    return None  # "skip": non-question operational note, nothing to park on
+
+
+# ---------------------------------------------------------------------------
+# Pre-promotion screen (blocker-aware promotion: screen before promoting)
+# ---------------------------------------------------------------------------
+
+def render_probe_brief(intel):
+    """Render a form_intel probe dict into the brief FORM INTEL text format.
+
+    Same rendering the post-build screen sees, so extract_form_intel and the
+    question extractors behave identically here. Terminated with STEP 3 to
+    satisfy extract_form_intel's lookahead.
+    """
+    lines = ["FORM INTEL — VERIFIED PRE-LAUNCH (pre-promotion probe):"]
+    for q in intel.get("questions", []) or []:
+        line = f"  - [{q.get('type')}] {q.get('label')}"
+        if q.get("options"):
+            line += f"  OPTIONS: {' | '.join(q['options'])}"
+        lines.append(line)
+    lines.append("")
+    lines.append("STEP 3")
+    return "\n".join(lines)
+
+
+def screen_entry_prepromotion(entry, url=None, answer_bank=None):
+    """Screen a LIVE-verified lead for input blockers BEFORE READY promotion.
+
+    Runs the full screen_packet commitment/essay/attestation/question checks
+    against an HTTP form-intel probe of the posting, so blocked leads route
+    straight to needs_input without ever promoting or burning a packet build.
+
+    Returns {"verdict": "CLEAN"|"PARK", "reasons": [...]}.
+    Fail-OPEN by design: no URL, probe failure, or an ATS with no HTTP
+    extraction returns CLEAN — the post-build prescreen still guards those
+    exactly as before this change. Never raises.
+    """
+    try:
+        e = entry or {}
+        probe_url = url or e.get("ats_url") or e.get("application_url") or ""
+        if not probe_url:
+            return {"verdict": "CLEAN", "reasons": []}
+        try:
+            import form_intel as _fi
+        except Exception:
+            return {"verdict": "CLEAN", "reasons": []}
+        try:
+            intel = _fi.probe_url(probe_url)
+        except Exception:
+            return {"verdict": "CLEAN", "reasons": []}
+        if not isinstance(intel, dict):
+            return {"verdict": "CLEAN", "reasons": []}
+        # NOTE: empty questions do NOT early-return CLEAN. An ATS with no
+        # HTTP extraction still runs the blind employer-prior path inside
+        # screen_packet — identical to the post-build behavior for
+        # intel-less packets. Only a URL/import/probe failure fails open.
+        bank = answer_bank
+        if bank is None:
+            bank_path = os.path.join(BASE, "answer_bank.json")
+            bank = json.load(open(bank_path)) if os.path.exists(bank_path) \
+                else {}
+        packet = {
+            "role_id": e.get("role_id"),
+            "company": e.get("company") or "",
+            "title": e.get("title") or "",
+            "ats": e.get("ats") or intel.get("ats") or "",
+            "brief": render_probe_brief(intel),
+            "posting_text": e.get("posting_text") or "",
+        }
+        return screen_packet(packet, bank)
+    except Exception:
+        # Fail-open: any unexpected trouble degrades to the pre-change
+        # behavior (promote; post-build prescreen guards).
+        return {"verdict": "CLEAN", "reasons": []}
 
 
 def extract_form_intel(brief):
@@ -200,6 +517,12 @@ def screen_packet(packet, answer_bank, employer_patterns=None):
     company = packet.get("company", "") or ""
     intel = extract_form_intel(brief)
 
+    # Posting-text eligibility: hard blockers that live on the posting,
+    # invisible to form-intel screening. Screened ONLY on posting_text —
+    # never the brief (its GATES template would false-positive).
+    for reason in posting_eligibility_screen(packet.get("posting_text") or ""):
+        reasons.append(reason)
+
     for pat in _hit(OFFICE_RELOCATION_RE, intel):
         m = re.search(pat, intel, re.I)
         label = m.group(0).strip() if m else pat
@@ -218,7 +541,26 @@ def screen_packet(packet, answer_bank, employer_patterns=None):
 
     for pat in _hit(ATTEST_RE, intel):
         m = re.search(pat, intel, re.I)
-        label = m.group(0).strip() if m else pat
+        if not m:
+            continue
+        label = m.group(0).strip()
+        # Window the match so question_mappable sees the actual question,
+        # not the whole intel blob.
+        window = intel[max(0, m.start() - 250): m.end() + 250]
+        # Hard-stop classes first: no-AI / unaided-work / personally-completed
+        # would be FALSE if answered by an agent — always park.
+        if any(p.search(window) for p in NO_AI_ATTEST_RE):
+            reasons.append(
+                f"Required attestation needs the applicant's explicit word (attest): "
+                f"\"{label[:120]}\""
+            )
+            continue
+        # Pre-authorized routing: standard legal attestations whose text maps
+        # to a banked pre-authorized key skip the park — the brief carries the
+        # operator's standing answer. Anything else parks.
+        ok, _key = question_mappable(window, answer_bank)
+        if ok and _key in PREAUTHORIZED_ATTEST_KEYS:
+            continue
         reasons.append(
             f"Required attestation needs the applicant's explicit word (attest): "
             f"\"{label[:120]}\""
@@ -226,11 +568,18 @@ def screen_packet(packet, answer_bank, employer_patterns=None):
 
     for q in extract_required_text_questions(intel):
         ok, _key = question_mappable(q, answer_bank)
-        if not ok:
-            reasons.append(
-                f"Required free-text question not in answer bank -- needs the applicant's "
-                f"own words, must not invent: \"{q[:120]}\""
-            )
+        if ok:
+            continue
+        frp_out = _frp_unmapped(q, packet, answer_bank)
+        if frp_out == "answered":
+            continue  # answered from verified facts/banked applicant answer
+        if frp_out:
+            reasons.append(frp_out)
+            continue
+        reasons.append(
+            f"Required free-text question not in answer bank -- needs the applicant's "
+            f"own words, must not invent: \"{q[:120]}\""
+        )
 
     patterns = employer_patterns if employer_patterns is not None else load_employer_patterns()
     company_lc = (packet.get("company") or "").lower()
@@ -305,23 +654,40 @@ def _primary_gate(reasons):
 
 
 def park_lead(role_id, reasons, queue_dir=None, backup=True):
-    """Move a lead from standard-queue.json to needs_input-queue.json using
-    ONLY the conventional fields the classifier reads. Overwrites any stale
-    status_reason. Backs up both queue files first.
+    """Move a lead from its owning queue (standard OR strategic) to
+    needs_input-queue.json using ONLY the conventional fields the
+    classifier reads. Overwrites any stale status_reason. Backs up the
+    touched queue files first. One-lead-one-queue is preserved: the lead
+    is removed from exactly the queue file that held it.
 
     Returns {"ok": True, ...} or {"ok": False, "error": ...}.
     """
     qdir = queue_dir or QUEUE_DIR
     std_path = os.path.join(qdir, "standard-queue.json")
+    strat_path = os.path.join(qdir, "strategic-queue.json")
     ni_path = os.path.join(qdir, "needs_input-queue.json")
 
     std_leads = _load_queue(std_path)
+    strat_leads = _load_queue(strat_path)
     ni_leads = _load_queue(ni_path)
 
-    hit = [l for l in std_leads if l.get("role_id") == role_id]
-    if not hit:
-        return {"ok": False, "error": f"{role_id} not found in standard-queue.json"}
-    lead = hit[0]
+    owner = None
+    owner_leads = None
+    for name, leads in (("standard-queue.json", std_leads),
+                        ("strategic-queue.json", strat_leads)):
+        hit = [l for l in leads if l.get("role_id") == role_id]
+        if hit:
+            if owner is not None:
+                # Cross-queue duplicate role_id: fail closed — never move a
+                # lead while its identity is ambiguous.
+                return {"ok": False,
+                        "error": f"{role_id} found in both "
+                                 f"{owner} and {name}; refusing to move"}
+            owner, owner_leads, lead = name, leads, hit[0]
+    if owner is None:
+        return {"ok": False,
+                "error": f"{role_id} not found in standard- or "
+                         f"strategic-queue.json"}
 
     ts = datetime.now(PDT).strftime("%Y%m%d-%H%M%S")
     ts_short = datetime.now(PDT).strftime("%Y-%m-%d %H:%M PDT")
@@ -329,7 +695,8 @@ def park_lead(role_id, reasons, queue_dir=None, backup=True):
     if backup:
         bdir = os.path.join(qdir, f"_backup-{ts}-prescreen")
         os.makedirs(bdir, exist_ok=True)
-        for src in (std_path, ni_path):
+        owner_path = std_path if owner == "standard-queue.json" else strat_path
+        for src in (owner_path, ni_path):
             if os.path.exists(src):
                 shutil.copy(src, os.path.join(bdir, os.path.basename(src)))
 
@@ -350,9 +717,10 @@ def park_lead(role_id, reasons, queue_dir=None, backup=True):
     )
     lead["status_updated"] = ts_short
 
-    std_leads = [l for l in std_leads if l.get("role_id") != role_id]
+    owner_leads = [l for l in owner_leads if l.get("role_id") != role_id]
     ni_leads.append(lead)
-    _save_queue(std_path, std_leads)
+    owner_path = std_path if owner == "standard-queue.json" else strat_path
+    _save_queue(owner_path, owner_leads)
     _save_queue(ni_path, ni_leads)
 
     try:
@@ -366,7 +734,8 @@ def park_lead(role_id, reasons, queue_dir=None, backup=True):
     except Exception as e:
         print(f"  prescreen: telemetry log failed (non-fatal): {e}", file=sys.stderr)
 
-    return {"ok": True, "role_id": role_id, "backup": backup}
+    return {"ok": True, "role_id": role_id, "backup": backup,
+            "from_queue": owner}
 
 
 # ---------------------------------------------------------------------------

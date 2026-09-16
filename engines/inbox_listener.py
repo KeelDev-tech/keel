@@ -2,14 +2,23 @@
 """Inbox outcome listener — classifies ATS/employer mail and links it to ledger entries.
 
 Backfills employer responses (auto-acks, rejections, interview invites, info
-requests) against the application ledger. Read-only by default; --live appends
+requests, offers) against the application ledger. Read-only by default; --live appends
 `employer_response` telemetry events via log_event.py (append-only, safe).
-
-Usage:
-    python3 inbox_listener.py [--lookback-days N] [--live] [--out DIR]
 
 Classification is rule-based and fully auditable: every label links to the
 source message. Spot-check the report before trusting precision.
+
+The mail source is pluggable (see MailSource): the public edition ships a
+MaildirReader that reads .eml files from a local directory — no account
+coupling. Live events carry the message's real receipt date
+(details.message_date, preferred for latency math), a quoted-text excerpt
+for downstream quote-only extraction, and the company's linked fit_score
+so score→conversion becomes measurable.
+
+LinkedIn DMs/InMails and Indeed employer messages are unwatched channels
+(no read API); the listener catches their EMAIL NOTIFICATIONS via
+sender/subject tripwires (linkedin_tripwire / indeed_tripwire) and tags
+them so the channel is attributable in outcome analytics.
 """
 import json
 import os
@@ -48,6 +57,13 @@ REJECTION_PATTERNS = [
     r"pursue other candidates", r"no longer under consideration",
     r"we will not be moving", r"decided to pursue",
 ]
+OFFER_PATTERNS = [
+    r"\boffer letter\b",
+    r"\bextending an offer\b", r"\bextend(?:ed|s)? (?:you |an )?offer\b",
+    r"\bpleased to offer\b", r"\bdelighted to offer\b", r"\bexcited to offer\b",
+    r"\bthrilled to offer\b", r"\bverbal offer\b",
+    r"\bformal offer\b",
+]
 INVITE_SUBJECT = r"interview"
 INVITE_SCHEDULE = r"schedul|invit|confirm|request|availability|calendar"
 
@@ -66,6 +82,19 @@ def classify(subject, body, from_email):
     for p in REJECTION_PATTERNS:
         if re.search(p, text, re.IGNORECASE):
             return "REJECTION", p
+    # OFFER before INTERVIEW_INVITE: offer follow-ups can carry scheduling
+    # language ("let's schedule a call to discuss the offer") without the
+    # word "interview" in the subject. Order matters — decisive first.
+    # Guard: "extend an offer to another candidate" is a rejection of US —
+    # it must not classify as our OFFER (none of the rejection patterns
+    # catch that phrasing).
+    _offer_to_other = re.search(
+        r"\boffer\b.{0,40}\b(?:another|a different|other)\s+candidate\b",
+        text, re.IGNORECASE)
+    if not _offer_to_other:
+        for p in OFFER_PATTERNS:
+            if re.search(p, text, re.IGNORECASE):
+                return "OFFER", p
     if (re.search(INVITE_SUBJECT, subj, re.IGNORECASE)
             and re.search(INVITE_SCHEDULE, text, re.IGNORECASE)):
         return "INTERVIEW_INVITE", "subject-schedule"
@@ -193,6 +222,115 @@ def extract_company(msg, ledger_idx):
     return None, "unmatched"
 
 
+def linked_fit_score(company_key, ledger_idx):
+    """Predictive fit_score of the most recent SUBMITTED ledger row for a
+    company, so employer_response events can carry it and score→conversion
+    becomes measurable. Returns None when no SUBMITTED row carries a numeric
+    score — never guessed."""
+    rows = [e for e in ledger_idx.get(company_key, [])
+            if e.get("status") == "SUBMITTED"]
+    if not rows:
+        return None
+
+    def _datekey(e):
+        ds = e.get("date_submitted") or e.get("submitted_at") or ""
+        try:
+            d = datetime.fromisoformat(
+                str(ds).replace(" PDT", "-07:00").replace(" PST", "-08:00"))
+            if d.tzinfo is None:
+                d = d.replace(tzinfo=timezone.utc)
+            return (1, d)
+        except Exception:
+            return (0, datetime.min.replace(tzinfo=timezone.utc))
+
+    rows.sort(key=_datekey)
+    for e in reversed(rows):
+        fs = e.get("fit_score")
+        if isinstance(fs, (int, float)) and not isinstance(fs, bool):
+            return fs
+    return None
+
+
+# ---------------------------------------------------------------------------
+# LinkedIn / Indeed notification tripwires. LinkedIn DMs/InMails and Indeed
+# employer messages live behind logins with no read API, so the listener
+# only ever sees the EMAIL NOTIFICATIONS they send. These patterns catch
+# that message-like traffic (and tag it) instead of dropping it with
+# ledger_company=None. Deliberately scoped to message-like traffic: a
+# blanket sender match would flood the triage cap with job alerts.
+#
+# Gmail-query form (for Gmail-backed MailSource subclasses):
+#   LINKEDIN_SWEEP = from:"hit-reply@linkedin.com"
+#                    OR from:"inmail-hit-reply@linkedin.com"
+#                    OR from:"invitations@linkedin.com"
+#                    OR subject:"You have a new message"
+#                    OR subject:"replied to your message"
+#                    OR subject:"invited you to connect"
+#                    OR subject:"sent you an InMail" OR subject:"new InMail"
+#   INDEED_SWEEP = from:indeed.com (subject:"new message"
+#                  OR subject:"message from" OR subject:"sent you a message"
+#                  OR subject:"responded to your application")
+# ---------------------------------------------------------------------------
+_LINKEDIN_SENDER_RE = re.compile(r"linkedin\.com", re.IGNORECASE)
+_INDEED_SENDER_RE = re.compile(r"indeed\.com", re.IGNORECASE)
+_LINKEDIN_MSG_SUBJECTS = ("you have a new message", "replied to your message",
+                          "invited you to connect", "sent you an inmail",
+                          "new inmail")
+_INDEED_MSG_SUBJECTS = ("new message", "message from", "sent you a message",
+                        "responded to your application")
+
+
+def _msg_from_email(msg):
+    frm = msg.get("from", "")
+    return frm.get("email") if isinstance(frm, dict) else str(frm)
+
+
+def is_linkedin_notification(from_email):
+    """True when the message arrived via a LinkedIn notification address."""
+    return bool(_LINKEDIN_SENDER_RE.search(from_email or ""))
+
+
+def is_indeed_notification(from_email):
+    """True when the message arrived via an Indeed notification address."""
+    return bool(_INDEED_SENDER_RE.search(from_email or ""))
+
+
+def linkedin_tripwire(msg):
+    """True for message-like LinkedIn email notifications (unwatched
+    channel — message content behind LinkedIn login is not readable; the
+    notification itself is tagged so the channel is attributable)."""
+    subj = (msg.get("subject") or "").lower()
+    return (is_linkedin_notification(_msg_from_email(msg))
+            and any(s in subj for s in _LINKEDIN_MSG_SUBJECTS))
+
+
+def indeed_tripwire(msg):
+    """True for message-like Indeed email notifications. Same residual gap
+    as LinkedIn: content behind Indeed login is not readable without the
+    user's authenticated session — no API, and scraping would violate ToS.
+    Notifications are tagged so the channel is attributable in outcome
+    analytics."""
+    subj = (msg.get("subject") or "").lower()
+    return (is_indeed_notification(_msg_from_email(msg))
+            and any(s in subj for s in _INDEED_MSG_SUBJECTS))
+
+
+def merge_triage_dedupe(msgs, kw):
+    """Merge keyword-sweep hits into the triage list, deduping by message id.
+
+    Uses its own local `triage_ids` set — it never touches the caller's
+    persisted `seen` set. (Regression note: a previous version shadowed
+    `seen` here, so the live loop skipped every message and --live logged
+    nothing.)
+    """
+    triage_ids = {m["id"] for m in msgs}
+    for m in kw:
+        if m["id"] not in triage_ids:
+            msgs.append(m)
+            triage_ids.add(m["id"])
+    return triage_ids
+
+
 DATA_DIR = os.path.join(PIPE, "data")
 
 
@@ -230,15 +368,16 @@ def main(argv, mail_source=None):
     sender_q = " OR ".join(f"from:{s}" for s in ATS_SENDERS)
     query = f"newer_than:{lookback}d ({sender_q})"
     msgs = mail_source.triage(lookback_days=lookback)
-    # keyword sweep for anything the sender filter missed
-    kw = [m for m in mail_source.triage(lookback_days=lookback)
-            if re.search(r"thank you for applying|your application|interview",
-                         f"{m.get('subject','')} {m.get('body_text','')}", re.I)]
-    seen = {m["id"] for m in msgs}
-    for m in kw:
-        if m["id"] not in seen:
-            msgs.append(m)
-            seen.add(m["id"])
+    # keyword sweep for anything the sender filter missed, plus the
+    # LinkedIn / Indeed notification tripwires (unwatched channels —
+    # email tripwire only)
+    def _kw_hit(m):
+        text = f"{m.get('subject', '')} {m.get('body_text', '')}"
+        return (re.search(r"thank you for applying|your application|interview",
+                          text, re.I)
+                or linkedin_tripwire(m) or indeed_tripwire(m))
+    kw = [m for m in mail_source.triage(lookback_days=lookback) if _kw_hit(m)]
+    merge_triage_dedupe(msgs, kw)
 
     results = []
     for m in msgs:
@@ -264,6 +403,13 @@ def main(argv, mail_source=None):
             "ledger_company": company_key,
             "match_how": match_how,
             "pipeline_related": pipeline_related,
+            # LinkedIn / Indeed are unwatched channels; tag notification
+            # emails so they're attributable even when ledger_company is None.
+            "linkedin": is_linkedin_notification(from_email),
+            "indeed": is_indeed_notification(from_email),
+            # Body excerpt for the downstream hooks' quote-only extraction
+            # (offer terms, rejection signals). Truncated at write time.
+            "body_text": full.get("body_text", "") or full.get("snippet", ""),
         })
 
     # ack coverage: submitted >24h ago without an AUTO_ACK
@@ -296,7 +442,8 @@ def main(argv, mail_source=None):
             lane = e.get("resume_lane", "?")
             s = lane_stats.setdefault(lane, {"AUTO_ACK": 0, "REJECTION": 0,
                                              "INTERVIEW_INVITE": 0, "INFO_REQUEST": 0,
-                                             "ASSESSMENT": 0, "OTHER": 0})
+                                             "ASSESSMENT": 0, "OFFER": 0,
+                                             "OTHER": 0})
             if r["classification"] in s:
                 s[r["classification"]] += 1
 
@@ -325,13 +472,30 @@ def main(argv, mail_source=None):
             seen.add(r["message_id"])
             if r["classification"] in ("OTHER",) or not r["ledger_company"]:
                 continue
-            details = json.dumps({
+            fs = linked_fit_score(r["ledger_company"], ledger_idx)
+            details = {
                 "outcome": r["classification"],
                 "company_key": r["ledger_company"],
                 "subject": (r["subject"] or "")[:120],
                 "match_how": r["match_how"],
-                "backfilled": True,
-            })
+                "backfilled": False,
+                "message_date": r["date"],          # mail receipt date
+                "message_id": r["message_id"],
+                "source": "inbox-listener-live",
+                # Body excerpt lets the downstream hooks extract terms /
+                # signals from quoted employer text. The hooks treat a
+                # missing excerpt as "not stated" — never invented.
+                "quoted_text": (r.get("body_text") or "")[:2000],
+            }
+            if fs is not None:
+                details["fit_score"] = fs   # score→conversion measurable
+            # Channel attribution for notification tripwires (additive;
+            # the dispatcher only reads `outcome`).
+            if r.get("indeed"):
+                details["channel"] = "indeed-notification"
+            elif r.get("linkedin"):
+                details["channel"] = "linkedin-notification"
+            details = json.dumps(details)
             subprocess.run(
                 [sys.executable, LOG_EVENT, "employer_response",
                  "--company", r["ledger_company"],
@@ -366,6 +530,26 @@ def main(argv, mail_source=None):
              and not r["pipeline_related"]]
     if noise:
         print(f"non-pipeline interview chatter (excluded): {len(noise)}")
+    # Surface LinkedIn notifications explicitly — the channel is
+    # unwatched, so these are the only tripwire we have.
+    li = [r for r in results if r.get("linkedin")]
+    if li:
+        print(f"linkedin notifications (unwatched channel — email tripwire "
+              f"only): {len(li)}")
+        for r in li[:15]:
+            print(f"  in {r['from']} | {r['subject']} | "
+                  f"{r['classification']} | {r['ledger_company']}")
+    # Indeed notifications: same treatment — content lives behind Indeed
+    # login, so the tripwire only proves outreach happened. A notification
+    # means "check the Indeed inbox"; the classifier labels what the
+    # notification subject itself reveals.
+    ind = [r for r in results if r.get("indeed")]
+    if ind:
+        print(f"indeed notifications (unwatched channel — email tripwire "
+              f"only, check Indeed inbox): {len(ind)}")
+        for r in ind[:15]:
+            print(f"  in {r['from']} | {r['subject']} | "
+                  f"{r['classification']} | {r['ledger_company']}")
 
 
 if __name__ == "__main__":

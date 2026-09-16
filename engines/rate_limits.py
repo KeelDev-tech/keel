@@ -9,6 +9,10 @@ Read-only: never writes the ledger. Counts only exact `status == SUBMITTED` rows
 Budgets live in rate_limits.json next to this file (rate_limits.example.json is the template):
     employer -> {"limit": int, "window_days": int, "evidence": str, "notes": str}
 
+Public example (employer-stated cap, harmless public fact): OpenAI's application
+form states a 5-applications-per-180-days cap — record exactly such stated
+budgets in your own rate_limits.json `evidence` field.
+
 Usage:
     from rate_limits import is_allowed, assert_allowed
     ok, reason = is_allowed("openai")

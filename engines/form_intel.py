@@ -37,6 +37,23 @@ QUEUE = os.path.join(DATA, "queues", "standard-queue.json")
 UA = {"User-Agent": "Mozilla/5.0"}
 
 
+def has_hcaptcha(html):
+    """Read-only hCaptcha detection on a hosted apply page's HTML.
+
+    True when the page renders hCaptcha (a token is required to submit).
+    Public detection knowledge: carrier-marker strings only
+    (hcaptcha.com / h-captcha render markers), no submission logic.
+    """
+    low = (html or "").lower()
+    return ("hcaptcha.com" in low or "h-captcha" in low
+            or "hcaptcha.render" in low)
+
+
+def fetch_apply_html(org, posting_id):
+    """GET Lever's hosted apply page HTML. Raises on any failure."""
+    return fetch(f"https://jobs.lever.co/{org}/{posting_id}/apply")
+
+
 def fetch(url):
     req = urllib.request.Request(url, headers=UA)
     with urllib.request.urlopen(req, timeout=25) as r:
@@ -86,6 +103,20 @@ def lever_intel(org, posting_id):
             "options": (q.get("options") or []),
             "required": q.get("required"),
         })
+    # hCaptcha carrier: the prescreen CAPTCHA marker keys on a "[captcha] ..."
+    # line in FORM INTEL, but no writer populated it (documented carrier gap).
+    # Lever's hosted apply page renders hCaptcha platform-wide (token required
+    # to submit); the API posting body never mentions it. Fetch the hosted
+    # page and inject the marker when present — this is what lets prescreen
+    # PARK a Lever lead pre-build instead of burning browser-minutes on a
+    # full fill. Best-effort: any failure skips the marker and intel still
+    # succeeds. (Pure read-only detection; no submission logic.)
+    try:
+        if has_hcaptcha(fetch_apply_html(org, posting_id)):
+            qs.append({"label": "[captcha] hCaptcha at submit",
+                       "type": "captcha", "options": [], "required": True})
+    except Exception:
+        pass
     return {"ats": "lever", "form_url": d.get("hostedUrl"),
             "questions": qs, "rendered_option_fetch_needed": []}
 

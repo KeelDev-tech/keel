@@ -22,6 +22,9 @@ ATS_PATTERNS = {
         r"job-boards\.greenhouse\.io",
         r"boards-api\.greenhouse\.io",
         r"greenhouse\.io",
+        r"[?&]gh_jid=",  # Greenhouse's own job-id query param on employer career pages
+                         # (e.g. /careers/positions/7980600?gh_jid=7980600) — identity
+                         # only; detection never assumes a direct board URL from it.
     ],
     "lever": [
         r"lever\.co",
@@ -58,6 +61,34 @@ ATS_PATTERNS = {
     ],
     "tealhq": [
         r"tealhq\.com",
+    ],
+    "oracle_recruiting_cloud": [
+        r"fa\.[a-z0-9]+\.oraclecloud\.com",  # Oracle HCM Candidate Experience tenants (e.g. egmn.fa.us2.oraclecloud.com)
+    ],
+    "comeet": [
+        r"comeet\.co",
+    ],
+    "teamtailor": [
+        r"teamtailor\.com",
+    ],
+    "careerpuck": [
+        r"careerpuck\.com",  # third-party career-board host; resolve the proxied ATS per posting
+    ],
+    "workable": [
+        r"workable\.com",
+        r"apply\.workable\.com",
+    ],
+    "recruitee": [
+        r"recruitee\.com",
+    ],
+    "pinpoint": [
+        r"pinpointhq\.com",
+    ],
+    "personio": [
+        r"jobs\.personio\.com",
+    ],
+    "bamboohr": [
+        r"bamboohr\.com",
     ],
 }
 
@@ -101,6 +132,55 @@ def detect_ats(url: str) -> str:
             if re.search(pat, url, re.IGNORECASE):
                 return ats
     return "unknown"
+
+
+# ---------------------------------------------------------------------------
+# Board refs — the deterministic identity of a company's ATS board.
+# Format: "platform:token", e.g. "greenhouse:sofi", "ashby:headway",
+# "lever:acme". Discovery workers record these in the queue entry's
+# `ats_board` field when the board token is visible in the posting URL.
+# Verification prefers a recorded ref over company-name token guessing —
+# a recorded ref is an observation, guessing is a fallback.
+# ---------------------------------------------------------------------------
+
+_BOARD_REF_RE = re.compile(
+    r"^(greenhouse|lever|ashby):[a-z0-9][a-z0-9_-]*$")
+
+
+def parse_board_ref(ref) -> tuple:
+    """Parse a recorded board ref ("platform:token") -> (platform, token).
+
+    Returns (None, None) for anything absent or malformed — callers treat
+    that as "no recorded ref" and fall back to guessing. Never raises."""
+    if not isinstance(ref, str):
+        return None, None
+    m = _BOARD_REF_RE.match(ref.strip().lower())
+    if not m:
+        return None, None
+    platform, token = ref.strip().lower().split(":", 1)
+    return platform, token
+
+
+def board_ref_from_url(url: str):
+    """Extract the board ref from a posting URL, or None when the URL does
+    not carry a visible board token (career pages, aggregators, unknown
+    platforms). Canonical machine rule for what discovery workers record
+    by eye in the `ats_board` field."""
+    if not url or not isinstance(url, str):
+        return None
+    u = url.strip().lower()
+    m = re.search(
+        r"(?:boards|job-boards)\.greenhouse\.io/([a-z0-9][a-z0-9_-]*)/jobs/\d+",
+        u)
+    if m:
+        return f"greenhouse:{m.group(1)}"
+    m = re.search(r"jobs\.lever\.co/([a-z0-9][a-z0-9_-]*)/[a-z0-9-]+", u)
+    if m:
+        return f"lever:{m.group(1)}"
+    m = re.search(r"jobs\.ashbyhq\.com/([a-z0-9][a-z0-9_-]*)/[a-z0-9-]+", u)
+    if m:
+        return f"ashby:{m.group(1)}"
+    return None
 
 
 def _get_json(url: str, timeout: int = 20):

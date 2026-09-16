@@ -32,6 +32,14 @@ Used by:
   - sweep workers (flagging at discovery; see
     discovery/_sweep-worker-prompt-snippet-apidirect.md)
   - backfill_api_direct.py (one-time retroactive flagging)
+
+NEW PLATFORMS (onboarded 2026-09-15, all verdict 'unknown' in the
+edge-case registry): oracle_recruiting_cloud (JS SPA, apply path not
+HTTP-renderable), comeet (JS-embedded apply form on employer domains),
+teamtailor (JS apply overlay), careerpuck (third-party career-board host;
+resolve the proxied ATS per posting). All fail-closed here: detect()
+returns candidate=False with reason until a supervised verification
+proves a direct path.
 """
 
 import os
@@ -85,6 +93,25 @@ LEVER_REASON = (
     "submission impossible; browser path required "
     "(lever_submit.py offers a dry-run pre-flight only)")
 
+# New platforms (onboarded 2026-09-15, registry verdict 'unknown'):
+# no proven direct path — fail closed to the browser path until a
+# supervised verification proves one.
+NEW_PLATFORM_REASONS = {
+    "oracle_recruiting_cloud": (
+        "Oracle Recruiting Cloud: JS SPA, apply path not HTTP-renderable "
+        "(registry verdict 'unknown'); browser path required"),
+    "comeet": (
+        "Comeet: JS-embedded apply form on employer domains "
+        "(registry verdict 'unknown'); browser path required"),
+    "teamtailor": (
+        "Teamtailor: JS apply overlay "
+        "(registry verdict 'unknown'); browser path required"),
+    "careerpuck": (
+        "Careerpuck: third-party career-board host; resolve the proxied "
+        "ATS per posting (registry verdict 'unknown'); browser path "
+        "required"),
+}
+
 
 def detect(url, ats=None):
     """Full detection verdict.
@@ -105,6 +132,9 @@ def detect(url, ats=None):
     detected = (ats or "").strip().lower() or ats_mod.detect_ats(url)
     if detected == "lever" or "lever.co/" in url.lower():
         return {"candidate": False, "ats": "lever", "reason": LEVER_REASON}
+    if detected in NEW_PLATFORM_REASONS:
+        return {"candidate": False, "ats": detected,
+                "reason": NEW_PLATFORM_REASONS[detected]}
     try:
         board, job_id = parse_board_url(url)
     except ValueError:

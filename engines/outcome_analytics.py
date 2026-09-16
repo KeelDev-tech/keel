@@ -19,19 +19,28 @@ HONESTY RULES (fail-closed analytics):
   - Source tiers are assigned by conservative rules; anything ambiguous
     lands in "unknown". No guessing.
   - Employer responses link to ledger rows by normalized company name and
-    are attributed to the most recent SUBMITTED row at-or-before the event
-    timestamp. The linking rule is printed in every report.
+    are attributed to the most recent linkable row (SUBMITTED,
+    INTERVIEW_INVITED, WAITLISTED, ASSESSMENT) at-or-before the event
+    timestamp. Dead rows (SKIP/CLOSED/REJECTED/...) are never indexed, so
+    an event matching a dead lead stays unlinked rather than
+    misattributed. The linking rule is printed in every report.
   - "Hypothesis-ready" bullets are hedged and labeled as hypotheses, not
     claims.
 
 Two response-event formats are normalized:
   - current: details.outcome in {AUTO_ACK, REJECTION, INTERVIEW_INVITE,
-    ASSESSMENT, INFO_REQUEST, OTHER}, details.company_key
+    ASSESSMENT, INFO_REQUEST, OFFER, OTHER}, details.company_key
   - legacy backfill: details.response in {interview_invited -> INTERVIEW_INVITE,
-    waitlisted -> OTHER (limbo state, neither rejection nor invite)}
+    waitlisted -> OTHER (limbo state, neither rejection nor invite),
+    offer -> OFFER}
+
+Linkable ledger statuses: SUBMITTED, INTERVIEW_INVITED, WAITLISTED,
+ASSESSMENT, OFFERED. Response events may land on rows that already
+advanced past SUBMITTED (e.g. an invite event for a row already marked
+INTERVIEW_INVITED). Dead statuses are never indexed.
 
 Decisive outcomes (for the cron threshold) = REJECTION + INTERVIEW_INVITE
-+ ASSESSMENT + INFO_REQUEST. Acknowledgments are confirmatory, not
++ ASSESSMENT + INFO_REQUEST + OFFER. Acknowledgments are confirmatory, not
 decisive.
 
 Outputs (hidden_files/outcome-tracking/):
@@ -60,9 +69,10 @@ MIN_N = 5            # minimum denominator before a rate is reported
 LATENCY_MIN_N = 3    # minimum samples before latency stats are reported
 
 VALID_OUTCOMES = {"AUTO_ACK", "REJECTION", "INTERVIEW_INVITE",
-                  "ASSESSMENT", "INFO_REQUEST", "OTHER"}
+                  "ASSESSMENT", "INFO_REQUEST", "OFFER", "OTHER"}
 LEGACY_MAP = {"interview_invited": "INTERVIEW_INVITE",
-              "waitlisted": "OTHER"}
+              "waitlisted": "OTHER",
+              "offer": "OFFER"}
 
 # ---------------------------------------------------------------- loading
 
@@ -71,6 +81,24 @@ def load_submitted(ledger_path=None):
     rows = json.load(open(path))
     rows = rows if isinstance(rows, list) else rows.get("rows", [])
     return [r for r in rows if r.get("status") == "SUBMITTED"]
+
+
+# Statuses a response event may legitimately link to. Rows that already
+# advanced past SUBMITTED via an employer response stay linkable so
+# follow-up events (a second ack, an assessment invite) don't go unlinked.
+# Deliberately NOT "any row with a company": indexing dead rows
+# (SKIP/CLOSED/REJECTED/...) would let stray events misattribute to dead
+# leads — an event matching a dead lead stays unlinked (fail-closed).
+LINKABLE_STATUSES = ("SUBMITTED", "INTERVIEW_INVITED", "WAITLISTED",
+                     "ASSESSMENT", "OFFERED")
+
+
+def load_linkable_rows(ledger_path=None):
+    """Ledger rows response events may link to (see LINKABLE_STATUSES)."""
+    path = ledger_path or os.path.join(PIPE, "data", "application-ledger.json")
+    rows = json.load(open(path))
+    rows = rows if isinstance(rows, list) else rows.get("rows", [])
+    return [r for r in rows if r.get("status") in LINKABLE_STATUSES]
 
 
 def load_responses(events_path=None):
@@ -94,10 +122,11 @@ def load_responses(events_path=None):
                 outcome = LEGACY_MAP.get(legacy, "OTHER") if legacy else "OTHER"
             # Backfilled events carry the backfill RUN time, not the actual
             # receipt time — their timestamps are not trustworthy for
-            # latency math.
-            trustworthy = not d.get("backfilled")
+            # latency math. Live listener events now carry a real receipt
+            # date (details.message_date), which is preferred when present.
+            trustworthy = bool(d.get("message_date")) or not d.get("backfilled")
             out.append({
-                "ts": e.get("ts") or "",
+                "ts": d.get("message_date") or e.get("ts") or "",
                 "ts_trustworthy": trustworthy,
                 "company": e.get("company") or "",
                 "company_key": (d.get("company_key") or "").strip().lower(),
@@ -165,24 +194,31 @@ def source_tier(row):
 # ---------------------------------------------------------------- linking
 
 def link_responses(rows, events):
-    """Attribute each response event to one SUBMITTED row.
+    """Attribute each response event to one linkable ledger row.
 
-    Rule: normalized company match; among matching SUBMITTED rows, pick
+    Rule: normalized company match; among matching linkable rows, pick
     the one with the latest parseable date_submitted that is <= the event
     ts (fallback: latest parseable date_submitted; then the first match).
-    Events with no company match stay unlinked and are reported as such.
-    Returns (row_id -> [events], unlinked_events).
+    The listener's raw company_key is normalized the same way as ledger
+    names before matching (previously compared raw against spaceless
+    keys — a latent miss). Events with no company match stay unlinked and
+    are reported as such. Returns (row_index -> [events], unlinked_events)
+    with indices into the `rows` list passed in. Only rows whose status is
+    in LINKABLE_STATUSES are indexed here (dead rows stay unlinked even if
+    a caller passes them unfiltered — fail-closed).
     """
+    linkable_idx = [i for i, r in enumerate(rows)
+                    if r.get("status") in LINKABLE_STATUSES]
     by_company = collections.defaultdict(list)
-    for i, r in enumerate(rows):
-        key = norm_company(r.get("company"))
+    for i in linkable_idx:
+        key = norm_company(rows[i].get("company"))
         if key:
             by_company[key].append(i)
-    # also index company_key aliases from events lazily below
     linked = collections.defaultdict(list)
     unlinked = []
     for e in events:
-        keys = {norm_company(e["company"]), (e["company_key"] or "").strip()}
+        keys = {norm_company(e["company"]),
+                norm_company(e["company_key"])}
         keys.discard("")
         cand = []
         for k in keys:
@@ -201,6 +237,11 @@ def link_responses(rows, events):
                 best, best_sub = i, sts
         linked[best if best is not None else cand[0]].append(e)
     return linked, unlinked
+
+
+def _row_id(r):
+    """Stable identity for cross-list index mapping."""
+    return r.get("role_id") or (r.get("company"), r.get("title"))
 
 
 # ---------------------------------------------------------------- metrics
@@ -225,7 +266,7 @@ def lane_metrics(rows, linked):
         n_linked = len({i for i in idxs if linked.get(i)})
         decisive = sum(by_out[o] for o in
                        ("REJECTION", "INTERVIEW_INVITE", "ASSESSMENT",
-                        "INFO_REQUEST"))
+                        "INFO_REQUEST", "OFFER"))
         out[lane] = {
             "submissions": n_sub,
             "submissions_with_linked_response": n_linked,
@@ -234,6 +275,7 @@ def lane_metrics(rows, linked):
             "ack_rate": rate(by_out.get("AUTO_ACK", 0), n_sub),
             "rejection_rate": rate(by_out.get("REJECTION", 0), decisive),
             "invite_rate": rate(by_out.get("INTERVIEW_INVITE", 0), decisive),
+            "offer_rate": rate(by_out.get("OFFER", 0), decisive),
         }
     return out
 
@@ -248,13 +290,14 @@ def tier_metrics(rows, linked):
         by_out = collections.Counter(e["outcome"] for e in evs)
         decisive = sum(by_out[o] for o in
                        ("REJECTION", "INTERVIEW_INVITE", "ASSESSMENT",
-                        "INFO_REQUEST"))
+                        "INFO_REQUEST", "OFFER"))
         out[tier] = {
             "submissions": len(idxs),
             "decisive_outcomes": decisive,
             "outcomes": dict(by_out),
             "ack_rate": rate(by_out.get("AUTO_ACK", 0), len(idxs)),
             "invite_rate": rate(by_out.get("INTERVIEW_INVITE", 0), decisive),
+            "offer_rate": rate(by_out.get("OFFER", 0), decisive),
         }
     return out
 
@@ -329,21 +372,42 @@ def hypotheses(lanes):
     return out
 
 
-def build_report(rows, events):
-    linked, unlinked = link_responses(rows, events)
+def build_report(rows, events, link_rows=None):
+    """rows: submitted rows (metric denominators stay submission-based).
+    link_rows: rows events may link to (defaults to rows); events landing
+    on advanced (invited/waitlisted) rows count as linked but don't feed
+    lane/tier denominators."""
+    link_src = link_rows if link_rows is not None else rows
+    linked_raw, unlinked = link_responses(link_src, events)
+    # Re-key linked events onto the submitted-row index space.
+    submitted_ids = {_row_id(r): j for j, r in enumerate(rows)}
+    linked = collections.defaultdict(list)
+    advanced_linked = 0
+    for i, evs in linked_raw.items():
+        j = submitted_ids.get(_row_id(link_src[i]))
+        if j is None:
+            advanced_linked += len(evs)
+        else:
+            linked[j].extend(evs)
     lanes = lane_metrics(rows, linked)
     tiers = tier_metrics(rows, linked)
     gaps = data_gaps(rows)
     lat = ack_latency_hours(rows, linked)
-    linked_n = sum(len(v) for v in linked.values())
+    linked_n = sum(len(v) for v in linked_raw.values())
+    unlinked_rate = (len(unlinked) / len(events)) if events else 0
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "inputs": {"submitted_rows": len(rows),
+                   "linkable_rows": len(link_src),
                    "response_events": len(events),
                    "events_linked": linked_n,
-                   "events_unlinked": len(unlinked)},
+                   "events_linked_to_advanced_rows": advanced_linked,
+                   "events_unlinked": len(unlinked),
+                   "unlinked_rate": round(unlinked_rate, 3)},
         "linking_rule": ("normalized company match; attributed to the most "
-                         "recent SUBMITTED row at-or-before the event ts"),
+                         "recent linkable ledger row (SUBMITTED / "
+                         "INTERVIEW_INVITED / WAITLISTED / ASSESSMENT) "
+                         "at-or-before the event ts"),
         "min_n_for_rates": MIN_N,
         "data_gaps": gaps,
         "lanes": lanes,
@@ -371,7 +435,10 @@ def render_markdown(report):
     A(f"_Generated {report['generated_at']}. "
       f"{report['inputs']['submitted_rows']} SUBMITTED rows, "
       f"{report['inputs']['response_events']} employer-response events, "
-      f"{report['inputs']['events_linked']} linked. "
+      f"{report['inputs']['events_linked']} linked, "
+      f"{report['inputs']['events_unlinked']} unlinked "
+      f"({report['inputs']['unlinked_rate']:.0%} unlinked-rate "
+      f"data-quality signal). "
       f"Rates need n≥{report['min_n_for_rates']} or read "
       f"'insufficient outcome data'._")
     A("")
@@ -414,9 +481,9 @@ def render_markdown(report):
     else:
         A(f"{lat['note']} (n={lat['n']}).")
     A("")
-    A("_Recommendation: the outcome listener should record each Gmail "
-      "message's actual receipt date on future events; the 2026-09-14 "
-      "backfill stamped run time, which cannot support latency math._")
+    A("_Recommendation: the outcome listener should record each "
+      "message's actual receipt date on future events; backfill runs "
+      "stamped run time, which cannot support latency math._")
     A("")
     A("## Hypothesis-ready reads (not claims)")
     A("")
@@ -428,9 +495,11 @@ def render_markdown(report):
     A(f"- Linking: {report['linking_rule']}.")
     A(f"- Unlinked events this run: {report['inputs']['events_unlinked']}.")
     A("- Legacy backfill labels normalized: interview_invited → "
-      "INTERVIEW_INVITE; waitlisted → OTHER (limbo state).")
+      "INTERVIEW_INVITE; waitlisted → OTHER (limbo state); "
+      "offer → OFFER.")
     A("- Decisive outcomes = REJECTION + INTERVIEW_INVITE + ASSESSMENT + "
-      "INFO_REQUEST. Acknowledgments are confirmatory, not decisive.")
+      "INFO_REQUEST + OFFER. Acknowledgments are confirmatory, not "
+      "decisive.")
     return "\n".join(L) + "\n"
 
 
@@ -469,8 +538,9 @@ def main(argv):
     os.makedirs(out_dir, exist_ok=True)
 
     rows = load_submitted()
+    link_rows = load_linkable_rows()
     events = load_responses()
-    report = build_report(rows, events)
+    report = build_report(rows, events, link_rows)
 
     stamp = datetime.now().strftime("%Y%m%d-%H%M")
     jp = os.path.join(out_dir, f"outcome-analytics-{stamp}.json")

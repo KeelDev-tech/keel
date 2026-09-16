@@ -22,6 +22,10 @@ import unittest
 BASE = os.path.dirname(os.path.abspath(__file__))
 ENGINES = os.path.join(BASE, "..", "engines")
 sys.path.insert(0, ENGINES)
+# Isolate the field-question backlog: prescreen routes through
+# field_question_protocol, whose backlog path defaults to the operator's
+# real data dir. Tests must never read or write it.
+os.environ["FIELD_PROTOCOL_DIR"] = tempfile.mkdtemp(prefix="keel-test-frp-")
 import prescreen
 
 BANK = json.load(open(os.path.join(ENGINES, "answer_bank.example.json")))
@@ -86,7 +90,8 @@ class TestScreenPacket(unittest.TestCase):
         ])
         res = prescreen.screen_packet(p, BANK, {})
         self.assertEqual(res["verdict"], "PARK")
-        unmapped = [r for r in res["reasons"] if "not in answer bank" in r]
+        unmapped = [r for r in res["reasons"]
+                    if "applicant's own input" in r or "not in answer bank" in r]
         self.assertEqual(len(unmapped), 4,
                          f"expected 4 unmapped reasons, got: {res['reasons']}")
 

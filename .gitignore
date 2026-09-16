@@ -10,6 +10,10 @@ DEPARTMENTS.md
 INTEGRATION_PLAN.md
 KEEL_DOCTRINE.md
 credentials/
+# Defense in depth: personalized working copies must never be committable.
+# (package.sh already scrubs these from the distributable zip.)
+engines/answer_bank.json
+engines/employer_form_patterns.json
 distribution/
 marketing-engine/
 launch/muse-campaign-plan.md
@@ -19,3 +23,8 @@ launch/instagram/
 # Marketing/pulse internals — never public
 hidden_files/
 monitors/
+
+# Internal launch-verification artifact (regenerable; embeds private paths)
+launch/proof-points.json
+# Funding working material lives in the funding goal workspace, never the public repo
+funding/

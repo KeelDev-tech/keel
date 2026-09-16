@@ -1,0 +1,270 @@
+#!/usr/bin/env python3
+"""Launch lock: one browser application task per role_id at a time.
+
+Closes the 2026-09-15 Mercury duplicate-fire: the apply-loop launch
+watcher fired an event into main chat at the same moment a side-chat arm
+was already launching the same role_id, and main chat spawned a second
+browser task on it (stood down at 2 steps, no external actions — but a
+double-submit would have been a blacklist-grade incident).
+
+Convention (see AGENTS.md): BEFORE spawning a browser application task
+for a role_id, the spawning agent acquires the lock:
+
+    python3 launch_lock.py --acquire <role_id> <task_id> [--owner <name>]
+
+If the lock is HELD by a different task_id (exit 1), stand down — another
+task owns the lead. On task completion/cancellation, release it:
+
+    python3 launch_lock.py --release <role_id> <task_id>
+
+Locks expire after LOCK_TTL_H hours (fail-open: a dead task's stale lock
+never blocks the lane forever, same philosophy as packet_watchdog).
+Re-acquiring with the same task_id refreshes the lock (idempotent).
+
+x20 EXTENSION (2026-09-16): parallel lanes race on the old read-then-write
+acquire (TOCTOU: two lanes both see FREE, both write, both believe they
+own the lead). v2 makes acquisition ATOMIC via O_CREAT|O_EXCL — exactly
+one winner per role_id, the loser sees HELD. It also adds the pre-launch
+duplicate guard:
+
+    python3 launch_lock.py --guard <role_id> <task_id> --company "<c>" --title "<t>"
+
+which refuses launch when the ledger already holds a SUBMITTED row for the
+exact role_id (ALREADY_SUBMITTED) or for the same normalized
+company+title under a different role_id (TWIN_SUBMITTED — the 2026-09-16
+Napa Valley Reserve twin case). Verdicts are machine-readable; only GO
+proceeds to spawn. Defense in depth with apply_loop's eligible() posting-
+URL dedupe and ARM-R1 claim-time dedupe — this guard is the pre-spawn
+gate, those remain the pre-build gates.
+"""
+import argparse
+import json
+import os
+import re
+import sys
+import tempfile
+from datetime import datetime, timedelta, timezone
+
+BASE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, BASE)
+from keel_paths import HOME as PIPE  # noqa: E402 — repo root; never the private pipeline path
+LOCK_DIR = os.path.join(PIPE, "hidden_files", "launch-locks")
+LOCK_TTL_H = 2
+LEDGER_PATH = os.path.join(PIPE, "ledger", "application-ledger.json")
+
+
+def _lock_path(role_id):
+    safe = re.sub(r"[^A-Za-z0-9_-]", "_", role_id)
+    return os.path.join(LOCK_DIR, safe + ".json")
+
+
+def _now():
+    return datetime.now(timezone.utc)
+
+
+def _read_lock(role_id):
+    path = _lock_path(role_id)
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None
+
+
+def _is_fresh(lock):
+    if not lock or "acquired_at" not in lock:
+        return False
+    try:
+        acquired = datetime.fromisoformat(lock["acquired_at"])
+    except (ValueError, TypeError):
+        return False
+    return _now() - acquired < timedelta(hours=LOCK_TTL_H)
+
+
+def check(role_id):
+    """Return the lock dict if fresh, else None."""
+    lock = _read_lock(role_id)
+    return lock if _is_fresh(lock) else None
+
+
+def _write_lock_atomically(path, lock):
+    """Publish the lock file atomically. Returns True on success,
+    False if the file already existed (someone else won the race).
+
+    Write-temp + os.link: link creation is atomic on POSIX, so a
+    competing reader never observes a partially-written lock file.
+    (The previous O_CREAT|O_EXCL-then-write left a create/write window
+    where a rival could read an empty file, delete it as 'stale', and
+    become a second winner — caught by the flaky 20-thread race test
+    2026-09-16.)
+    """
+    tmp = None
+    try:
+        with tempfile.NamedTemporaryFile(
+                mode="w", dir=os.path.dirname(path) or ".",
+                prefix=".lock-", suffix=".tmp", delete=False) as f:
+            tmp = f.name
+            json.dump(lock, f, indent=1)
+        os.link(tmp, path)
+        return True
+    except FileExistsError:
+        return False
+    finally:
+        if tmp:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+
+
+def acquire(role_id, task_id, owner=""):
+    """Acquire the lock ATOMICALLY. Returns (ok: bool, info: dict).
+
+    Exactly one concurrent caller wins per role_id. A stale lock (older
+    than LOCK_TTL_H) is taken over: the old file is removed and the
+    atomic create is retried once. Same-task re-acquire refreshes.
+    """
+    os.makedirs(LOCK_DIR, exist_ok=True)
+    path = _lock_path(role_id)
+    lock = {
+        "role_id": role_id,
+        "task_id": task_id,
+        "owner": owner,
+        "acquired_at": _now().isoformat(),
+        "ttl_hours": LOCK_TTL_H,
+    }
+    if _write_lock_atomically(path, lock):
+        return True, {"status": "ACQUIRED", "lock": lock}
+    # Someone holds a file here — inspect it.
+    existing = _read_lock(role_id)
+    if existing and existing.get("task_id") == task_id:
+        # Idempotent re-acquire: refresh via atomic replace.
+        if _is_fresh(existing):
+            return True, {"status": "ACQUIRED", "lock": existing,
+                          "note": "already owner"}
+        # Own lock went stale: take it over.
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+        if _write_lock_atomically(path, lock):
+            return True, {"status": "ACQUIRED", "lock": lock,
+                          "note": "stale own lock refreshed"}
+        existing = _read_lock(role_id)
+        return False, {"status": "HELD", "lock": existing}
+    if existing and _is_fresh(existing):
+        return False, {"status": "HELD", "lock": existing}
+    # Stale or unreadable lock held by someone else: take over, then retry.
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+    if _write_lock_atomically(path, lock):
+        return True, {"status": "ACQUIRED", "lock": lock,
+                      "note": "stale lock taken over"}
+    existing = _read_lock(role_id)
+    return False, {"status": "HELD", "lock": existing}
+
+
+def release(role_id, task_id):
+    """Release the lock if owned by task_id. Returns (ok: bool, info)."""
+    existing = _read_lock(role_id)
+    if existing and existing.get("task_id") == task_id:
+        os.remove(_lock_path(role_id))
+        return True, {"status": "RELEASED"}
+    if existing and _is_fresh(existing):
+        return False, {"status": "NOT_OWNER", "lock": existing}
+    return True, {"status": "NO_LOCK"}
+
+
+def _norm(s):
+    return re.sub(r"[^a-z0-9]", "", str(s or "").lower())
+
+
+def _load_submitted(ledger_path=LEDGER_PATH):
+    """Return {role_id: (company, title)} for SUBMITTED ledger rows."""
+    try:
+        with open(ledger_path) as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+    rows = data if isinstance(data, list) else data.get("rows", data.get("applications", []))
+    out = {}
+    for r in rows:
+        if str(r.get("status", "")).upper() != "SUBMITTED":
+            continue
+        rid = r.get("role_id")
+        if rid:
+            out[rid] = (r.get("company", ""), r.get("title", ""))
+    return out
+
+
+def prelaunch_guard(role_id, task_id, company="", title="", owner="",
+                    ledger_path=LEDGER_PATH):
+    """Pre-spawn duplicate guard. Returns (ok: bool, info: dict).
+
+    Verdicts:
+      GO                — lock acquired, no duplicate; safe to spawn.
+      HELD              — another live task owns this role_id; stand down.
+      ALREADY_SUBMITTED — ledger already has SUBMITTED for this role_id.
+      TWIN_SUBMITTED    — ledger has SUBMITTED for the same normalized
+                          company+title under a different role_id.
+    Only GO proceeds to browser-task spawn. The ledger read + atomic
+    acquire happen in one call so lanes cannot interleave a duplicate.
+    """
+    submitted = _load_submitted(ledger_path)
+    if role_id in submitted:
+        return False, {"status": "ALREADY_SUBMITTED", "verdict": "REFUSE",
+                       "role_id": role_id,
+                       "note": "ledger already holds SUBMITTED for this role_id"}
+    nco, nti = _norm(company), _norm(title)
+    if nco and nti:
+        for rid, (co, ti) in submitted.items():
+            if _norm(co) == nco and _norm(ti) == nti:
+                return False, {"status": "TWIN_SUBMITTED", "verdict": "REFUSE",
+                               "role_id": role_id, "twin_role_id": rid,
+                               "twin_company": co, "twin_title": ti,
+                               "note": "same company+title already SUBMITTED "
+                                       "under a different role_id"}
+    ok, info = acquire(role_id, task_id, owner)
+    if not ok:
+        return False, {"status": "HELD", "verdict": "STAND_DOWN",
+                       "role_id": role_id, "lock": info.get("lock")}
+    return True, {"status": "ACQUIRED", "verdict": "GO",
+                  "role_id": role_id, "lock": info["lock"]}
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--acquire", nargs=2, metavar=("ROLE_ID", "TASK_ID"))
+    ap.add_argument("--check", metavar="ROLE_ID")
+    ap.add_argument("--release", nargs=2, metavar=("ROLE_ID", "TASK_ID"))
+    ap.add_argument("--guard", nargs=2, metavar=("ROLE_ID", "TASK_ID"),
+                    help="pre-spawn duplicate guard (acquires on GO)")
+    ap.add_argument("--company", default="")
+    ap.add_argument("--title", default="")
+    ap.add_argument("--owner", default="")
+    ap.add_argument("--ledger", default=LEDGER_PATH)
+    args = ap.parse_args()
+
+    if args.acquire:
+        ok, info = acquire(args.acquire[0], args.acquire[1], args.owner)
+    elif args.check:
+        lock = check(args.check)
+        ok, info = (True, {"status": "FREE" if lock is None else "HELD",
+                           "lock": lock})
+    elif args.release:
+        ok, info = release(args.release[0], args.release[1])
+    elif args.guard:
+        ok, info = prelaunch_guard(args.guard[0], args.guard[1],
+                                   args.company, args.title, args.owner,
+                                   args.ledger)
+    else:
+        ap.print_help()
+        return 2
+    print(json.dumps(info, indent=1))
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

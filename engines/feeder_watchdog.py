@@ -16,17 +16,44 @@ Checks (read-only first):
       anomaly — they are NEVER auto-reset here (resetting queue state is
       the orchestrator's judgment call; see the 2026-09-14 incident).
 
+In-flight classification (classify_inflight): IN-FLIGHT markers split
+into three buckets —
+  fresh:      ageable marker, marked within STALE_AFTER_HOURS -> browser
+              probably busy.
+  stale:      ageable marker, older than STALE_AFTER_HOURS -> anomaly,
+              never auto-reset.
+  unknown_ts: no parseable timestamp at all (missing status_updated AND
+              missing/unparseable in_flight_at, or a naive timestamp that
+              cannot be safely compared). ARM 79: NULL aged as infinitely
+              old here and produced the Vercel false-stale_inflight.
+              Fail-closed — a marker we cannot age is never called stale.
+              Timestamp-less markers log a marker_timestamp_missing
+              diagnostic (deduped per role_id) and count toward "browser
+              busy" so the watchdog never fires verify_retry --live on a
+              marker it cannot age.
+
+Honest fed-signal (workable): raw READY counts test artifacts and
+material-less leads (2026-09-15: 7/8 READY were FIRETEST rows with no
+resumes). The floor check uses workable() — a READY lead the lane can
+actually work right now: APPLY band, employer not on the operator's
+blocklist (data/employer-blocklist.md), tailored resume on disk, posting
+URL present. Liveness is NOT checked here (the browser re-verifies at
+task time).
+
 Logic:
-  - READY >= READY_FLOOR (2): nothing to do. Silent, read-only.
-  - READY < 2 and no fresh IN-FLIGHT (browser idle): run
-    `verify_retry.py --live --limit 25` on the pending-verification pool.
-    That worker owns verification; it is NOT reimplemented here. Then
-    recount READY.
-  - Still READY < 2 afterwards: log one gate_encountered event
+  - workable READY >= READY_FLOOR (2): nothing to do. Silent, read-only.
+  - workable READY < 2 and no fresh/unknown-ts IN-FLIGHT (browser idle):
+    run `verify_retry.py --live --limit 25` on the pending-verification
+    pool. That worker owns verification; it is NOT reimplemented here.
+    Then recount.
+  - Still below floor afterwards: log one gate_encountered event
     (gate=feeder_empty) so the 30-min ping surfaces it as blocked.
     Deduped: at most one feeder_empty event per DEDUPE_HOURS.
   - Stale IN-FLIGHT markers: one gate_encountered event per marker
     (gate=stale_inflight), deduped the same way.
+  - UNKNOWN-timestamp IN-FLIGHT markers: one gate_encountered event per
+    marker (gate=marker_timestamp_missing), deduped per role_id — the
+    orchestrator owns the timestamp backfill, never this script.
 
 Never invents leads. Never touches the ledger. Never rewrites telemetry
 (log_event.py appends only). The only queue writes are verify_retry's own
@@ -50,6 +77,11 @@ import log_event  # noqa: E402 — append-only telemetry
 from keel_paths import HOME as PIPE  # noqa: E402
 QUEUE = os.path.join(PIPE, "data", "queues", "standard-queue.json")
 EVENTS = os.path.join(PIPE, "data", "telemetry", "events.jsonl")
+# Operator-owned employer blocklist (setup.sh writes a starter file at this
+# path). The real production blocklist is personal data and is never
+# committed — populate this file with your own never-apply employers, one
+# per line, plain text.
+BLOCKLIST = os.path.join(PIPE, "data", "employer-blocklist.md")
 
 READY_STATUSES = ("READY", "READY-FOR-BROWSER")
 READY_FLOOR = 2
@@ -57,11 +89,43 @@ STALE_AFTER_HOURS = 2
 DEDUPE_HOURS = 6
 VERIFY_LIMIT = 25
 VERIFY_TIMEOUT = 600
+# Diagnostic gate for IN-FLIGHT markers that cannot be aged (ARM 79).
+MARKER_TIMESTAMP_MISSING = "marker_timestamp_missing"
 
 
 def load_queue():
     d = json.load(open(QUEUE))
     return d if isinstance(d, list) else d.get("entries", d.get("items", []))
+
+
+def _blocklist_txt():
+    """Operator blocklist as lowercase text; missing file -> empty (no-op)."""
+    try:
+        return open(BLOCKLIST).read().lower()
+    except FileNotFoundError:
+        return ""
+
+
+def workable(entry):
+    """A READY lead the lane can actually work right now — APPLY band,
+    employer not blocklisted, tailored resume on disk, posting URL present.
+    Liveness is NOT checked here (the browser re-verifies at task time);
+    this is the honest 'fed' signal. 2026-09-15: 7 of 8 READY leads were
+    FIRETEST artifacts with no materials — raw READY count said 'fed'
+    while the lane was starving."""
+    if (entry.get("status") or "").upper() not in READY_STATUSES:
+        return False
+    if entry.get("action_band") != "APPLY":
+        return False
+    company = entry.get("company") or ""
+    if company and company.lower() in _blocklist_txt():
+        return False
+    m = (entry.get("materials") or {}).get("resume")
+    if not m or not os.path.exists(os.path.join(PIPE, m)):
+        return False
+    if not (entry.get("ats_url") or entry.get("application_url")):
+        return False
+    return True
 
 
 def parse_updated(s):
@@ -81,6 +145,18 @@ def parse_updated(s):
 def recent_gate_event(gate, within_hours):
     """True if a gate_encountered/gate_blocked event with this gate name was
     logged within the window (dedupe so the ping isn't spammed)."""
+    return _gate_event_recent(gate, None, within_hours)
+
+
+def recent_gate_event_for_role(gate, role_id, within_hours):
+    """Role-scoped variant: True if an event with this gate name was logged
+    for this role_id within the window. Used for per-marker diagnostics
+    (marker_timestamp_missing) so one broken marker can't spam, while a
+    different broken marker still gets its own diagnostic."""
+    return _gate_event_recent(gate, role_id, within_hours)
+
+
+def _gate_event_recent(gate, role_id, within_hours):
     cutoff = datetime.now(timezone.utc) - timedelta(hours=within_hours)
     try:
         with open(EVENTS) as f:
@@ -97,6 +173,8 @@ def recent_gate_event(gate, within_hours):
                     continue
                 if (ev.get("details") or {}).get("gate") != gate:
                     continue
+                if role_id is not None and ev.get("role_id") != role_id:
+                    continue
                 try:
                     ts = datetime.fromisoformat(ev["ts"])
                 except (KeyError, ValueError):
@@ -108,22 +186,95 @@ def recent_gate_event(gate, within_hours):
     return False
 
 
+def inflight_ts(e):
+    """Marking-time of an IN-FLIGHT entry: status_updated first, then the
+    in_flight_at stamp the orchestrator writes at marking time (ARM 22)."""
+    return (parse_updated(e.get("status_updated"))
+            or parse_updated(e.get("in_flight_at")))
+
+
+def is_inflight_status(status):
+    """IN-FLIGHT or a two-lane test marker (IN-FLIGHT-LANE-A/B).
+
+    2026-09-15: the authorized two-lane test marks queue entries
+    IN-FLIGHT-LANE-A / IN-FLIGHT-LANE-B. Both count as in-flight so the
+    feeder never mistakes a live lane for an idle one.
+    """
+    s = (status or "").upper()
+    return s == "IN-FLIGHT" or s.startswith("IN-FLIGHT-LANE-")
+
+
+def classify_inflight(items, now=None):
+    """Split IN-FLIGHT entries into (fresh, stale, unknown_ts).
+
+    fresh: ageable marker, marked within STALE_AFTER_HOURS -> browser
+        probably busy.
+    stale: ageable marker, older than STALE_AFTER_HOURS -> anomaly, never
+        auto-reset.
+    unknown_ts: no parseable timestamp at all (missing status_updated AND
+        missing/unparseable in_flight_at, or a naive timestamp that cannot
+        be safely compared). ARM 79: NULL aged as infinitely old here and
+        produced the Vercel false-stale_inflight. Fail-closed — a marker we
+        cannot age is never called stale.
+    """
+    now = now or datetime.now(timezone.utc)
+    fresh, stale, unknown_ts = [], [], []
+    for e in items:
+        if not is_inflight_status(e.get("status")):
+            continue
+        ts = inflight_ts(e)
+        if ts is None or ts.tzinfo is None:
+            unknown_ts.append(e)
+        elif now - ts < timedelta(hours=STALE_AFTER_HOURS):
+            fresh.append(e)
+        else:
+            stale.append(e)
+    return fresh, stale, unknown_ts
+
+
 def main():
     dry_run = "--dry-run" in sys.argv
     items = load_queue()
     ready = [e for e in items
              if (e.get("status") or "").upper() in READY_STATUSES]
+    # Honest fed-signal: READY leads the lane can actually work right now.
+    # Raw READY counts test artifacts and material-less leads (2026-09-15:
+    # 7/8 READY were FIRETEST rows with no resumes).
+    workable_ready = [e for e in ready if workable(e)]
     now = datetime.now(timezone.utc)
     inflight = [e for e in items
-                if (e.get("status") or "").upper() == "IN-FLIGHT"]
-    fresh, stale = [], []
-    for e in inflight:
-        ts = parse_updated(e.get("status_updated"))
-        (fresh if ts and now - ts < timedelta(hours=STALE_AFTER_HOURS)
-         else stale).append(e)
+                if is_inflight_status(e.get("status"))]
+    fresh, stale, unknown_ts = classify_inflight(inflight, now)
 
     print(f"READY: {len(ready)} (floor {READY_FLOOR}) | "
-          f"IN-FLIGHT fresh: {len(fresh)}, stale: {len(stale)}")
+          f"workable: {len(workable_ready)} | "
+          f"IN-FLIGHT fresh: {len(fresh)}, stale: {len(stale)}, "
+          f"unknown-ts: {len(unknown_ts)}")
+
+    for e in unknown_ts:
+        # ARM 79: a marker we cannot age is NEVER called stale. Log the
+        # diagnostic for the orchestrator to backfill the timestamp;
+        # treat the marker as evidence the browser may be busy so we
+        # don't fire verify_retry --live over a slot we can't see.
+        rid = e.get("role_id", "")
+        print(f"  UNKNOWN-TS IN-FLIGHT: {rid} "
+              f"(status_updated={e.get('status_updated')!r}, "
+              f"in_flight_at={e.get('in_flight_at')!r}) — not classified "
+              f"stale; browser slot treated as possibly busy")
+        if (not dry_run
+                and not recent_gate_event_for_role(
+                    MARKER_TIMESTAMP_MISSING, rid, DEDUPE_HOURS)):
+            log_event.log("gate_encountered", role_id=rid,
+                          company=e.get("company", ""), ats="",
+                          source="feeder_watchdog",
+                          details={"gate": MARKER_TIMESTAMP_MISSING,
+                                   "status_updated": e.get("status_updated"),
+                                   "in_flight_at": e.get("in_flight_at"),
+                                   "note": "IN-FLIGHT marker has no "
+                                           "parseable timestamp; cannot age "
+                                           "it, so it is NOT called stale. "
+                                           "Orchestrator should backfill "
+                                           "status_updated/in_flight_at."})
 
     for e in stale:
         rid = e.get("role_id", "")
@@ -142,13 +293,17 @@ def main():
                                            "should inspect before the lane "
                                            "can reuse the browser slot"})
 
-    if len(ready) >= READY_FLOOR:
+    if len(workable_ready) >= READY_FLOOR:
         print("lane fed — nothing to do")
         return 0
 
-    if fresh:
-        print("browser appears busy (fresh IN-FLIGHT) — not triggering "
-              "verify_retry; READY refill can wait")
+    # UNKNOWN-timestamp markers count as possibly-busy: firing verify_retry
+    # over a browser slot we cannot age would be the same class of error
+    # as the false-stale (ARM 79).
+    busy = fresh + unknown_ts
+    if busy:
+        print("browser appears busy (fresh or unageable IN-FLIGHT) — not "
+              "triggering verify_retry; READY refill can wait")
         return 0
 
     print("lane dry and browser idle — triggering verify_retry --live")
@@ -171,17 +326,21 @@ def main():
 
     ready_after = [e for e in load_queue()
                    if (e.get("status") or "").upper() in READY_STATUSES]
-    print(f"READY after verify_retry: {len(ready_after)}")
-    if len(ready_after) < READY_FLOOR:
+    workable_after = [e for e in ready_after if workable(e)]
+    print(f"READY after verify_retry: {len(ready_after)} "
+          f"(workable {len(workable_after)})")
+    if len(workable_after) < READY_FLOOR:
         if not recent_gate_event("feeder_empty", DEDUPE_HOURS):
             log_event.log(
                 "gate_encountered", role_id="", company="", ats="",
                 source="feeder_watchdog",
                 details={"gate": "feeder_empty",
                          "ready_count": len(ready_after),
-                         "note": "READY queue below floor after "
+                         "workable_count": len(workable_after),
+                         "note": "workable READY below floor after "
                                  "verify_retry --live; discovery may need "
-                                 "to produce new leads"})
+                                 "to produce new leads, or materials-build "
+                                 "may be lagging READY leads without resumes"})
             print("logged gate_encountered feeder_empty")
         else:
             print("feeder_empty already logged recently — not duplicating")

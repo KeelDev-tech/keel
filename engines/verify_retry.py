@@ -39,17 +39,18 @@ import api_direct_detect
 import ats
 import log_event
 
+# Classification logic lives in genuine_pat.py (2026-09-16 restructure:
+# the GENUINE_PAT v2 arm owns the classifier; this module owns the run
+# machinery). Re-exported here so existing consumers keep working unchanged.
+from genuine_pat import (  # noqa: E402
+    VERIFY_PAT, GENUINE_PAT, APPLICANT_NOTE_PAT, CLEARED_HISTORY_PAT,
+    RESOLVED_STATE_PAT, _field_text, unresolved_text, is_verify_only,
+)
+
 from keel_paths import HOME as PIPE  # noqa: E402
 STD_Q = os.path.join(PIPE, "data", "queues", "standard-queue.json")
 NI_Q = os.path.join(PIPE, "data", "queues", "needs_input-queue.json")
 REJ_Q = os.path.join(PIPE, "data", "queues", "rejected-queue.json")
-
-VERIFY_PAT = re.compile(
-    r"verif|mirror|employer-direct|repost-watch|unverified|aggregat|liveness"
-    r"|promote only after|individual posting|individual job page", re.I)
-GENUINE_PAT = re.compile(
-    r"essay|wording|travel|attest|reference|applicant|salary|degree|location"
-    r"|hybrid|onsite|relocation|captcha|account|login", re.I)
 
 
 def _as_items(d):
@@ -77,17 +78,6 @@ def save(p, rows):
         json.dump(cur, open(p, "w"), indent=1)
     else:
         json.dump(rows, open(p, "w"), indent=1)
-
-
-def unresolved_text(e):
-    return " ".join(e.get("unresolved") or [])
-
-
-def is_verify_only(entry):
-    """True when the entry's blockers are verification-state only."""
-    t = unresolved_text(entry) + " " + (entry.get("status_reason") or "") \
-        + " " + (entry.get("gate_note") or "") + " " + (entry.get("queue_notes") or "")
-    return bool(VERIFY_PAT.search(t)) and not GENUINE_PAT.search(t)
 
 
 def posting_url(entry):

@@ -1,7 +1,7 @@
 {
   "_meta": {
-    "note": "EXAMPLE answer bank. Copy to answer_bank.json and fill with YOUR verified answers during ./setup.sh. Every value must be true for you \u2014 the pipeline never invents what is not here.",
-    "last_updated": "2026-09-15"
+    "note": "EXAMPLE answer bank. Copy to answer_bank.json and fill with YOUR verified answers during ./setup.sh. Every value must be true for you — the pipeline never invents what is not here. Every banked answer carries a _provenance receipt: who said it, when, through which mechanism.",
+    "last_updated": "2026-09-16"
   },
   "answers": {
     "first_name": "YOUR_FIRST_NAME",
@@ -11,12 +11,13 @@
     "phone_country": "United States (+1)",
     "location": "Your City, State, Country",
     "linkedin": "https://www.linkedin.com/in/your-handle",
+    "timezone": "YOUR timezone, e.g. America/Los_Angeles",
     "us_work_auth": "Yes",
     "us_citizen_resident": "Yes",
     "needs_sponsorship": "No",
     "clearance": "None (willing to obtain)",
     "noncompete": "No",
-    "education": "YOUR verified education \u2014 never represented as a degree it is not",
+    "education": "YOUR verified education — never represented as a degree it is not",
     "ai_industry_years": "YOUR verified number",
     "total_professional_years": "YOUR verified number",
     "start_timeframe": "YOUR availability",
@@ -38,9 +39,34 @@
     }
   },
   "gates": {
-    "eeo_mandatory_no_decline": "STOP and report \u2014 never answer a mandatory EEO question with no decline option.",
-    "free_text_unverifiable": "STOP that field and report \u2014 never invent qualifications, dates, degrees, metrics, team sizes, or compensation.",
-    "no_ai_attestation": "STOP and park \u2014 never attest materials are unaided own work.",
-    "travel_attestation": "STOP and ask the applicant \u2014 never attest to travel/relocation commitments."
+    "eeo_mandatory_no_decline": "STOP and report — never answer a mandatory EEO question with no decline option.",
+    "free_text_unverifiable": "STOP that field and report — never invent qualifications, dates, degrees, metrics, team sizes, or compensation.",
+    "no_ai_attestation": "STOP and park — never attest materials are unaided own work.",
+    "travel_attestation": "STOP and ask the applicant — never attest to travel/relocation commitments."
+  },
+  "_provenance": {
+    "_meta_note": "Mechanism: every banked answer carries a provenance receipt — the answer's source, the date it was recorded, and the mechanism that banked it (e.g. the field-requirement protocol's one-time mining). Provenance is how the pipeline proves it never invents: a value with no source is a value that does not ship.",
+    "example_answer_key": {
+      "source": "Your own words, dated — where this answer came from",
+      "added": "2026-09-16",
+      "via": "field-requirement-protocol"
+    }
+  },
+  "attestation_scope": {
+    "_meta_note": "Mechanism: prescreen's attestation loop skips the park ONLY for attestation text that maps to a key YOU pre-authorize here. Pre-authorize ONLY standard legal attestations you genuinely agree to — never invent agreement. Hard-stop classes (no-AI / unaided-work pledges, travel/office/relocation commitments, essays, recording consent, unknown facts) always park; they must never appear in preauthorized_attestation_keys.",
+    "preauthorized_attestation_keys": [
+      "arbitration_agreement",
+      "background_check_consent",
+      "at_will_acknowledgment",
+      "information_truthfulness_attestation",
+      "data_privacy_consent"
+    ],
+    "hard_stop_classes": [
+      "no_ai_or_unaided_work",
+      "travel_office_relocation_commitments",
+      "essays",
+      "interview_recording_consent",
+      "unknown_facts"
+    ]
   }
 }

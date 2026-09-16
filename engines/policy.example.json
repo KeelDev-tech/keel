@@ -1,0 +1,38 @@
+{
+  "_meta": {
+    "last_updated": "2026-09-16",
+    "note": "EXAMPLE operator policy. ./setup.sh copies this to data/policy.json — YOUR boundaries. Travel/office/relocation commitments and the attestation classes below are adjudicated against these values; anything over the caps parks for your judgment. HOW THIS IS WIRED: the open-repo prescreen parks travel/office/relocation commitments for the applicant's explicit answer (fail-closed) — it never invents a % cap or day count for you. Record your caps here so you — and any execution layer you run — answer consistently and truthfully."
+  },
+  "attestations": {
+    "hard_stop_classes": [
+      "no_ai_or_unaided_work — would be FALSE if an agent answered; always parks",
+      "travel_office_relocation_commitments — adjudicated against the caps above; anything over parks",
+      "essays — require your own words; always parks",
+      "interview_recording_consent — always parks",
+      "unknown_facts — anything only you could know (exact dates, proprietary details); parks for your answer"
+    ],
+    "preauthorized_note": "Standard legal attestations YOU genuinely agree to (arbitration agreement, background-check consent, at-will acknowledgment, information-truthfulness, data-privacy consent) are pre-authorized ONLY via attestation_scope.preauthorized_attestation_keys in your answer_bank.json — never here, never by default. The open-repo prescreen parks ALL attestations fail-closed; pre-authorization is a standing decision your execution layer enforces from the answer bank."
+  },
+  "office": {
+    "max_office_days_per_week": 3,
+    "note": "Maximum in-office days/week you accept. Roles demanding 4-5 days/week or full-time on-site park. An unspecified office frequency is treated as acceptable unless your note says otherwise.",
+    "undefined_frequency_ok": true
+  },
+  "relocation": {
+    "note": "If false, any relocation requirement parks. If true, name the regions so relocation questions answer truthfully.",
+    "regions": [
+      "YOUR acceptable regions, e.g. anywhere / your metro only"
+    ],
+    "willing_to_relocate": true
+  },
+  "state_exclusions": {
+    "examples": [
+      "ExampleCorp excludes ExampleState residents — adapt to your state"
+    ],
+    "note": "Postings that explicitly exclude hires in YOUR state are permanent eligibility blocks, not your call. List patterns here; they mirror engines/prescreen.py's STATE_EXCLUSION_RES (operator-local edit, never committed)."
+  },
+  "travel": {
+    "max_travel_pct": 25,
+    "note": "Maximum travel you accept, on a DEFINED schedule. Generic, regular, unspecified, or open-ended travel is never mapped to a number — it parks for your judgment."
+  }
+}

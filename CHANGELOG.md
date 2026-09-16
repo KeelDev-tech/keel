@@ -5,6 +5,55 @@ All notable changes to Keel are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Safety rails as code: `docs/OPERATING-CONSTRAINTS.md` documents the
+  numbered operating constraints (C-01…C-20), each enforced in a named
+  engine module; the operator may extend them but never weaken them.
+- Credentials-vault convention (`docs/CREDENTIALS.md`): one file per
+  account, `0600` permissions, gitignored and excluded from packaging.
+- Operator policy template (`engines/policy.example.json`): travel /
+  office / relocation caps, attestation hard-stop classes, and the
+  pre-authorized attestation scope — example data only.
+- ATS discovery pack (`engines/ats_discovery/`): additional platform
+  adapters for board enumeration (detection only — no submission
+  behavior).
+- Direct ATS detection: Greenhouse/Lever/Ashby JSON board enumeration
+  and board classification (detection only — no submission behavior).
+- Outcome-tracking module (`engines/outcome_tracking/`): evidence gate
+  for submission claims and invite/offer surfaces over the append-only
+  telemetry log.
+- Input-resolution module (`engines/input_resolution/`): structured
+  handling of operator-input blockers with banking of reusable answers.
+- Launch lock (`engines/launch_lock.py`): one live application task per
+  role, so concurrent lanes cannot double-fire the same lead.
+- Lane watchdog (`engines/lane_watchdog.py`): evaluates pipeline health
+  red lines against live data.
+- Cost metering (`engines/cost_model.py`, `engines/cost_tracker.py`):
+  per-submission cost dimensions recorded additively on ledger rows;
+  zero-submission days render as explicit gaps, never interpolated.
+- Discovery-side dedupe gate (`engines/dedupe_gate.py`) and input-tray
+  classifier (`engines/genuine_pat.py`): parked items are classified so
+  genuinely operator-blocked leads stay parked while verification-only
+  items return to the verify pool.
+- Packet starvation watchdog (`engines/packet_watchdog.py`), clean-board
+  watch (`engines/clean_board_watch.py`), and page capture
+  (`engines/page_capture.py`) for discovery hygiene.
+- Field-question protocol (`engines/field_question_protocol.py`):
+  classifies form questions as answerable, derivable, or
+  applicant-only — applicant-only items park, never invented.
+- Batch staged-launch helper (`engines/batch_staged_launches.py`) and
+  parked-task sweep (`engines/parked_task_sweep.py`).
+- Worker charter (`worker-charter/`): the autonomous-worker prompt
+  template with constraint-tagged exemplars; the public assembler
+  deliberately does not mine the private technique library.
+
+### Fixed
+- `setup.sh` writes queue files in the canonical top-level-list form and
+  no longer mutates the tracked `keel.config.json`; identity answers land
+  in `data/` only.
+- `docs/PERSONALIZE.md` rewritten as the single operator-neutral
+  "clone → first launch packet" guide.
+
 ## [0.2.0] — 2026-09-15
 
 ### Added
