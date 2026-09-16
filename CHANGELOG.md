@@ -5,6 +5,10 @@ All notable changes to Keel are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- The apply loop exits with actionable setup guidance instead of a traceback
+  when the workspace queue file is missing.
+
 ## [0.2.0] — 2026-09-15
 
 ### Added
