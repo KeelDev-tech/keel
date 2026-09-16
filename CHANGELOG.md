@@ -5,6 +5,10 @@ All notable changes to Keel are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Workable ATS URL detection, with offline tests for job URL variants,
+  existing platforms, and non-ATS URLs.
+
 ## [0.2.0] — 2026-09-15
 
 ### Added

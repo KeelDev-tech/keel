@@ -59,6 +59,9 @@ ATS_PATTERNS = {
     "tealhq": [
         r"tealhq\.com",
     ],
+    "workable": [
+        r"workable\.com",
+    ],
 }
 
 
