@@ -90,6 +90,10 @@ def resolve_final_url(url: str, timeout: int = 15) -> str:
 
 
 def is_aggregator(url: str) -> bool:
+    """Return whether the URL's lowercased netloc ends with a known aggregator.
+
+    Return False for an unmatched or empty netloc; URL parsing errors propagate.
+    """
     host = urlparse(url).netloc.lower()
     return any(host.endswith(a) for a in AGGREGATORS)
 
@@ -150,6 +154,10 @@ def greenhouse_job(board: str, job_id: str) -> dict:
 # Lever — the one ATS whose public API exposes custom questions ("lists")
 # ---------------------------------------------------------------------------
 def parse_lever(url: str):
+    """Extract (org, posting_id) from a matching Lever URL string.
+
+    Return (None, None) when the pattern does not match; no HTTP request is made.
+    """
     m = re.search(r"lever\.co/([a-zA-Z0-9_-]+)/([a-zA-Z0-9-]+)", url)
     if m:
         return m.group(1), m.group(2)
@@ -157,6 +165,13 @@ def parse_lever(url: str):
 
 
 def lever_posting(org: str, posting_id: str) -> dict:
+    """Fetch public posting metadata for a Lever org and posting ID.
+
+    Return title, categories, country, workplace_type, apply_url,
+    custom_questions (text/fields dicts), and questions_via_api=True.
+    Missing metadata fields default to None; absent/null lists become [].
+    HTTP/network, JSON decoding, and unexpected response-shape errors propagate.
+    """
     d = _get_json(f"https://api.lever.co/v0/postings/{org}/{posting_id}")
     return {
         "title": d.get("text"),
@@ -177,6 +192,13 @@ def lever_posting(org: str, posting_id: str) -> dict:
 # Ashby — metadata only via public API
 # ---------------------------------------------------------------------------
 def ashby_board_jobs(board: str) -> list:
+    """Fetch publicly listed jobs for an Ashby board token.
+
+    Return dicts with id, title, location, workplace_type, employment_type,
+    and job_url (missing fields default to None), filtering by truthy isListed.
+    Return [] if jobs is absent or no entries are listed. HTTP/network, JSON
+    decoding, and unexpected response-shape errors propagate.
+    """
     d = _get_json(f"https://api.ashbyhq.com/posting-api/job-board/{board}")
     return [
         {
