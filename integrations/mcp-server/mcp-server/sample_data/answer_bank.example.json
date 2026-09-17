@@ -1,0 +1,46 @@
+{
+  "_meta": {
+    "note": "EXAMPLE answer bank. Copy to answer_bank.json and fill with YOUR verified answers during ./setup.sh. Every value must be true for you \u2014 the pipeline never invents what is not here.",
+    "last_updated": "2026-09-15"
+  },
+  "answers": {
+    "first_name": "YOUR_FIRST_NAME",
+    "last_name": "YOUR_LAST_NAME",
+    "email": "you@example.com",
+    "phone": "+1-555-0100",
+    "phone_country": "United States (+1)",
+    "location": "Your City, State, Country",
+    "linkedin": "https://www.linkedin.com/in/your-handle",
+    "us_work_auth": "Yes",
+    "us_citizen_resident": "Yes",
+    "needs_sponsorship": "No",
+    "clearance": "None (willing to obtain)",
+    "noncompete": "No",
+    "education": "YOUR verified education \u2014 never represented as a degree it is not",
+    "ai_industry_years": "YOUR verified number",
+    "total_professional_years": "YOUR verified number",
+    "start_timeframe": "YOUR availability",
+    "heard_about": "Other",
+    "eeo_optional": "Decline to answer"
+  },
+  "banded_questions": {
+    "compensation_expectation": {
+      "rule": "posted-band midpoint or defensible market median; computed per role from its posted band",
+      "note": "If the form offers bands, pick the band containing the computed figure. Never exceed the posted band top."
+    },
+    "team_size": {
+      "rule": "Select the smallest available band. If free-text exact number is required, leave blank and report.",
+      "note": "Never type an invented exact headcount into a free-text field."
+    },
+    "years_leading": {
+      "rule": "Select the band containing your verified leadership tenure. If bands differ, pick the band containing it.",
+      "note": "Only claim tenure you can truthfully support; document the rule you follow."
+    }
+  },
+  "gates": {
+    "eeo_mandatory_no_decline": "STOP and report \u2014 never answer a mandatory EEO question with no decline option.",
+    "free_text_unverifiable": "STOP that field and report \u2014 never invent qualifications, dates, degrees, metrics, team sizes, or compensation.",
+    "no_ai_attestation": "STOP and park \u2014 never attest materials are unaided own work.",
+    "travel_attestation": "STOP and ask the applicant \u2014 never attest to travel/relocation commitments."
+  }
+}
