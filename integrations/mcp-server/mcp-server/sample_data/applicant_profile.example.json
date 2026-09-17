@@ -1,0 +1,36 @@
+{
+  "_meta": {
+    "note": "EXAMPLE applicant profile. ./setup.sh copies this to applicant_profile.json and walks you through filling it. Every claim here must be TRUE \u2014 the resume tailor and answer bank draw only from this file."
+  },
+  "name": "YOUR FULL NAME",
+  "contact": {
+    "phone": "+1-555-0100",
+    "email": "you@example.com",
+    "location": "Your City, State, Country",
+    "linkedin": "https://www.linkedin.com/in/your-handle"
+  },
+  "headline_template": "YOUR headline, e.g. Operations Leader | AI Workflows | {role_angle}",
+  "experience": [
+    {
+      "org": "YOUR COMPANY OR PROJECT",
+      "title": "YOUR verified title",
+      "dates": "2019 to Present",
+      "bullets": [
+        "A truthful, verifiable accomplishment \u2014 no invented metrics.",
+        "Another truthful bullet describing actual work performed."
+      ]
+    }
+  ],
+  "verified_capabilities": [
+    "capability you can actually demonstrate, e.g. operational triage",
+    "another verified capability"
+  ],
+  "credentials": [
+    {
+      "name": "A real credential you hold",
+      "issuer": "Issuer",
+      "date": "2026"
+    }
+  ],
+  "education": "YOUR verified education, stated exactly as it is"
+}
