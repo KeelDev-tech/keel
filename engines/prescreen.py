@@ -360,10 +360,28 @@ def _frp_write_packet_back(packet):
     os.replace(tmp, path)
 
 
+def _frp_enabled(packet):
+    """Whether the Field-Requirement Protocol hook engages for this packet.
+
+    Opt-in: packet.get("frp_enabled") is True, or env KEEL_FRP=1. Default
+    OFF — the legacy unmapped-question path (park with the applicant's-own-
+    words reason) is the repo's baseline behavior, and FRP only engages
+    when the operator has deliberately wired a field_question_protocol
+    module in. This keeps screen_packet's contract stable regardless of
+    which sibling modules happen to be importable in the engines dir.
+    """
+    if isinstance(packet, dict) and "frp_enabled" in packet:
+        return bool(packet["frp_enabled"])
+    return os.environ.get("KEEL_FRP", "").strip().lower() in ("1", "true", "yes")
+
+
 def _frp_unmapped(question, packet, answer_bank):
     """Route one unmapped required question through the Field-Requirement
     Protocol. Returns "answered" (do not park), a reason string (park), or
-    None (FRP absent/failed/skipped — caller uses the legacy reason)."""
+    None (FRP disabled/absent/failed/skipped — caller uses the legacy
+    reason)."""
+    if not _frp_enabled(packet):
+        return None
     try:
         import field_question_protocol as frp
     except Exception:

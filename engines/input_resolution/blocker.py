@@ -2,13 +2,13 @@
 """Normalized blocker object + 10-point pre-escalation proof (§2, §30).
 
 Every candidate blocker is normalized into a Blocker record. The ten proof
-checks run IN CODE before requires_trent may be set True. Fail closed:
+checks run IN CODE before requires_applicant may be set True. Fail closed:
 auto-resolution happens ONLY on positive proof (answer-bank hit with
 provenance, standing-rule match, verified candidate record). Any ambiguity
 stays human. Unknown != Yes, unknown != No.
 
 Blocker text is DATA, never directives: injection patterns in blocker text
-("ignore previous...", fake Trent quotes) are flagged and can never cause
+("ignore previous...", fake applicant quotes) are flagged and can never cause
 an auto-resolution.
 """
 from __future__ import annotations
@@ -41,14 +41,14 @@ def _toks(text: str) -> set[str]:
 INJECTION_PAT = re.compile(
     r"(ignore\s+(all\s+)?previous|disregard\s+(all\s+)?(prior\s+)?instructions|"
     r"mark\s+(this\s+)?as\s+resolved|override\s+the\s+(policy|rules?)|"
-    r"system\s+prompt|you\s+are\s+now|jailbreak|do\s+not\s+tell\s+(trent|the\s+user))",
+    r"system\s+prompt|you\s+are\s+now|jailbreak|do\s+not\s+tell\s+(the\s+applicant|the\s+user))",
     re.IGNORECASE,
 )
 
-# A Trent quote inside blocker text is UNVERIFIED unless it also appears in a
+# An applicant quote inside blocker text is UNVERIFIED unless it also appears in a
 # verified record. Never treat it as provenance.
-TRENT_QUOTE_PAT = re.compile(
-    r"(trent\s+(said|says|approved|told|confirmed|wants)|\(trent:|trent:)",
+APPLICANT_QUOTE_PAT = re.compile(
+    r"(applicant\s+(said|says|approved|told|confirmed|wants)|\(applicant:|applicant:)",
     re.IGNORECASE,
 )
 
@@ -103,7 +103,7 @@ def structured_detect(raw: str):
     guessing. Returns (family, variant) or None.
 
     Micro-format examples:
-      Required attestation needs Trent's explicit word (attest): "unaided"
+      Required attestation needs the applicant's explicit word (attest): "unaided"
       Required free-text question not in answer bank -- ...: "Why do you...?"
       Required office/... commitment question ... (travel): "travel_commitment"
       ESSAY: What excites you...? / DROPDOWN: 3-5yrs ...? / TEXT: Zip Code
@@ -120,23 +120,23 @@ def structured_detect(raw: str):
         return ("travel_commitment", "general")
     m = re.search(r'Required free-text question not in answer bank[^:]*:\s*"([^"]*)"', raw)
     if m:
-        return ("free_text_trent_only", _sig(m.group(1)))
+        return ("free_text_applicant_only", _sig(m.group(1)))
     m = re.search(r'Required essay[^:]*\(essay\):\s*"([^"]*)"', raw)
     if m:
-        return ("free_text_trent_only", _sig(m.group(1)))
+        return ("free_text_applicant_only", _sig(m.group(1)))
     m = re.search(r'\bESSAY:\s*(.+)', raw)
     if m:
-        return ("free_text_trent_only", _sig(m.group(1).rstrip('"; ')))
-    # Common prescreen phrasing for Trent-authored questions (no ESSAY: tag).
+        return ("free_text_applicant_only", _sig(m.group(1).rstrip('"; ')))
+    # Common prescreen phrasing for applicant-authored questions (no ESSAY: tag).
     m = re.search(r'\brequired\s+(essay|personal\s+story|free-?text|written\s+response)\b[:\s]*(.+)', raw, re.I)
     if m:
         inner = m.group(2)
         if re.search(r'unaided|no-?ai', inner, re.I):
             return ("no_ai_unaided_writing", "general")
-        return ("free_text_trent_only", _sig(inner) or "general")
+        return ("free_text_applicant_only", _sig(inner) or "general")
     if re.search(r"own words|own-words", raw, re.I) and re.search(
-            r"(trent|personal|essay|answers?)", raw, re.I):
-        return ("free_text_trent_only", _sig(raw))
+            r"(applicant|personal|essay|answers?)", raw, re.I):
+        return ("free_text_applicant_only", _sig(raw))
     # Prefixed form questions: the DECISION content matters for dedup, not the
     # widget type. Check the inner question against known families first.
     m = re.search(r'\bDROPDOWN:\s*(.+)', raw)
@@ -312,7 +312,7 @@ class Blocker:
     normalized_family: str = "unknown"
     family_variant: str = "general"
     classification: str = "unprocessed"
-    requires_trent: bool = False
+    requires_applicant: bool = False
     reason: str = ""
     agent_next_action: str = ""
     answer_bank_match: Optional[str] = None
@@ -357,14 +357,14 @@ def _bank_entries(bank: dict):
 
 
 # ---------------------------------------------------------------------------
-# P-2026-09-16-g5-guardrail (Trent-approved 2026-09-16 ~12:55 PDT):
+# P-2026-09-16-g5-guardrail (applicant-approved 2026-09-16 ~12:55 PDT):
 # cross-employer answer-key scoping + answer-shape compatibility.
 # A bank key scoped to employer X must never resolve a blocker for
 # employer Y (the Samsara-prior-employment -> Abnormal wrongful clearing),
 # and an answer whose shape cannot satisfy the question's shape must not
 # resolve it (boolean "No" must not answer "how many years" or
 # "describe your experience"). Both refusals fail closed: the blocker
-# keeps its "needs Trent" hypothesis instead of clearing on a wrong answer.
+# keeps its "needs the applicant" hypothesis instead of clearing on a wrong answer.
 # ---------------------------------------------------------------------------
 
 _SCOPE_ONLY_PAT = re.compile(
@@ -505,8 +505,8 @@ def bank_match(raw: str, bank: dict, employer: str = ""):
 
 # ---------------------------------------------------------------------------
 # The 10 proof checks. Each returns (survives: bool, detail: str).
-# survives=True  -> the "needs Trent" hypothesis survives this check.
-# survives=False -> positive proof the blocker does NOT need Trent (or is not
+# survives=True  -> the "needs the applicant" hypothesis survives this check.
+# survives=False -> positive proof the blocker does NOT need the applicant (or is not
 #                   a real blocker); the detail says why and where it routes.
 # Ambiguity ALWAYS survives (fail closed).
 # ---------------------------------------------------------------------------
@@ -529,7 +529,7 @@ UNREAD_PAT = re.compile(
 PATTERN_ONLY_PAT = re.compile(
     r"\b(usually\s+asks?|typically\s+(asks?|requires?)|pattern\s+suggests?|"
     r"form\s+pattern|historical(ly)?\s+(asks?|pattern)|employer\s+usually)\b", re.I)
-# Blocker text that is really an agent-side to-do, not a Trent question.
+# Blocker text that is really an agent-side to-do, not an applicant question.
 AGENT_TODO_PAT = re.compile(
     r"(needs_input:\s*\d+\s*form\s+questions|posting\s+url\s+unverifiable|"
     r"PARKED-UNVERIFIABLE|direct\s+page\s+unreachable|"
@@ -552,7 +552,7 @@ def check_02_current_form_inspected(blk: Blocker, ctx: ProofContext):
         return False, "employer-pattern only, current form unconfirmed — form_verification_required"
     if AGENT_TODO_PAT.search(raw):
         if re.search(r"no\s+tailored\s+packet\s+built", raw, re.I):
-            return False, "agent_action:build_packet — packet not built; agent builds on revival, not a Trent question"
+            return False, "agent_action:build_packet — packet not built; agent builds on revival, not an applicant question"
         return False, "agent-side verification to-do — agent_verification_required"
     # No evidence either way: fail closed -> survives (assume uninspected? no —
     # assuming uninspected would misroute verified blockers. Ambiguity survives.)
@@ -612,6 +612,18 @@ def check_06_not_duplicated(blk: Blocker, ctx: ProofContext):
     return True, "no duplicate marking"
 
 
+def _pref_int(ctx: ProofContext, family: str) -> int | None:
+    """Leading integer of a numeric standing preference, or None when no
+    such preference is on file (fail closed: the proof cannot evaluate a
+    numeric cap it was never given, so it survives)."""
+    pref, _ = prefs_mod.match_preference(ctx.preferences, family,
+                                         ctx.employer, ctx.role_id)
+    if not pref:
+        return None
+    m = re.search(r"(\d+)", str(pref.value))
+    return int(m.group(1)) if m else None
+
+
 def check_07_standing_rule(blk: Blocker, ctx: ProofContext):
     fam = blk.normalized_family
     raw = blk.raw_blocker or ""
@@ -620,21 +632,40 @@ def check_07_standing_rule(blk: Blocker, ctx: ProofContext):
             re.search(r"(\d+)\s*d/w", raw, re.I)
         if m:
             days = int(m.group(1))
-            if days <= 3:
-                return False, f"standing rule office.max_days_per_week=3 covers {days}d/wk — acceptable"
-            return False, f"standing rule office.max_days_per_week=3 conflicts with {days}d/wk — policy_conflict, do not re-ask"
-        # ambiguous frequency: D1 says undefined/unspecified = hybrid-acceptable
+            cap = _pref_int(ctx, "office.max_days_per_week")
+            if cap is None:
+                return True, (f"office frequency {days}d/wk stated but no "
+                              "office.max_days_per_week preference on file — "
+                              "survives")
+            if days <= cap:
+                return False, f"standing rule office.max_days_per_week={cap} covers {days}d/wk — acceptable"
+            return False, f"standing rule office.max_days_per_week={cap} conflicts with {days}d/wk — policy_conflict, do not re-ask"
+        # Ambiguous frequency: honor the office.undefined_frequency
+        # preference when present (e.g. "hybrid-acceptable"); otherwise the
+        # question survives for the applicant's judgment.
         if re.search(r"\b(undefined|unspecified|not\s+specified|unclear)\b", raw, re.I):
-            return False, "D1: undefined/unspecified office frequency is hybrid-acceptable"
+            upref, _ = prefs_mod.match_preference(
+                ctx.preferences, "office.undefined_frequency",
+                ctx.employer, ctx.role_id)
+            if upref and "hybrid" in str(upref.value).lower():
+                return False, ("undefined/unspecified office frequency is "
+                               "hybrid-acceptable per standing preference")
+            return True, "office frequency ambiguous — survives"
         return True, "office frequency ambiguous — survives"
     if fam == "travel_commitment":
         m = re.search(r"(\d+)\s*%", raw)
-        if m and int(m.group(1)) <= 25:
-            return False, f"standing rule travel <=25% covers {m.group(1)}% — acceptable"
         if m:
-            return False, f"travel {m.group(1)}% exceeds 25% cap — policy_conflict, do not re-ask"
+            pct = int(m.group(1))
+            cap = _pref_int(ctx, "travel.max_required_percentage")
+            if cap is None:
+                return True, (f"travel {pct}% stated but no "
+                              "travel.max_required_percentage preference on "
+                              "file — survives")
+            if pct <= cap:
+                return False, f"standing rule travel <={cap}% covers {pct}% — acceptable"
+            return False, f"travel {pct}% exceeds {cap}% cap — policy_conflict, do not re-ask"
         if re.search(r"\b(unspecified|undefined|open.ended|as\s+needed)\b", raw, re.I):
-            return True, "unspecified travel — consolidated Trent decision required"
+            return True, "unspecified travel — consolidated applicant decision required"
         return True, "travel requirement ambiguous — survives"
     if fam == "relocation_willingness":
         pref, _ = prefs_mod.match_preference(ctx.preferences, "relocation.general",
@@ -659,11 +690,11 @@ def check_07_standing_rule(blk: Blocker, ctx: ProofContext):
                                              "email_application.agent_send_authorization",
                                              ctx.employer, ctx.role_id)
         if pref and "NOT AUTHORIZED" in pref.value:
-            return False, ("standing rule: agents never send under Trent's identity — "
-                           "policy_conflict: park for Trent, do not re-ask")
+            return False, ("standing rule: agents never send under the applicant's identity — "
+                           "policy_conflict: park for the applicant, do not re-ask")
         return True, "no email-send authorization on file"
-    if fam in prefs_mod.TRENT_ONLY_FAMILIES or fam.replace("_consent", "") in prefs_mod.TRENT_ONLY_FAMILIES:
-        return True, "trent-only family — no standing auto-resolution"
+    if fam in prefs_mod.APPLICANT_ONLY_FAMILIES or fam.replace("_consent", "") in prefs_mod.APPLICANT_ONLY_FAMILIES:
+        return True, "applicant-only family — no standing auto-resolution"
     return True, "no standing rule for family"
 
 
@@ -690,26 +721,26 @@ PERSONAL_PAT = re.compile(
     r"arbitration|waiver|background\s+check|choose|prefer|decision|motivation|"
     r"why\s+(this|us)|tell\s+us\s+about\s+yourself)\b", re.I)
 
-def check_09_legitimately_requires_trent(blk: Blocker, ctx: ProofContext):
+def check_09_legitimately_requires_applicant(blk: Blocker, ctx: ProofContext):
     fam = blk.normalized_family
-    trent_fams = {
+    applicant_fams = {
         "arbitration_agreement", "ai_evaluation_consent", "no_ai_unaided_writing",
         "personally_completed_certification", "truthfulness_certification",
-        "generic_attestation", "free_text_trent_only", "dropdown_qualification",
+        "generic_attestation", "free_text_applicant_only", "dropdown_qualification",
         "candidate_exercise",
         "recruiting_sms_consent", "recruiting_whatsapp_consent",
         "interview_recording_consent", "compensation_expectation",
         "travel_commitment", "office_frequency",
     }
-    if fam in trent_fams:
+    if fam in applicant_fams:
         return True, f"family '{fam}' is personal/legal/attestation by nature"
     if PERSONAL_PAT.search(blk.raw_blocker or ""):
         return True, "blocker language requires personal choice/attestation"
-    # Deterministic factual fields do NOT require Trent once records exist;
-    # without records they need a fact, which is still Trent's to supply.
+    # Deterministic factual fields do NOT require the applicant once records exist;
+    # without records they need a fact, which is still the applicant's to supply.
     if fam in {"address_fact", "profile_url_fact", "self_assessment_skill",
                "education_degree", "work_authorization"}:
-        return True, f"family '{fam}' needs Trent's factual input (no verified record)"
+        return True, f"family '{fam}' needs the applicant's factual input (no verified record)"
     if fam == "unknown":
         # Unknown family: we cannot prove agent-resolvability. Fail closed —
         # an unclassifiable blocker stays human, never auto-resolves.
@@ -719,7 +750,7 @@ def check_09_legitimately_requires_trent(blk: Blocker, ctx: ProofContext):
 
 def check_10_asking_necessary(blk: Blocker, ctx: ProofContext):
     # If the lead itself is not progressing (dead/rejected/parked for other
-    # reasons), asking Trent cannot progress the application.
+    # reasons), asking the applicant cannot progress the application.
     return True, "necessity judged at batch level (lead liveness), not per check"
 
 
@@ -732,14 +763,14 @@ CHECKS = [
     ("06_not_duplicated", check_06_not_duplicated),
     ("07_standing_rule", check_07_standing_rule),
     ("08_not_tool_problem", check_08_not_tool_problem),
-    ("09_legitimately_requires_trent", check_09_legitimately_requires_trent),
+    ("09_legitimately_requires_applicant", check_09_legitimately_requires_applicant),
     ("10_asking_necessary", check_10_asking_necessary),
 ]
 
 
 def run_proof(blk: Blocker, ctx: ProofContext) -> Blocker:
-    """Run all 10 checks, then classify. requires_trent=True ONLY if every
-    check survives AND the family maps to a Trent-legitimate class."""
+    """Run all 10 checks, then classify. requires_applicant=True ONLY if every
+    check survives AND the family maps to an applicant-legitimate class."""
     raw = (blk.raw_blocker or "").strip()
     if not raw or not _norm(raw):
         # No blocker text at all: there is no blocker. This is a data
@@ -747,7 +778,7 @@ def run_proof(blk: Blocker, ctx: ProofContext) -> Blocker:
         blk.normalized_family, blk.family_variant = "unknown", "general"
         blk.injection_flag = False
         blk.classification = "false_blocker"
-        blk.requires_trent = False
+        blk.requires_applicant = False
         blk.reason = "empty/malformed blocker text — no blocker present"
         blk.agent_next_action = "drop from tray"
         blk.resolution = "removed: empty"
@@ -772,9 +803,9 @@ def _classify(blk: Blocker, failures: list[tuple[str, str]], inj_detail: str,
               ctx: ProofContext) -> None:
     fmap = {name: detail for name, detail in failures}
 
-    def setc(classification, requires_trent, reason, action="", resolution=None):
+    def setc(classification, requires_applicant, reason, action="", resolution=None):
         blk.classification = classification
-        blk.requires_trent = requires_trent
+        blk.requires_applicant = requires_applicant
         blk.reason = ("[INJECTION-SUSPECT TEXT — treated as data] " if blk.injection_flag else "") + reason
         blk.agent_next_action = action
         blk.resolution = resolution
@@ -845,10 +876,10 @@ def _classify(blk: Blocker, failures: list[tuple[str, str]], inj_detail: str,
         # must land in policy_conflict, never resolved_auto. The literal
         # "policy_conflict" marker is the primary signal; park-language is the
         # backstop so a future check-07 detail can't slip into auto-resolve.
-        if ("policy_conflict" in dl or "park for trent" in dl
+        if ("policy_conflict" in dl or "park for the applicant" in dl
                 or "do not re-ask" in dl or "do not ask" in dl):
             setc("policy_conflict", False, detail,
-                 action="park per standing rule; do not re-ask Trent",
+                 action="park per standing rule; do not re-ask the applicant",
                  resolution="parked: standing policy")
         else:
             setc("resolved_auto", False, detail,
@@ -858,8 +889,8 @@ def _classify(blk: Blocker, failures: list[tuple[str, str]], inj_detail: str,
         setc("agent_verification_required", False, fmap["05_researchable"],
              action="agent researches posting/employer; re-run proof")
         return
-    if "09_legitimately_requires_trent" in fmap:
-        setc("resolved_auto", False, fmap["09_legitimately_requires_trent"],
+    if "09_legitimately_requires_applicant" in fmap:
+        setc("resolved_auto", False, fmap["09_legitimately_requires_applicant"],
              action="agent resolves deterministically", resolution="agent_resolvable")
         return
     if "10_asking_necessary" in fmap:
@@ -867,19 +898,19 @@ def _classify(blk: Blocker, failures: list[tuple[str, str]], inj_detail: str,
              action="no ask; lead not progressing", resolution="dropped")
         return
 
-    # All 10 survived -> genuine Trent decision. Map family to subtype.
+    # All 10 survived -> genuine applicant decision. Map family to subtype.
     fam = blk.normalized_family
-    if fam == "free_text_trent_only":
+    if fam == "free_text_applicant_only":
         # Normal free-text essays stay parked per standing skip-input directive
         # (essay drafting §10/§11 explicitly excluded from this build).
-        setc("essay_trent_only", True,
-             "all 10 proof checks survived; free-text answer needs Trent's own words (never drafted by agent)",
+        setc("essay_applicant_only", True,
+             "all 10 proof checks survived; free-text answer needs the applicant's own words (never drafted by agent)",
              action="present in compressed tap list")
         return
     if fam == "generic_attestation":
         setc("legal_attestation", True,
-             "all 10 proof checks survived; attestation needs Trent's explicit word",
-             action="present exact attestation text for Trent")
+             "all 10 proof checks survived; attestation needs the applicant's explicit word",
+             action="present exact attestation text for the applicant")
         return
     if fam == "dropdown_qualification":
         raw_l = (blk.raw_blocker or "").lower()
@@ -887,12 +918,12 @@ def _classify(blk: Blocker, failures: list[tuple[str, str]], inj_detail: str,
                if re.search(r"\b\d+\s*-?\s*(yrs?|years?)\b", raw_l) or "proficiency" in raw_l
                else "user_fact")
         setc(sub, True,
-             "all 10 proof checks survived; qualification dropdown needs Trent's factual input",
+             "all 10 proof checks survived; qualification dropdown needs the applicant's factual input",
              action="present exact options + evidence")
         return
     if fam == "candidate_exercise":
         setc("human_authorship_required", True,
-             "all 10 proof checks survived; employer-mandated exercise/thread needs Trent's own work",
+             "all 10 proof checks survived; employer-mandated exercise/thread needs the applicant's own work",
              action="present exercise requirements; no agent authorship")
         return
     subtype = {
@@ -920,6 +951,6 @@ def _classify(blk: Blocker, failures: list[tuple[str, str]], inj_detail: str,
     # (essay drafting §10/§11 explicitly excluded from this build).
     if fam == "unknown" and re.search(r"\b(essay|why\s+(this|us)|tell\s+us|describe)\b",
                                       blk.raw_blocker or "", re.I):
-        subtype = "essay_trent_only"
-    setc(subtype, True, f"all 10 proof checks survived; family '{fam}' legitimately requires Trent",
+        subtype = "essay_applicant_only"
+    setc(subtype, True, f"all 10 proof checks survived; family '{fam}' legitimately requires the applicant",
          action="present in compressed tap list")

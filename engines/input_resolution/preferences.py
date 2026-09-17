@@ -106,6 +106,10 @@ def seed_preferences() -> list[Preference]:
         Preference("office.max_days_per_week", "3 (EXAMPLE — applicant's own cap)",
                    source="example seed; replace with the applicant's own policy",
                    created_at=D),
+        Preference("office.undefined_frequency",
+                   "hybrid-acceptable (EXAMPLE — applicant's own policy)",
+                   source="example seed; replace with the applicant's own policy",
+                   created_at=D),
         Preference("travel.max_required_percentage", "25 on a defined schedule (EXAMPLE)",
                    source="example seed; replace with the applicant's own policy",
                    created_at=D),
@@ -135,10 +139,9 @@ def seed_preferences() -> list[Preference]:
 
 
 # Families the engine may auto-apply vs families that always need the
-# applicant. A family listed here as trent_only can NEVER resolve via
-# preferences. (Constant name kept for compatibility with blocker.py; it is
-# a code identifier, not a reference to any person.)
-TRENT_ONLY_FAMILIES = frozenset({
+# applicant. A family listed here as applicant_only can NEVER resolve via
+# preferences.
+APPLICANT_ONLY_FAMILIES = frozenset({
     "legal.arbitration",
     "interview_recording.metaview",
     "interview_recording.bright_hire",

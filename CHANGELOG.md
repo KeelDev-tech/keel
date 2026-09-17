@@ -46,6 +46,34 @@ All notable changes to Keel are documented here. The format follows
 - Worker charter (`worker-charter/`): the autonomous-worker prompt
   template with constraint-tagged exemplars; the public assembler
   deliberately does not mine the private technique library.
+- Verify hardening: `verify_retry.py` gains the run singleton, 24h
+  cooldowns, pool cursor rotation, stale-park guard, sync/async parity
+  probe, and prescreen promotion hooks; `verify_retry_async.py`
+  (async transport), `verify_cron.py` (cadence tick), `live_cache.py`
+  and `http_cache.py` (fail-closed HTTP caching layers).
+- Outcome recording: `record_outcome.py` (ATS-key enforcement,
+  placeholder refusal, consent-gated classification),
+  `outcome_analytics.py` (OFFER outcome, fail-closed ledger linking),
+  `inbox_listener.py` (OFFER classification, LinkedIn/Indeed
+  channel tripwires).
+- Queue governance: `queue_intake.py` (single validation point),
+  `queue_io.py` (atomic queue writes), `staging_ingest.py`
+  (staging → queue worker), `title_triage.py` (staging-side triage).
+- Executor-adjacent: `apply_loop.py` (READY-lead buffer/claim engine;
+  stops at launch packets per the executor contract),
+  `prescreen.py` (posting-eligibility + pre-promotion screens, opt-in
+  field-question-protocol hook), `rate_limits.py`.
+- Input brokering: `input_broker.py` (external draft brokering with a
+  local anti-invention verifier), `lever_submit.py` and
+  `breezy_preflight.py` (read-only automation-friendliness probes;
+  verdict: browser path only).
+- Answer-bank example (`engines/answer_bank.example.json`):
+  configurable attestation scope (pre-authorized keys, hard-stop
+  classes) — example data only.
+- Tests: launch-lock race (`test_launch_lock_x20.py`), evidence gate
+  (`test_evidence_gate.py`), input-resolution port
+  (`test_input_resolution_port.py`), preference sanitization
+  (`test_preferences.py`), cost model/tracker, worker-charter suite.
 
 ### Fixed
 - `setup.sh` writes queue files in the canonical top-level-list form and

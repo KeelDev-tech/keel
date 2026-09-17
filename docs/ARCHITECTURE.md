@@ -44,21 +44,52 @@
 | `resume_tailor.py` | materials | PDF resume from your applicant profile; truthfulness-checked |
 | `cover_letter_generator.md` | materials | Cover-letter prompt template with placeholders |
 | `answer_bank.example.json` | materials | Canonical answers, banded rules, hard gates (copy → personalize) |
-| `verify_retry.py` | verification | Re-verifies parked leads; promotes LIVE, buries dead |
+| `verify_retry.py` | verification | Re-verifies parked leads; run singleton, 24h cooldowns, pool cursor, stale-park guard, sync/async parity probe; promotes LIVE, buries dead |
+| `verify_retry_async.py` | verification | Async (aiohttp) transport for the verify pool: per-host/global semaphores, jitter; importable without aiohttp (fail-closed) |
+| `verify_cron.py` | verification | Standing cadence tick: PID lockfile, cursor, run records, dry-run by default |
+| `live_cache.py` | verification | Fail-closed 2h liveness cache so the verify pool stops re-fetching known-live postings |
+| `http_cache.py` | verification | Process-local shared GET cache for verify workers |
+| `genuine_pat.py` | verification | Genuine-input classifier: genuinely operator-blocked leads stay parked; verification-only items return to the pool |
+| `title_triage.py` | intake | Staging-side title-family triage; keeps the verify HTTP budget on promotable leads |
 | `feeder_watchdog.py` | verification | Queue-health monitor; refills via verify_retry when dry+idle |
-| `prescreen.py` | screen | Pre-launch screen: PARK verdicts go to your input queue |
+| `queue_intake.py` | intake | Single validation point for every entry written to the queue files |
+| `queue_io.py` | intake | Atomic queue-file IO (lock-protected read-modify-write) |
+| `staging_ingest.py` | intake | Persistent staging → queue ingestion worker |
+| `dedupe_gate.py` | intake | Discovery-side duplicate guard: one lead, one queue |
+| `launch_lock.py` | launch | One live application task per role (atomic lock + pre-launch duplicate/twin-submit guard) |
+| `prescreen.py` | screen | Pre-launch screen: commitment/essay/attestation/question checks, posting-eligibility + pre-promotion screens; PARK verdicts go to your input queue; opt-in FRP hook (`KEEL_FRP=1`) |
 | `employer_patterns.py` | screen | Per-employer blind-ATS priors (example file; yours is private) |
 | `rate_limits.py` | screen | Employer application budgets (defaults; override per employer) |
 | `ats.py` | detection | ATS platform detection from URLs (read-only) |
+| `ats_discovery/` | discovery | Board-enumeration adapters for extra ATS platforms (detection only) |
+| `greenhouse_json_enumerate.py` | discovery | Greenhouse JSON board enumeration (detection only) |
+| `ashby_lever_json_enumerate.py` | discovery | Ashby/Lever JSON board enumeration (detection only) |
+| `greenhouse_board_classify.py` | discovery | Classifies Greenhouse boards for enumeration |
+| `clean_board_watch.py` | discovery | Watches enumerated boards for new postings |
+| `page_capture.py` | detection | Read-only posting-page capture for evidence |
 | `edge_probe.py` | detection | Monthly capability radar: CONFIRMED/FLIP/INCONCLUSIVE probes |
 | `api_direct_detect.py` | detection | Detects direct-board URL candidates (detection only) |
+| `lever_submit.py` | detection | Read-only Lever automation-friendliness probe (verdict: browser path only) |
+| `breezy_preflight.py` | detection | Read-only Breezy apply-page probe: CAPTCHA wall, question set, honeypots (flagged, never filled) |
 | `form_intel.py` | intel | Pre-launch form intelligence over HTTP (read-only probes) |
+| `input_resolution/` | input | Structured handling of operator-input blockers: collapse, metrics, dry-run reports, apply with backups |
+| `input_broker.py` | input | Brokers applicant-blocked input gaps to an external draft model; local verifier refuses invented content; nothing unparks |
+| `field_question_protocol.py` | input | One-time-cost required-question protocol: classify once, bank verifiable answers, instant-park applicant-only questions |
 | `keel_paths.py` | paths | Single resolver for the workspace root: `KEEL_HOME`, default `~/keel`. No module hardcodes a path. |
-| `apply_loop.py` | packet | Builds launch packets for eligible READY leads |
+| `apply_loop.py` | packet | Builds launch packets for eligible READY leads; stops at launch packets per the executor contract |
+| `packet_watchdog.py` | packet | Starvation watchdog: flags IN-FLIGHT packets with no launch claim |
+| `parked_task_sweep.py` | packet | Never-halt sweeper: proposes closing parked tasks holding lane slots (never applicant-only items) |
+| `batch_staged_launches.py` | packet | Wake-up batch planner: re-checks the launch-lock guard per staged entry, emits bounded spawn instructions |
+| `staged-launch-preflight.py` | packet | Re-validates staged launches (guard, freshness, budget, prescreen) before firing |
 | `log_event.py` | telemetry | Append-only event logging; never rewrites history |
-| `record_outcome.py` | telemetry | Outcome telemetry writer (technique-library hooks stubbed) |
+| `record_outcome.py` | telemetry | Outcome telemetry writer: ATS-key enforcement, placeholder refusal, consent-gated classification |
+| `cost_model.py` | telemetry | Per-submission cost dimensions recorded additively on ledger rows (unmetered dims never read as 0.0) |
+| `cost_tracker.py` | telemetry | Cost series builder: least-squares trends, strict compounding verdict, gaps explicit |
+| `lane_watchdog.py` | telemetry | Sustainability red-line evaluator against live data; one deduped gate per breach window |
+| `outcome_tracking/` | analytics | Evidence gate for submission claims; invite/offer surfaces over the telemetry log; capture-rate audits |
 | `outcome_analytics.py` | analytics | Lane-level ack/reject/invite rates; fail-closed on thin data |
 | `inbox_listener.py` | analytics | Employer-response intake; pluggable MailSource (Maildir default) |
+| `worker-charter/` | charter | Autonomous-worker prompt template + envelope ingest/validation; the public assembler mines operator exemplars, never a private library |
 | `build_dashboard.py` | dashboard | Self-contained HTML dashboard from ledger + queues |
 
 ## Data flow
