@@ -21,6 +21,7 @@ so it resolves paths locally with a $KEEL_HOME fallback (never the private
 pipeline's workspace path).
 """
 import json
+import hashlib
 import os
 import re
 import sys
@@ -64,6 +65,10 @@ def fail(msg):
 def validate_envelope(env: dict) -> dict:
     if not isinstance(env, dict):
         fail("envelope is not a JSON object")
+    # Manifest adoption (2026-09-17): stamp the envelope schema version.
+    # Additive field only — no logic change. Workers should emit
+    # "schema_version": 1 on new envelopes going forward.
+    env.setdefault("schema_version", 1)
     if env.get("status") not in VALID_STATUS:
         fail(f"status must be one of {sorted(VALID_STATUS)}")
     if not isinstance(env.get("result"), dict):
@@ -189,11 +194,19 @@ def main():
                   f"for {a['role_id']}")
         else:
             try:
+                # Replay-safe event ID: the digest covers the whole
+                # (validated) envelope, so re-ingesting the same envelope
+                # yields the same IDs — no duplicate telemetry events, no
+                # duplicate evidence rows.
+                env_digest = hashlib.sha256(
+                    json.dumps(env, sort_keys=True,
+                               allow_nan=False).encode()).hexdigest()
                 record(a["ats"], a["technique"], a["outcome"], a["note"],
                        role_id=a["role_id"], company=a["company"],
                        source="charter-worker-ingest",
                        fit_score=a.get("fit_score"),
-                       resume_lane=resolve_resume_lane(a))
+                       resume_lane=resolve_resume_lane(a),
+                       event_id=f"envelope:{env_digest}:{i}")
             except ValueError as e:
                 # ADD-2 2026-09-16: worker-reported garbage (e.g. unknown ats
                 # keys) must fail one attempt closed and keep the envelope

@@ -45,13 +45,26 @@ TRIAGE_DEFERRED_STATUS = "PARKED-TRIAGE-DEFERRED"
 # (keeps Growth Account Executive sales roles), bare "strategy"/"strategic"
 # (keeps Strategic Finance Manager), bare "automation" (keeps Senior IT
 # Automation Engineer / Senior SWE Backend Core AI Automation).
+# Hospitality-operations expansion (2026-09-18, gate-vocab-review):
+# measured on 16 employer-direct hospitality leads. "general manager" is
+# explicitly claimed by the GM-Ops lane profile (general management, team
+# leadership, labor/inventory/cash controls); "director of outlets" is
+# the hospitality analog of the covered "director of operations". Both are
+# distinctive multi-word compounds with zero junk-title collision risk.
+# Deliberately NOT added (each scores 0 on every lane profile,
+# measured 2026-09-18): event titles (no lane master), culinary/facilities
+# engineering ("chef", "engineer" — the latter also a TRIAGE_MISS keyword),
+# service-specialist titles ("maitre d"), wellness/housekeeping/guest-services
+# and F&B shift-supervisor titles, and pipeline/future postings. Keeping
+# them would burn verify HTTP on leads that cannot reach materials.
 TRIAGE_HITS = re.compile(
     r"(operations|revenue ops|sales ops|business ops|product ops|program ops|"
     r"go-to-market|gtm|chief of staff|ai tooling|ai operations|trust & safety|"
     r"ai safety|ai governance|solutions architect|strategy & operations|bizops|"
     r"enablement|"
     r"program manager|technical program|program lead|project manager|"
-    r"business systems|systems analyst)",
+    r"business systems|systems analyst|"
+    r"general manager|director of outlets)",
     re.I)
 
 # Exclusion keywords: RAMP-proven base + "talent" (measured: keeps Senior
@@ -154,6 +167,8 @@ def annotate_deferred(entry, reason_code, stamp):
             f"{TRIAGE_DEFERRED_STATUS} band; recoverable via re-triage. "
             f"No fit_score invented or inferred.")
     prev = entry.get("queue_notes") or ""
+    if isinstance(prev, list):
+        prev = " ".join(str(p) for p in prev if p)
     entry["queue_notes"] = (prev + " " + note).strip() if prev else note
     entry["triage_reason"] = reason_code
     return entry

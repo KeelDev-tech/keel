@@ -40,6 +40,14 @@ teamtailor (JS apply overlay), careerpuck (third-party career-board host;
 resolve the proxied ATS per posting). All fail-closed here: detect()
 returns candidate=False with reason until a supervised verification
 proves a direct path.
+
+BROWSER-ONLY / REFUSED (verdicts assigned 2026-09-16 by concrete probes,
+registry entries carry the evidence): phenom (reCAPTCHA explicit-render
+wall + posting applyUrl hops off Phenom to another ATS -- listing
+surface, not apply transport), eightfold (reCAPTCHA with explicit site
+key, no HTTP-discoverable submit endpoint), join (official API v2
+requires an employer token; no free no-key endpoint -- refused). All
+fail-closed here.
 """
 
 import os
