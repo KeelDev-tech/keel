@@ -660,8 +660,33 @@ def _save_queue(path, leads):
     json.dump(leads, open(path, "w"), indent=1)
 
 
+# Ported 2026-09-18 from the main pipeline
+# (engines/application-executor/prescreen.py, J-20260915-2140-gate-316,
+# ARM 71): synthetic test traffic must never emit production gate events.
+# Unit tests and ad-hoc probes call park_lead() with fixture role_ids
+# (STRIPE-TEST-1, TEST-*, ...); without this guard every test run appended
+# gate_blocked rows to production telemetry/events.jsonl (~43 rows since
+# 2026-09-15, J-20260918-2130-gate-2313). The guard lives here — at the
+# single production emission choke point in this fork — so no test file
+# needs its own mock to stay clean. Token-delimiter anchored: FIRETEST-*
+# are REAL sweep leads (not synthetic) and must keep emitting.
+_SYNTHETIC_RID_PAT = re.compile(
+    r"(^|[-_])(test|fixture|synthetic|smoke|mock|demo|example|sample)([-_]|$)",
+    re.IGNORECASE,
+)
+
+
+def is_synthetic_role_id(role_id):
+    """True when role_id is test/synthetic traffic, not a real lead."""
+    return bool(_SYNTHETIC_RID_PAT.search(str(role_id or "")))
+
+
 def _primary_gate(reasons):
     text = " ".join(reasons).lower()
+    # ARM 72 (2026-09-15): recording consent is its own integrity class --
+    # classify it as recording_consent (in GATE_TYPES), never needs_input.
+    if "recording consent" in text:
+        return "recording_consent"
     if "essay" in text:
         return "essay"
     if any(w in text for w in ("relocation", "hybrid", "office", "travel")):
@@ -741,16 +766,20 @@ def park_lead(role_id, reasons, queue_dir=None, backup=True):
     _save_queue(owner_path, owner_leads)
     _save_queue(ni_path, ni_leads)
 
-    try:
-        log_event.log(
-            "gate_blocked",
-            role_id=role_id,
-            company=lead.get("company", ""),
-            source="prescreen",
-            details={"gate": _primary_gate(reasons), "reasons": reasons},
-        )
-    except Exception as e:
-        print(f"  prescreen: telemetry log failed (non-fatal): {e}", file=sys.stderr)
+    # J-20260918-2130-gate-2313 (port of J-20260915-2140-gate-316): synthetic
+    # test traffic never emits production gate events (see
+    # is_synthetic_role_id above).
+    if not is_synthetic_role_id(role_id):
+        try:
+            log_event.log(
+                "gate_blocked",
+                role_id=role_id,
+                company=lead.get("company", ""),
+                source="prescreen",
+                details={"gate": _primary_gate(reasons), "reasons": reasons},
+            )
+        except Exception as e:
+            print(f"  prescreen: telemetry log failed (non-fatal): {e}", file=sys.stderr)
 
     return {"ok": True, "role_id": role_id, "backup": backup,
             "from_queue": owner}

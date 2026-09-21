@@ -10,7 +10,9 @@ loops; `check` deliberately accepts anything (read-only).
 Covers:
   1. register -> publish -> claim -> ship round-trips under the new loop name
      (ship must pass --metric per the ADD-1 metrics-first gate: every shipped
-     proposal names its measured optimization-log metric)
+     proposal names its measured optimization-log metric; since the K61
+     tier-(a) port the name must resolve to a real log record, so setUp
+     writes a fixture optimization log)
   2. ship without --metric is refused fail-closed (rc=1, "no metric linked")
   3. unregistered loop fails cleanly (rc=1, "unknown loop") on publish/claim/ship/dispute/resolve
   3. the three existing loops (plus main-agent) still publish fine
@@ -48,6 +50,15 @@ class BlackboardCase(unittest.TestCase):
         self.tmp = tempfile.mkdtemp(prefix="bbtest-")
         self.env = dict(os.environ)
         self.env["BLACKBOARD_PATH"] = os.path.join(self.tmp, "judgment-blackboard.json")
+        # K61 tier (a): ship --metric must resolve against a real
+        # optimization-log record. Fixture log carries the metric the
+        # roundtrip test ships with.
+        self.env["KEEL_METRICS_PATH"] = os.path.join(self.tmp, "optimization-log.jsonl")
+        with open(self.env["KEEL_METRICS_PATH"], "w") as f:
+            f.write(json.dumps({"name": "test-roundtrip-metric",
+                                "metric": "roundtrip fixture",
+                                "baseline_metric": 0, "post_metric": 1,
+                                "verdict": "compounded"}) + "\n")
 
     def bb(self, *argv):
         r = subprocess.run([sys.executable, BB, *argv], env=self.env,

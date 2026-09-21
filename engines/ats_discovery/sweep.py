@@ -132,17 +132,28 @@ def build_entry(cand, triage_on):
 
 
 def sweep_platform(pkey, adapter, boards, ctx, args):
-    """Fetch all active boards for one platform. Returns summary dict."""
-    summary = {"platform": pkey, "boards": 0, "raw": 0, "staged": 0,
-               "dupes": 0, "blocked": 0, "dead": 0, "skipped": [],
+    """Fetch all active boards for one platform. Returns summary dict.
+
+    completed_observations semantics: only fully completed boards count in
+    raw/staged. A board that aborts (exception, 429 hard stop) or is skipped
+    contributes ZERO to completed_observations — unexecuted fetches are never
+    counted as completed observations. Structured abort records land in
+    summary["aborts"]; summary["skipped"] keeps the non-exception skips.
+    """
+    summary = {"platform": pkey, "boards": 0, "completed_boards": 0, "raw": 0,
+               "staged": 0, "completed_observations": 0, "dupes": 0,
+               "blocked": 0, "dead": 0, "skipped": [], "aborts": [],
                "rate_limited": False}
     getter = lambda u: paced_get(u, PACE_DETAIL)  # noqa: E731
+    completed_raw = 0
     for slug, meta in boards.items():
         if meta.get("status") not in ("active", "probe"):
             summary["skipped"].append(f"{slug}: status={meta.get('status')}")
             continue
         employer = meta.get("employer", slug)
         adapter.SKIP_LOG.clear() if hasattr(adapter, "SKIP_LOG") else None
+        if hasattr(adapter, "ABORT_LOG"):
+            adapter.ABORT_LOG.clear()
         summary["boards"] += 1
         try:
             raw = adapter.fetch_board(slug, getter)
@@ -152,10 +163,13 @@ def sweep_platform(pkey, adapter, boards, ctx, args):
             break  # stop this platform, others continue
         except Exception as e:
             summary["skipped"].append(f"{slug}: fetch error {e}")
+            summary["aborts"].extend(getattr(adapter, "ABORT_LOG", []))
             continue
         for s in getattr(adapter, "SKIP_LOG", []):
             summary["skipped"].append(f"{s.get('slug')}: {s.get('reason')}")
         summary["raw"] += len(raw)
+        completed_raw += len(raw)  # board completed fully: it counts
+        summary["completed_boards"] += 1
         for r in raw:
             try:
                 cand = adapter.normalize(r, slug, employer)
@@ -190,6 +204,10 @@ def sweep_platform(pkey, adapter, boards, ctx, args):
             ctx["staged"].append(entry)
             summary["staged"] += 1
         time.sleep(PACE_BOARD)
+    # completed_observations: only fully completed boards count. Unexecuted
+    # fetches (aborted boards, 429 hard stops, skipped statuses) never count
+    # as completed observations.
+    summary["completed_observations"] = completed_raw
     return summary
 
 

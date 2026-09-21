@@ -41,6 +41,7 @@ from datetime import datetime, timezone
 BASE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE)
 from keel_paths import DATA  # noqa: E402 — repo path convention
+import queue_io  # noqa: E402 — mutual exclusion for the --apply section
 
 STATE = os.path.join(DATA, ".state")
 STAGED_FILE = os.path.join(STATE, "staged-launches.json")
@@ -89,10 +90,25 @@ def _guard_go(role_id, company, title):
         ok, info = launch_lock.prelaunch_guard(role_id, "batch-staged",
                                                company, title,
                                                owner="batch-staged-launches")
+    except ValueError:
+        # Corrupt lease (K20): never silently absorbed — the ValueError
+        # must propagate loudly for operator reconciliation
+        # (silent-defect sweep 2026-09-19).
+        raise
     except Exception as ex:
         return False, f"prelaunch_guard raised ({ex})"
     verdict = (info or {}).get("verdict", "")
     if ok and verdict == "GO":
+        # The guard ACQUIRED the lock under the "batch-staged" placeholder
+        # task_id; the emitted instruction tells the spawner to acquire
+        # with its OWN task_id, so release ours first — otherwise every
+        # emitted instruction is unlaunchable (HELD) for the full TTL
+        # (silent-defect sweep 2026-09-19). The duplicate-check value of
+        # the guard is kept: it still ran before this release.
+        rok, rinfo = launch_lock.release(role_id, "batch-staged")
+        if not rok:
+            return False, ("guard GO but lock release failed "
+                           f"({(rinfo or {}).get('status')}); refusing emit")
         return True, "GO"
     return False, "guard %s: %s" % (verdict or "REFUSED",
                                     (info or {}).get("reason", ""))
@@ -143,43 +159,49 @@ def main(argv):
                     limit = max(1, int(argv[i + 1]))
                 except ValueError:
                     pass
-    now = datetime.now(timezone.utc)
-    maxmode = _load_json(MAXMODE_FILE, {})
-    staged = _load_json(STAGED_FILE, {})
-    entries = (staged.get("entries", []) if isinstance(staged, dict)
-               else staged if isinstance(staged, list) else [])
+    # --apply critical section (silent-defect sweep 2026-09-19):
+    # load -> plan -> mark-FIRED -> write must be mutually
+    # exclusive. Two concurrent runs otherwise both pass the
+    # guard (same task_id re-acquire is idempotent) and
+    # double-emit the same lead.
+    with queue_io.queue_lock(owner="batch_staged_launches:apply"):
+        now = datetime.now(timezone.utc)
+        maxmode = _load_json(MAXMODE_FILE, {})
+        staged = _load_json(STAGED_FILE, {})
+        entries = (staged.get("entries", []) if isinstance(staged, dict)
+                   else staged if isinstance(staged, list) else [])
 
-    out = {"ts": now.isoformat(),
-           "sleep_window": maxmode.get("sleep_window"),
-           "limit": limit, "apply": apply,
-           "spawn": [], "skipped": []}
-    if entries:
-        out["spawn"], out["skipped"] = plan_batch(entries, limit)
-    print(json.dumps(out, indent=1))
-    print(f"\nbatch: {len(out['spawn'])} spawn instruction(s) "
-          f"(limit {limit}), {len(out['skipped'])} skipped")
+        out = {"ts": now.isoformat(),
+               "sleep_window": maxmode.get("sleep_window"),
+               "limit": limit, "apply": apply,
+               "spawn": [], "skipped": []}
+        if entries:
+            out["spawn"], out["skipped"] = plan_batch(entries, limit)
+        print(json.dumps(out, indent=1))
+        print(f"\nbatch: {len(out['spawn'])} spawn instruction(s) "
+              f"(limit {limit}), {len(out['skipped'])} skipped")
 
-    if not out["spawn"]:
-        print("nothing to fire")
+        if not out["spawn"]:
+            print("nothing to fire")
+            return 0
+        if not apply:
+            print("dry-run: no writes (pass --apply to mark FIRED on emit)")
+            return 0
+
+        backup = _backup_staged()
+        by_id = {e.get("role_id"): e for e in entries}
+        for s in out["spawn"]:
+            e = by_id.get(s["role_id"])
+            if e is None:
+                continue
+            e["status"] = "FIRED"
+            e["fired_at"] = now.isoformat()
+            e["fired_by"] = "batch_staged_launches"
+        _atomic_write(STAGED_FILE, staged)
+        print(f"applied: marked {len(out['spawn'])} entr(ies) FIRED "
+              f"(backup: {backup}). The lane owner still fires each browser "
+              f"task from these instructions — this script spawned nothing.")
         return 0
-    if not apply:
-        print("dry-run: no writes (pass --apply to mark FIRED on emit)")
-        return 0
-
-    backup = _backup_staged()
-    by_id = {e.get("role_id"): e for e in entries}
-    for s in out["spawn"]:
-        e = by_id.get(s["role_id"])
-        if e is None:
-            continue
-        e["status"] = "FIRED"
-        e["fired_at"] = now.isoformat()
-        e["fired_by"] = "batch_staged_launches"
-    _atomic_write(STAGED_FILE, staged)
-    print(f"applied: marked {len(out['spawn'])} entr(ies) FIRED "
-          f"(backup: {backup}). The lane owner still fires each browser "
-          f"task from these instructions — this script spawned nothing.")
-    return 0
 
 
 if __name__ == "__main__":

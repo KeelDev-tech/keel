@@ -48,8 +48,8 @@ from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE)
-from keel_paths import HOME as PIPE  # noqa: E402 — repo root; never the private pipeline path
-LEDGER = os.path.join(PIPE, "ledger", "application-ledger.json")
+from keel_paths import HOME as PIPE, DATA  # noqa: E402 — repo root; never the private pipeline path
+LEDGER = os.path.join(DATA, "application-ledger.json")
 STANDARD_QUEUE = os.path.join(PIPE, "data", "queues", "standard-queue.json")
 
 URL_FIELDS = ("ats_url", "application_url", "posting_url",
@@ -111,6 +111,21 @@ def _url_of(e):
     return ""
 
 
+def _urls_of(e):
+    """All non-empty candidate URL fields, in URL_FIELDS order.
+
+    The ledger/queue side scans every URL field of a row; the candidate
+    side must too — otherwise a candidate whose application_url matches a
+    SUBMITTED row but whose ats_url is fresh verifies "fresh".
+    """
+    urls = []
+    for k in URL_FIELDS:
+        v = (e.get(k) or "").strip()
+        if v:
+            urls.append(v)
+    return urls
+
+
 def _load(path):
     try:
         d = json.load(open(path))
@@ -133,7 +148,7 @@ def _index_url(rows):
 
 
 def check_candidate(company, title, url, ledger_rows=None,
-                    queue_entries=None, index=None):
+                    queue_entries=None, index=None, urls=None):
     """Return (verdict, evidence): verdict in
     {"duplicate", "suspect", "fresh"}; evidence is a dict with
     kind + the matching row/entry identifiers, or {} when fresh.
@@ -144,7 +159,13 @@ def check_candidate(company, title, url, ledger_rows=None,
     lookups. An explicit `index` (or explicit row lists) overrides.
     Note: the index covers ALL live queues, a deliberate superset of
     the legacy standard-queue-only scan.
+
+    `urls` (optional): the candidate's URL fields as a list. When given
+    it is checked across ALL fields; otherwise the single `url` arg is
+    used, preserving the check_candidate(company, title, url) call
+    shape for existing callers.
     """
+    cand_urls = urls if urls is not None else ([url] if url else [])
     if ledger_rows is None and queue_entries is None:
         idx = index
         if idx is None:
@@ -158,21 +179,32 @@ def check_candidate(company, title, url, ledger_rows=None,
         ledger_rows = [r for r in _load(LEDGER)
                        if r.get("status") == "SUBMITTED"]
         queue_entries = _load(STANDARD_QUEUE)
-        return _check_rows(company, title, url, ledger_rows, queue_entries)
+        return _check_rows(company, title, cand_urls, ledger_rows,
+                           queue_entries)
     if ledger_rows is None:
         ledger_rows = [r for r in _load(LEDGER)
                        if r.get("status") == "SUBMITTED"]
     if queue_entries is None:
         queue_entries = _load(STANDARD_QUEUE)
-    return _check_rows(company, title, url, ledger_rows, queue_entries)
+    return _check_rows(company, title, cand_urls, ledger_rows, queue_entries)
 
 
-def _check_rows(company, title, url, ledger_rows, queue_entries):
-
-    cu = canonical_url(url)
+def _check_rows(company, title, urls, ledger_rows, queue_entries):
+    # Ledger-side filter: only SUBMITTED rows ever block as
+    # duplicate_of_submitted. Explicit-ledger_rows callers (e.g. sweep)
+    # pass the full unfiltered ledger, so the filter must live here —
+    # a REJECTED row must not yield ("duplicate", kind=...) and block
+    # legitimate re-discovery. Queue entries are deliberately NOT
+    # status-filtered.
+    ledger_rows = [r for r in (ledger_rows or [])
+                   if isinstance(r, dict) and r.get("status") == "SUBMITTED"]
+    # Candidate side: check across ALL url fields, matching the
+    # ledger/queue row scan below.
+    cand_urls = [cu for cu in dict.fromkeys(
+        canonical_url(u) for u in (urls or [])) if cu]
     nc, nt = _norm_name(company), _norm_title(title)
 
-    if cu:
+    for cu in cand_urls:
         for r in ledger_rows:
             if isinstance(r, dict) and any(
                     canonical_url(r.get(k)) == cu for k in URL_FIELDS):
@@ -268,7 +300,8 @@ def filter_batch(entries, ledger_rows=None, queue_entries=None, index=None):
         if use_rows:
             verdict, evidence = check_candidate(
                 _company(e), e.get("title"), _url_of(e),
-                ledger_rows=ledger_rows, queue_entries=queue_entries)
+                ledger_rows=ledger_rows, queue_entries=queue_entries,
+                urls=_urls_of(e))
         else:
             verdict, evidence = idx.check_candidate(
                 _company(e), e.get("title"), _url_of(e),

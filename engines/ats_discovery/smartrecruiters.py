@@ -29,7 +29,68 @@ ENRICH_DETAILS = True
 
 SKIP_LOG = []
 
+# Structured abort records, one per exception that escapes fetch_board.
+# Retained so an aborted run keeps its stage, exception, HTTP status/headers
+# (when present), and completed-items watermark; see _record_abort().
+ABORT_LOG = []
+
 _LIMIT = 100
+
+UNKNOWN_TRANSPORT_ABORT = "UNKNOWN_TRANSPORT_ABORT"
+
+
+def _exc_http_info(exc):
+    """Extract (http_status, http_headers) from an exception, best effort.
+
+    Attribute convention: exc.status / exc.headers / exc.response; absent
+    -> (None, None). Never raises.
+    """
+    status = getattr(exc, "status", None)
+    headers = getattr(exc, "headers", None)
+    if status is None:
+        resp = getattr(exc, "response", None)
+        if resp is not None:
+            status = getattr(resp, "status", getattr(resp, "status_code", None))
+            headers = getattr(resp, "headers", None)
+    if headers is not None and not isinstance(headers, dict):
+        try:
+            headers = dict(headers)
+        except (TypeError, ValueError):
+            headers = {"_unparseable": str(headers)[:500]}
+    return status, headers
+
+
+def _record_abort(slug, stage, stage_detail, exc, completed_items):
+    """Append a structured abort record to ABORT_LOG and return it.
+
+    stage is "list-page" (stage_detail: {"offset": n}) or "detail-fetch"
+    (stage_detail: {"posting_id": id}). completed_items is the watermark of
+    fully completed items already accumulated. reason_code is
+    UNKNOWN_TRANSPORT_ABORT when no status/explanation is available.
+    """
+    status, headers = _exc_http_info(exc)
+    message = str(exc)
+    explained = (
+        status is not None
+        or getattr(exc, "response", None) is not None
+        or bool(message.strip())
+    )
+    record = {
+        "platform": PLATFORM,
+        "slug": slug,
+        "stage": stage,
+        "exception_class": type(exc).__name__,
+        "exception_message": message,
+        "completed_items": completed_items,
+        "http_status": status,
+        "http_headers": headers,
+        "reason_code": "TRANSPORT_ABORT"
+        if explained
+        else UNKNOWN_TRANSPORT_ABORT,
+    }
+    record.update(stage_detail)
+    ABORT_LOG.append(record)
+    return record
 
 _SCRIPT_STYLE_RE = re.compile(r"<(script|style)[^>]*?>.*?</\1>", re.I | re.S)
 _TAG_RE = re.compile(r"<[^>]+>")
@@ -79,13 +140,26 @@ def fetch_board(slug, http_get):
 
     Raw dict keys: id, company_name, name, location (raw dict), released_date,
     employment_type, function, industry, experience_level, ref, detail (dict or None).
+
+    Abort semantics: any exception that escapes this function first appends a
+    structured record to ABORT_LOG (platform, slug, stage, exception class,
+    HTTP status/headers when present, completed-items watermark, reason_code)
+    and then re-raises. Partial results are never returned (fail closed).
     """
     results = []
     offset = 0
     total_found = None
 
     while True:
-        status, _ctype, body = http_get(_page_url(slug, offset))
+        try:
+            status, _ctype, body = http_get(_page_url(slug, offset))
+        except Exception as exc:
+            # Abort: retain stage + watermark, then re-raise (fail closed;
+            # partial results are NOT returned). RateLimited propagates
+            # unchanged so the 429 hard stop is intact.
+            _record_abort(slug, "list-page", {"offset": offset}, exc,
+                          len(results))
+            raise
         if status == 429:
             raise RateLimited(_page_url(slug, offset))
         if status != 200:
@@ -110,7 +184,15 @@ def fetch_board(slug, http_get):
         items = payload.get("content") or []
         for item in items:
             if isinstance(item, dict):
-                results.append(_fetch_item(slug, item, http_get))
+                try:
+                    results.append(_fetch_item(slug, item, http_get))
+                except Exception as exc:
+                    # Abort during a per-posting detail fetch: retain stage
+                    # (with posting_id) + watermark, then re-raise.
+                    _record_abort(slug, "detail-fetch",
+                                  {"posting_id": item.get("id")}, exc,
+                                  len(results))
+                    raise
 
         if (
             not isinstance(total_found, int)

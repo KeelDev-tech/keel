@@ -6,11 +6,20 @@ mobile-friendly HTML dashboard. All paths resolve under KEEL_HOME
 (or ~/keel). Interview cards come from INTERVIEW_INVITED ledger rows;
 parked items come from data/parked.json (user-maintained) — nothing is
 hardcoded, so no personal data can leak into the template.
+
+K31/K32 (2026-09-18): import-safe — importing this module performs no
+dashboard I/O; call build()/main() to regenerate. Missing or corrupt source
+data renders as "Unknown" with a warning banner, never as a healthy zero.
+K33 (2026-09-18): untrusted date fallback is HTML-escaped; the page carries a
+restrictive Content-Security-Policy.
 """
+import argparse
 import json, html, os, re
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
+
+from safe_io import ROW_KEYS  # live's canonical row-container contract
 
 HOME = Path(os.environ.get("KEEL_HOME", str(Path.home() / "keel")))
 LEDGER = HOME / "data" / "application-ledger.json"
@@ -21,17 +30,42 @@ OUT = HOME / "dashboard" / "dashboard.html"
 TZ = ZoneInfo(os.environ.get("KEEL_TZ", "America/Los_Angeles"))
 
 
-def load_json(p):
+def load_json(path):
+    """Read a JSON document.
+
+    Returns (items, warning). items is None when the file is missing,
+    unreadable, or malformed — callers must render "Unknown" for it, never a
+    healthy zero (K31). warning is None on success.
+    """
+    path = Path(path)
     try:
-        return json.loads(Path(p).read_text())
-    except Exception:
-        return []
+        raw = path.read_text()
+    except FileNotFoundError:
+        return None, f"{path.name} is missing; its counts are unknown"
+    except OSError as exc:
+        return None, f"{path.name} could not be read ({exc}); its counts are unknown"
+    try:
+        return as_items(json.loads(raw)), None
+    except (ValueError, AttributeError, TypeError):
+        return None, f"{path.name} is malformed; its counts are unknown"
 
 
 def as_items(d):
+    # 2026-09-19 (Keel 0.11.0 validation): honor live's own canonical
+    # row-container contract (safe_io.ROW_KEYS) instead of only
+    # entries/items. A ledger shaped {"rows": [...]} is a shape live's own
+    # safe_io.rows() supports — silently flattening it to [] would report a
+    # healthy zero for data that is present, the exact gap K31 exists to
+    # stop. Non-dict/non-list top-level values keep failing closed through
+    # load_json's (None, warning) path.
     if isinstance(d, list):
         return d
-    return d.get("entries", d.get("items", []))
+    if not isinstance(d, dict):
+        raise TypeError("expected a row list or supported object container")
+    for key in ROW_KEYS:
+        if key in d:
+            return d[key]
+    return []
 
 
 def esc(s):
@@ -48,75 +82,136 @@ def fmt_ts(ts):
         dt = dt.astimezone(TZ)
         return dt.strftime("%b %d, %I:%M %p")
     except Exception:
-        return str(ts)[:16].replace("T", " ")
+        # K33: the raw fallback is untrusted ledger/queue data — escape it so a
+        # hostile date string (e.g. date_submitted="<img src=x onerror=...>") can
+        # never inject markup into this user-facing page.
+        return html.escape(str(ts)[:16].replace("T", " "))
 
 
-ledger = as_items(load_json(LEDGER))
-submitted = [e for e in ledger if e.get("status") == "SUBMITTED"]
-interviews = [e for e in ledger if e.get("status") == "INTERVIEW_INVITED"]
-recent = sorted(
-    (e for e in submitted if e.get("submitted_at") or e.get("date_submitted")),
-    key=lambda e: str(e.get("submitted_at") or e.get("date_submitted")),
-    reverse=True,
-)[:8]
+def fmt_count(value):
+    """Render a count, or "Unknown" when the underlying data was missing or
+    corrupt (K31). On clean data this is str(int) — byte-identical to before."""
+    return "Unknown" if value is None else str(value)
 
-queues = {}
-if QUEUE_DIR.exists():
-    for qf in QUEUE_DIR.glob("*.json"):
-        queues[qf.stem] = len(as_items(load_json(qf)))
 
-# Backlog: extract ranked QUEUED items (optional file)
-backlog_items = []
-try:
-    text = BACKLOG.read_text()
-    m = re.search(r"### QUEUED \(ranked\)(.*?)(?=^## |\Z)", text, re.S | re.M)
-    if m:
-        for line in m.group(1).splitlines():
-            lm = re.match(r"\s*\d+\.\s+\*\*(.+?)\*\*\s*[—-]\s*(.+)", line)
-            if lm:
-                backlog_items.append((lm.group(1).strip(), lm.group(2).strip()))
-except Exception:
-    pass
+def collect(home=HOME):
+    """Gather dashboard data. Pure collection — no rendering, no writes (K32)."""
+    home = Path(home)
+    data = {"warnings": []}
 
-# Parked items: user-maintained data file, never hardcoded.
-# Format: [{"title": "...", "detail": "...", "action": "..."}]
-parked = as_items(load_json(PARKED_FILE))
+    ledger_items, warning = load_json(home / "data" / "application-ledger.json")
+    if warning:
+        data["warnings"].append(warning)
+    data["ledger_known"] = ledger_items is not None
+    ledger = ledger_items if ledger_items is not None else []
+    submitted = [e for e in ledger if e.get("status") == "SUBMITTED"]
+    interviews = [e for e in ledger if e.get("status") == "INTERVIEW_INVITED"]
+    data["submitted"] = submitted
+    data["interviews"] = interviews
+    data["recent"] = sorted(
+        (e for e in submitted if e.get("submitted_at") or e.get("date_submitted")),
+        key=lambda e: str(e.get("submitted_at") or e.get("date_submitted")),
+        reverse=True,
+    )[:8]
 
-now = datetime.now(TZ).strftime("%A, %b %d — %I:%M %p")
+    queues = {}
+    queue_dir = home / "data" / "queues"
+    queues_known = True
+    if queue_dir.exists():
+        for qf in sorted(queue_dir.glob("*.json")):
+            items, w = load_json(qf)
+            if w:
+                data["warnings"].append(w)
+            queues[qf.stem] = None if items is None else len(items)
+    else:
+        queues_known = False
+        data["warnings"].append("queues directory is missing; queue counts are unknown")
+    data["queues"] = queues
+    data["queues_known"] = queues_known
 
-interview_html = "\n".join(
-    f"<div class='card interview'><div class='co'>{esc(c.get('company'))}</div>"
-    f"<div class='role'>{esc(c.get('title'))}</div>"
-    f"<div class='dim'>{esc(c.get('contact') or '')} — {esc(c.get('detail') or '')}</div>"
-    f"<div class='action'>⚠ {esc(c.get('action') or 'Needs your input')}</div></div>"
-    for c in interviews
-) or "<p class='dim'>No active interview threads.</p>"
+    # Backlog: extract ranked QUEUED items (optional file)
+    backlog_items = []
+    try:
+        text = (home / "ORCHESTRATOR_BACKLOG.md").read_text()
+        m = re.search(r"### QUEUED \(ranked\)(.*?)(?=^## |\Z)", text, re.S | re.M)
+        if m:
+            for line in m.group(1).splitlines():
+                lm = re.match(r"\s*\d+\.\s+\*\*(.+?)\*\*\s*[—-]\s*(.+)", line)
+                if lm:
+                    backlog_items.append((lm.group(1).strip(), lm.group(2).strip()))
+    except Exception:
+        pass
+    data["backlog_items"] = backlog_items
 
-recent_rows = "\n".join(
-    f"<tr><td>{fmt_ts(e.get('submitted_at') or e.get('date_submitted'))}</td>"
-    f"<td><strong>{esc(e.get('company'))}</strong><br><span class='dim'>{esc(e.get('title') or e.get('role_id') or '')}</span></td></tr>"
-    for e in recent
-) or "<tr><td colspan='2' class='dim'>No submissions yet.</td></tr>"
+    # Parked items: user-maintained data file, never hardcoded.
+    # Format: [{"title": "...", "detail": "...", "action": "..."}]
+    parked_items, warning = load_json(home / "data" / "parked.json")
+    if warning:
+        data["warnings"].append(warning)
+    data["parked"] = parked_items if parked_items is not None else []
 
-queue_rows = "\n".join(
-    f"<div class='qrow'><span>{esc(k)}</span><strong>{v}</strong></div>"
-    for k, v in sorted(queues.items())
-) or "<p class='dim'>No queues yet.</p>"
+    data["now"] = datetime.now(TZ).strftime("%A, %b %d — %I:%M %p")
+    return data
 
-backlog_rows = "\n".join(
-    f"<div class='brow'><span class='rank'>{i+1}</span>"
-    f"<div><strong>{esc(t)}</strong><br><span class='dim'>{esc(d)}</span></div></div>"
-    for i, (t, d) in enumerate(backlog_items[:7])
-) or "<p class='dim'>Backlog empty.</p>"
 
-parked_html = "\n".join(
-    f"<div class='prow'><strong>{esc(p.get('title'))}</strong><br><span class='dim'>{esc(p.get('detail'))}</span></div>"
-    for p in parked
-) or "<p class='dim'>Nothing parked.</p>"
+def render(data):
+    """Render the dashboard HTML from collected data. Pure function of data."""
+    submitted = data["submitted"]
+    interviews = data["interviews"]
+    queues = data["queues"]
 
-html_doc = f"""<!DOCTYPE html>
+    submitted_n = fmt_count(len(submitted) if data["ledger_known"] else None)
+    interviews_n = fmt_count(len(interviews) if data["ledger_known"] else None)
+    queue_total = fmt_count(
+        None
+        if not data["queues_known"] or any(v is None for v in queues.values())
+        else sum(queues.values())
+    )
+
+    interview_html = "\n".join(
+        f"<div class='card interview'><div class='co'>{esc(c.get('company'))}</div>"
+        f"<div class='role'>{esc(c.get('title'))}</div>"
+        f"<div class='dim'>{esc(c.get('contact') or '')} — {esc(c.get('detail') or '')}</div>"
+        f"<div class='action'>⚠ {esc(c.get('action') or 'Needs your input')}</div></div>"
+        for c in interviews
+    ) or "<p class='dim'>No active interview threads.</p>"
+
+    recent_rows = "\n".join(
+        f"<tr><td>{fmt_ts(e.get('submitted_at') or e.get('date_submitted'))}</td>"
+        f"<td><strong>{esc(e.get('company'))}</strong><br><span class='dim'>{esc(e.get('title') or e.get('role_id') or '')}</span></td></tr>"
+        for e in data["recent"]
+    ) or "<tr><td colspan='2' class='dim'>No submissions yet.</td></tr>"
+
+    queue_rows = "\n".join(
+        f"<div class='qrow'><span>{esc(k)}</span><strong>{fmt_count(v)}</strong></div>"
+        for k, v in sorted(queues.items())
+    ) or "<p class='dim'>No queues yet.</p>"
+
+    backlog_rows = "\n".join(
+        f"<div class='brow'><span class='rank'>{i+1}</span>"
+        f"<div><strong>{esc(t)}</strong><br><span class='dim'>{esc(d)}</span></div></div>"
+        for i, (t, d) in enumerate(data["backlog_items"][:7])
+    ) or "<p class='dim'>Backlog empty.</p>"
+
+    parked_html = "\n".join(
+        f"<div class='prow'><strong>{esc(p.get('title'))}</strong><br><span class='dim'>{esc(p.get('detail'))}</span></div>"
+        for p in data["parked"]
+    ) or "<p class='dim'>Nothing parked.</p>"
+
+    warning_html = ""
+    if data["warnings"]:
+        items = "".join(f"<li>{esc(w)}</li>" for w in data["warnings"])
+        warning_html = (
+            "<div class='card'><div class='co'>⚠ Data needs attention</div>"
+            f"<div class='dim'><ul style='margin:8px 0 0 18px;font-size:13px'>{items}</ul></div></div>\n"
+        )
+
+    now = data["now"]
+
+    html_doc = f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
 <title>Keel — Dashboard</title>
 <style>
 *{{box-sizing:border-box;margin:0;padding:0}}
@@ -147,11 +242,11 @@ footer{{margin:26px 0 10px;color:#5b6b7d;font-size:12px;line-height:1.6}}
 <div class="live">● LIVE — AUTO-REFRESHED</div>
 <h1>Keel</h1>
 <div class="sub">Updated {esc(now)} · evidence-only counts · ledger-verified</div>
-
+{warning_html}
 <div class="score">
-<div class="stat"><div class="n">{len(submitted)}</div><div class="l">Applications<br>submitted</div></div>
-<div class="stat"><div class="n">{len(interviews)}</div><div class="l">Interview<br>invites</div></div>
-<div class="stat"><div class="n">{sum(queues.values())}</div><div class="l">Roles in<br>queues</div></div>
+<div class="stat"><div class="n">{submitted_n}</div><div class="l">Applications<br>submitted</div></div>
+<div class="stat"><div class="n">{interviews_n}</div><div class="l">Interview<br>invites</div></div>
+<div class="stat"><div class="n">{queue_total}</div><div class="l">Roles in<br>queues</div></div>
 </div>
 
 <h2>Interview pipeline — needs you</h2>
@@ -173,7 +268,28 @@ footer{{margin:26px 0 10px;color:#5b6b7d;font-size:12px;line-height:1.6}}
 Standing rules: clean leads needing nothing from you are auto-submitted. No outreach, no payments, no fabricated credentials. Items needing your input are parked, never prompted repeatedly. Counts increment only on explicit confirmation pages.
 </footer>
 </body></html>"""
+    return html_doc
 
-OUT.parent.mkdir(parents=True, exist_ok=True)
-OUT.write_text(html_doc)
-print(f"Wrote {OUT} ({len(html_doc)} bytes)")
+
+def build(home=HOME, out=None):
+    """Collect, render, and write the dashboard. The sanctioned write path (K32)."""
+    home = Path(home)
+    out = Path(out) if out is not None else home / "dashboard" / "dashboard.html"
+    html_doc = render(collect(home))
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(html_doc)
+    return out, html_doc
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--out", default=None,
+                        help="Write the dashboard HTML here instead of the default path.")
+    args = parser.parse_args(argv)
+    out, html_doc = build(out=args.out)
+    print(f"Wrote {out} ({len(html_doc)} bytes)")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

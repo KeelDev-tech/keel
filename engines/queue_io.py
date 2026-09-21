@@ -52,6 +52,7 @@ import fcntl
 import json
 import os
 import sys
+import tempfile
 import threading
 import time
 from datetime import datetime
@@ -145,8 +146,8 @@ def _pid_alive(pid):
 
 def _read_meta():
     try:
-        with open(_meta_path()) as f:
-            d = json.load(f)
+        with open(_meta_path(), "rb") as f:
+            d = strict_loads(f.read())
         return d if isinstance(d, dict) else None
     except (OSError, ValueError):
         return None
@@ -260,22 +261,102 @@ def queue_lock(timeout=None, owner=None):
         f.close()
 
 
+def strict_loads(raw):
+    """Strict JSON parse (K50 port, Keel 0.3.1 review; adapted from the
+    candidate's safe_io.loads — strict-JSON half ONLY).
+
+    Rejects, raising ValueError:
+      - duplicate object keys (silent last-wins is a data-loss hazard in
+        queue/bank reads),
+      - non-finite numbers (NaN / Infinity tokens),
+      - float overflow (e.g. 1e999 parses to inf — caught by a
+        non-finitely-tolerant re-serialization).
+    The candidate's integer-version component does NOT port (no live
+    counterpart, excluded by triage).
+    """
+    if isinstance(raw, (bytes, bytearray)):
+        raw = bytes(raw).decode("utf-8")
+
+    def _reject_dupes(pairs):
+        seen = {}
+        for key, value in pairs:
+            if key in seen:
+                raise ValueError("duplicate JSON key: %r" % key)
+            seen[key] = value
+        return seen
+
+    def _reject_nonfinite(value):
+        raise ValueError("non-finite JSON number: %s" % value)
+
+    value = json.loads(raw, object_pairs_hook=_reject_dupes,
+                       parse_constant=_reject_nonfinite)
+    # Overflow check: 1e999 parses to inf without parse_constant firing
+    # (the parser produces the float directly). Re-serializing with
+    # allow_nan=False refuses any non-finite float anywhere in the tree.
+    json.dumps(value, allow_nan=False)
+    return value
+
+
+def _dir_fsync(dirpath):
+    """fsync a directory so a just-completed rename is durable.
+
+    A directory-fsync failure means the rename may not survive a crash;
+    swallowing it would lie about durability, so it raises — the caller
+    treats it as a failed write (the file itself is already fsynced and
+    visible, so the failure mode is retry-able, never torn).
+    """
+    fd = os.open(dirpath, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
 def load_json(path):
     if not os.path.exists(path):
         return []
-    with open(path) as f:
-        data = json.load(f)
+    with open(path, "rb") as f:
+        data = strict_loads(f.read())
     if isinstance(data, dict) and "leads" in data:
         return data["leads"]
     return data
 
 
 def atomic_write_json(path, items):
-    """Crash-safe write (tmp + os.replace). Caller must hold queue_lock()."""
-    tmp = path + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(items, f, indent=1)
-    os.replace(tmp, path)
+    """Crash-safe write (tmp + os.replace). Caller must hold queue_lock().
+
+    Durability half (K38 port, Keel 0.3.1 review; adapted from the
+    candidate's safe_io.atomic_bytes):
+      - unique temp via tempfile.mkstemp — no fixed `<path>.tmp` name, so
+        two writers in different directories (or a leftover .tmp) can never
+        collide;
+      - 0600 mode on the temp before any bytes are written (the queue file
+        inherits it at rename);
+      - json bytes flushed and os.fsync'd BEFORE os.replace, so a crash
+        cannot commit torn page-cache data;
+      - directory fsync AFTER the rename, so the rename itself is durable;
+      - the temp is always unlinked on failure, never left behind.
+
+    The flock mutual-exclusion half is untouched (2026-09-15/16 design);
+    the measured K38 precondition is +35ms per 5.7 MiB write on this VM
+    (~1.3% of the async-verify 60-leads/2.7min budget), so it is enabled
+    globally rather than gated.
+    """
+    payload = json.dumps(items, indent=1).encode("utf-8")
+    parent = os.path.dirname(os.path.abspath(path))
+    os.makedirs(parent, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=".queue-", dir=parent)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            os.fchmod(f.fileno(), 0o600)
+            f.write(payload)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+        _dir_fsync(parent)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
 
 
 def patch_entry(path, role_id, fields):

@@ -47,10 +47,13 @@ from datetime import datetime, timedelta, timezone
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE)
-from keel_paths import HOME as PIPE  # noqa: E402 — repo root; never the private pipeline path
+from keel_paths import HOME as PIPE, DATA  # noqa: E402 — repo root; never the private pipeline path
 LOCK_DIR = os.path.join(PIPE, "hidden_files", "launch-locks")
 LOCK_TTL_H = 2
-LEDGER_PATH = os.path.join(PIPE, "ledger", "application-ledger.json")
+# Silent-defect sweep 2026-09-19: the old path (<HOME>/ledger/...) was a
+# dead letter — this tree's writer and all other readers use
+# <HOME>/data/application-ledger.json and nothing writes to ledger/.
+LEDGER_PATH = os.path.join(DATA, "application-ledger.json")
 
 
 def _lock_path(role_id):
@@ -69,6 +72,24 @@ def _read_lock(role_id):
             return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         return None
+
+
+def _read_lock_strict(role_id):
+    """_read_lock that raises ValueError on a present-but-unreadable lease.
+
+    K20 (silent-defect sweep 2026-09-19): a corrupt lease file must never
+    be silently stolen — the old code read None from the JSONDecodeError
+    swallow and treated the corrupt-but-present lease as stale, deleting
+    and re-creating it. Operator reconciliation is required instead.
+    """
+    path = _lock_path(role_id)
+    lock = _read_lock(role_id)
+    if lock is None and os.path.exists(path):
+        raise ValueError(
+            f"launch lock for role_id {role_id!r} is present but "
+            "unreadable (corrupt lease); refusing takeover — operator "
+            "reconciliation required")
+    return lock
 
 
 def _is_fresh(lock):
@@ -122,7 +143,12 @@ def acquire(role_id, task_id, owner=""):
 
     Exactly one concurrent caller wins per role_id. A stale lock (older
     than LOCK_TTL_H) is taken over: the old file is removed and the
-    atomic create is retried once. Same-task re-acquire refreshes.
+    atomic create is retried once. Same-task re-acquire refreshes the
+    lease (acquired_at rewritten atomically).
+
+    Raises ValueError when the existing lease file is present but
+    unreadable (corrupt lease, K20) — never silently stolen; the caller
+    must let it propagate for operator reconciliation.
     """
     os.makedirs(LOCK_DIR, exist_ok=True)
     path = _lock_path(role_id)
@@ -135,13 +161,33 @@ def acquire(role_id, task_id, owner=""):
     }
     if _write_lock_atomically(path, lock):
         return True, {"status": "ACQUIRED", "lock": lock}
-    # Someone holds a file here — inspect it.
-    existing = _read_lock(role_id)
+    # Someone holds a file here — inspect it. Strict read: a present but
+    # unreadable (corrupt) lease raises ValueError here and at every
+    # re-read below — never silently stolen (K20).
+    existing = _read_lock_strict(role_id)
     if existing and existing.get("task_id") == task_id:
-        # Idempotent re-acquire: refresh via atomic replace.
         if _is_fresh(existing):
-            return True, {"status": "ACQUIRED", "lock": existing,
-                          "note": "already owner"}
+            # Same-task re-acquire refreshes the lease — the docstring's
+            # promise (the old code returned the existing lock unchanged,
+            # a false promise for lanes re-acquiring to keep their lease).
+            # remove + atomic re-create via the existing helper; the
+            # "already owner" note is kept verbatim so callers keying on
+            # it (inflight_marker's _lock_created gate) keep their
+            # semantics.
+            refreshed = dict(existing)
+            refreshed["acquired_at"] = _now().isoformat()
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+            if _write_lock_atomically(path, refreshed):
+                return True, {"status": "ACQUIRED", "lock": refreshed,
+                              "note": "already owner"}
+            existing = _read_lock_strict(role_id)
+            if existing and existing.get("task_id") == task_id:
+                return True, {"status": "ACQUIRED", "lock": existing,
+                              "note": "already owner"}
+            return False, {"status": "HELD", "lock": existing}
         # Own lock went stale: take it over.
         try:
             os.remove(path)
@@ -150,11 +196,13 @@ def acquire(role_id, task_id, owner=""):
         if _write_lock_atomically(path, lock):
             return True, {"status": "ACQUIRED", "lock": lock,
                           "note": "stale own lock refreshed"}
-        existing = _read_lock(role_id)
+        existing = _read_lock_strict(role_id)
         return False, {"status": "HELD", "lock": existing}
     if existing and _is_fresh(existing):
         return False, {"status": "HELD", "lock": existing}
-    # Stale or unreadable lock held by someone else: take over, then retry.
+    # Stale lock held by someone else: take over, then retry. (The
+    # unreadable case can no longer reach here — _read_lock_strict raised
+    # above.)
     try:
         os.remove(path)
     except OSError:
@@ -162,7 +210,7 @@ def acquire(role_id, task_id, owner=""):
     if _write_lock_atomically(path, lock):
         return True, {"status": "ACQUIRED", "lock": lock,
                       "note": "stale lock taken over"}
-    existing = _read_lock(role_id)
+    existing = _read_lock_strict(role_id)
     return False, {"status": "HELD", "lock": existing}
 
 

@@ -19,7 +19,7 @@ import json
 import os
 import urllib.error
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from keel_paths import HOME  # noqa: E402
@@ -30,6 +30,10 @@ PDT = ZoneInfo("America/Los_Angeles")
 UA = {"User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                      "AppleWebKit/537.36 (KHTML, like Gecko) "
                      "Chrome/126.0 Safari/537.36")}
+
+# K23 mirror port (2026-09-18): upper bound on a capture read, adapted from
+# the review candidate's safe_http.MAX_BYTES (4 MiB) — stdlib only.
+MAX_CAPTURE_BYTES = 4 * 1024 * 1024
 
 
 def pdt_stamp():
@@ -83,11 +87,79 @@ def capture(url, html=None, timeout=25):
     return manifest
 
 
-def load_capture(manifest):
-    """Read back a captured page. Returns bytes or None."""
+def load_capture(manifest, *, max_age_hours=2, now=None):
+    """Read back a captured page. Returns bytes, or None on any doubt.
+
+    K23 mirror port (2026-09-18, adapted): fail-closed integrity checks —
+    every condition must hold, otherwise None is returned (the reader falls
+    back to an HTTP fetch, never to untrusted bytes):
+      - manifest is a dict with captured=True
+      - capture age within max_age_hours. Manifests stamp NAIVE PDT
+        wall-clock strings ("2026-09-17 14:23:01 PDT"); the bound is computed
+        against America/Los_Angeles, never assumed UTC. A missing or
+        unparseable stamp fails closed.
+      - capture_path is contained in CAPTURE_DIR (symlinks resolved —
+        traversal and link escapes fail closed)
+      - the file's basename is <sha256>.html for the manifest's sha256
+      - bytes read are non-empty, within MAX_CAPTURE_BYTES, and match the
+        manifest's byte count
+      - sha256 of the bytes matches the manifest digest
+    Never raises.
+    """
     try:
-        path = (manifest or {}).get("capture_path", "")
+        if not isinstance(manifest, dict) or manifest.get("captured") is not True:
+            return None
+        stamped = _parse_pdt_stamp(manifest.get("captured_at"))
+        if stamped is None:
+            return None
+        ref = now if now is not None else datetime.now(PDT)
+        age = ref - stamped
+        if not (timedelta(0) <= age <= timedelta(hours=max_age_hours)):
+            return None
+        digest = str(manifest.get("sha256") or "")
+        nbytes = manifest.get("bytes")
+        path = _contained_path(CAPTURE_DIR, manifest["capture_path"])
+        if os.path.basename(path) != digest + ".html":
+            return None
         with open(path, "rb") as f:
-            return f.read()
+            body = f.read(MAX_CAPTURE_BYTES + 1)
+        if not body or len(body) > MAX_CAPTURE_BYTES:
+            return None
+        if not isinstance(nbytes, int) or len(body) != nbytes:
+            return None
+        if hashlib.sha256(body).hexdigest() != digest:
+            return None
+        return body
     except Exception:
         return None
+
+
+def _contained_path(base_dir, raw):
+    """stdlib-only contained_path: resolve symlinks and require containment
+    in base_dir. Raises on escape."""
+    base = os.path.realpath(base_dir)
+    resolved = os.path.realpath(raw)
+    if resolved != base and not resolved.startswith(base + os.sep):
+        raise ValueError("path escapes capture dir")
+    return resolved
+
+
+def _parse_pdt_stamp(s):
+    """Parse pdt_stamp() output ('2026-09-17 14:23:01 PDT') into an
+    America/Los_Angeles-aware datetime. Returns None if unparseable.
+
+    Note: strptime's %Z only recognizes the local zone's names, so the
+    trailing zone-name token is stripped and the wall clock is treated as
+    Los Angeles local time (ZoneInfo resolves DST per the date)."""
+    if not isinstance(s, str) or not s.strip():
+        return None
+    text = s.strip()
+    # zone-less stamp first; otherwise drop the trailing zone-name token
+    # (e.g. "PDT"/"PST") and parse the bare wall clock.
+    for candidate in (text, text.rsplit(" ", 1)[0]):
+        try:
+            naive = datetime.strptime(candidate, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            continue
+        return naive.replace(tzinfo=PDT)
+    return None

@@ -5,6 +5,7 @@ Usage:
     python3 record_outcome.py <ats> "<technique>" <submitted|blocked> "<note>"
         [--role-id ID] [--company NAME] [--source SRC] [--fit-score N]
         [--resume-lane LANE] [--lane A|B] [--date YYYY-MM-DD]
+        [--timestamp-basis BASIS]
         [--experiment-variant VID] [--no-telemetry]
 
 Validated, append-only outcome recording:
@@ -20,6 +21,15 @@ Validated, append-only outcome recording:
     evidence base. --no-telemetry suppresses the event for honest
     backfills of rows whose telemetry already exists (no double-counting);
     --date backfills the evidence entry's date (validated YYYY-MM-DD).
+  - Occurred-vs-observed separation (gap-plan item b): every emitted
+    details dict carries BOTH occurred_at (the validated evidence date —
+    when the outcome happened, per the caller's evidence) and observed_at
+    (the UTC emission time — when this writer saw it), plus timestamp_basis
+    (the CLOSED vocabulary naming where occurred_at came from: ats_receipt,
+    ats_api, browser_confirmation, user_statement, backfill, unknown) and
+    source_watermark (WRITER_REV). The basis is NEVER inferred — --date
+    without --timestamp-basis leaves basis "unknown", and rows whose basis
+    is unknown are excluded from latency estimates via latency_eligible().
 
 Private-layer boundary (see SPLIT.md): the technique library — per-ATS
 form-commit/event-sequencing methods — is part of the private execution
@@ -34,7 +44,7 @@ import json
 import os
 import re
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 
@@ -61,6 +71,71 @@ except Exception:  # fail closed: without the classifier, consent parks
     _canonical_primary_gate = None  # read as technique_blocked
 
 
+# --- Keel security authority choke point (Phase 1) ---
+# SUBMISSION-class actions route through the deterministic security
+# subsystem before anything is recorded:
+#   IDENTITY/CAPABILITY -> INJECTION CHECK -> POLICY ENGINE -> LEDGER.
+# The LLM requests; the policy engine decides. Fail closed: if the
+# security authority cannot be loaded, no submission is recorded.
+try:
+    _SECURITY_PARENT = os.path.dirname(BASE)
+    if _SECURITY_PARENT not in sys.path:
+        sys.path.insert(0, _SECURITY_PARENT)
+    from security.actions.interceptor import (  # noqa: E402
+        request_submission_authorization as _sec_authorize_submission)
+    _SECURITY_AVAILABLE = True
+except Exception:
+    _sec_authorize_submission = None
+    _SECURITY_AVAILABLE = False
+
+
+# --- Occurred-vs-observed separation (gap-plan item b) ---
+# Module revision watermark stamped on every emitted telemetry row so
+# consumers can distinguish rows written under this writer generation.
+WRITER_REV = "record_outcome/1"
+# Closed vocabulary for timestamp_basis: the provenance of the occurred_at
+# value. Never inferred — the caller must name it; the default is
+# "unknown" and unknown-basis rows are excluded from latency estimates
+# (see latency_eligible).
+TIMESTAMP_BASES = frozenset({
+    "ats_receipt",         # ATS receipt page / confirmation email time
+    "ats_api",             # ATS API record timestamp
+    "browser_confirmation",  # live browser confirmation quote time
+    "user_statement",      # the user's own stated time
+    "backfill",            # honest backfill of a previously recorded row
+    "unknown",             # provenance not recorded — fail closed
+})
+TIMESTAMP_BASIS_DEFAULT = "unknown"
+_OCCURRED_AT_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def latency_eligible(details) -> bool:
+    """True iff this outcome row may be used for latency estimation.
+
+    Latency consumers MUST call this before using occurred_at: a row whose
+    timestamp_basis is "unknown" (or whose occurred_at is missing or
+    unparseable) carries no trustworthy event time, so it must be excluded
+    from every latency estimate. Only rows with a known basis and a
+    well-formed occurred_at are eligible.
+    """
+    if not isinstance(details, dict):
+        return False
+    # Missing basis key is equivalent to "unknown"; a value outside the
+    # closed vocabulary is also ineligible — never trust an unprovenanced
+    # or unrecognized timestamp in a latency estimate.
+    basis = details.get("timestamp_basis", TIMESTAMP_BASIS_DEFAULT)
+    if basis not in TIMESTAMP_BASES or basis == TIMESTAMP_BASIS_DEFAULT:
+        return False
+    occurred = details.get("occurred_at")
+    if not isinstance(occurred, str) or not _OCCURRED_AT_RE.match(occurred):
+        return False
+    try:
+        datetime.strptime(occurred, "%Y-%m-%d")
+    except ValueError:
+        return False
+    return True
+
+
 def _num_score(v):
     """Return v if it's a real number, else None. Excludes bools."""
     return v if isinstance(v, (int, float)) and not isinstance(v, bool) else None
@@ -70,7 +145,8 @@ def record(ats: str, technique: str, outcome: str, note: str,
            role_id: str = "", company: str = "", source: str = "",
            fit_score=None, resume_lane: str = "unknown", lane: str = "",
            date: str = None, emit_telemetry: bool = True,
-           experiment_variant: str = ""):
+           experiment_variant: str = "", event_id: str = None,
+           timestamp_basis: str = TIMESTAMP_BASIS_DEFAULT):
     # Fail closed on non-canonical ATS keys. Garbage keys (role_ids,
     # --flags) previously created phantom library sections and poisoned
     # technique hit-rate measurement.
@@ -88,6 +164,22 @@ def record(ats: str, technique: str, outcome: str, note: str,
             "refusing to record outcome: technique/note are placeholder "
             "literals ('tech'/'note') — pass the real technique name and "
             "note.")
+    if outcome == "submitted":
+        # SECURITY CHOKE POINT: the security authority must ALLOW this
+        # submission before anything is recorded. The note carries the
+        # confirmation quote (ATS-derived, therefore untrusted) and is
+        # injection-scanned; the caller must hold the record_submission
+        # capability; every decision lands in the hash-chained security
+        # ledger. Refusal raises PolicyDenied (a ValueError) — the same
+        # fail-closed contract as the refusals above.
+        if not _SECURITY_AVAILABLE or _sec_authorize_submission is None:
+            raise ValueError(
+                "refusing to record outcome: security authority "
+                "unavailable — fail closed")
+        _sec_authorize_submission(
+            agent_hint="keel-application-engine", ats=ats,
+            technique=technique, note=note, role_id=role_id,
+            company=company)
     # Backfill support: `date` overrides the evidence entry's date for
     # honest backfills of outcomes recorded in queue/ledger but never
     # passed through this writer. Validated YYYY-MM-DD; defaults to today.
@@ -100,6 +192,13 @@ def record(ats: str, technique: str, outcome: str, note: str,
         raise ValueError(
             f"refusing to record outcome: bad date {ev_date!r} — "
             "use YYYY-MM-DD")
+    # Fail closed on unknown timestamp bases: the vocabulary is closed and
+    # the basis is never inferred. A --date backfill without an explicit
+    # --timestamp-basis stays "unknown" (never upgraded here).
+    if timestamp_basis not in TIMESTAMP_BASES:
+        raise ValueError(
+            f"refusing to record outcome: unknown timestamp_basis "
+            f"{timestamp_basis!r} — valid: {sorted(TIMESTAMP_BASES)}")
     print(f"recorded {outcome} for {ats}/{technique} "
           f"(telemetry only; technique library is private per SPLIT.md)")
     if not emit_telemetry:
@@ -109,9 +208,19 @@ def record(ats: str, technique: str, outcome: str, note: str,
     # 'unknown' when the caller lacks it) so ATS/lane conversion analysis
     # has attribution going forward.
     ev_type = "submitted" if outcome == "submitted" else "gate_blocked"
+    # Occurred-vs-observed separation: occurred_at is the validated
+    # evidence date (when the outcome happened); observed_at is the UTC
+    # emission time (when this writer saw it). evidence_date is kept as a
+    # backward-compat alias with an identical value. timestamp_basis names
+    # the provenance of occurred_at and is never inferred; source_watermark
+    # identifies this writer generation.
     details = {"technique": technique, "note": note,
                "resume_lane": resume_lane or "unknown",
-               "evidence_date": ev_date}
+               "occurred_at": ev_date,
+               "evidence_date": ev_date,
+               "observed_at": datetime.now(timezone.utc).isoformat(),
+               "timestamp_basis": timestamp_basis,
+               "source_watermark": WRITER_REV}
     if lane:  # two-lane tests: every event carries details.lane
         details["lane"] = lane
     if experiment_variant:  # per-variant outcome tracking. Omitted (never
@@ -130,15 +239,20 @@ def record(ats: str, technique: str, outcome: str, note: str,
         else:
             details["gate"] = "technique_blocked"
     log_event.log(ev_type, role_id=role_id, company=company, ats=ats,
-                  source=source or "record_outcome", details=details)
+                  source=source or "record_outcome", details=details,
+                  event_id=event_id)
 
 
 USAGE = ("usage: record_outcome.py <ats> <technique> <submitted|blocked> <note> "
          "[--role-id ID] [--company NAME] [--source SRC] [--fit-score N] "
          "[--resume-lane LANE] [--lane A|B] [--date YYYY-MM-DD] "
+         "[--timestamp-basis BASIS] "
          "[--experiment-variant VID] "
          "[--no-telemetry]  (flags may appear in any position; --date "
-         "backfills the evidence entry's date, --no-telemetry skips the "
+         "backfills the evidence entry's date, --timestamp-basis names the "
+         "provenance of that date (ats_receipt|ats_api|browser_confirmation|"
+         "user_statement|backfill|unknown; default unknown, never inferred), "
+         "--no-telemetry skips the "
          "telemetry event for honest backfills, --experiment-variant tags "
          "the telemetry details for per-variant outcome tracking)")
 
@@ -148,7 +262,7 @@ USAGE = ("usage: record_outcome.py <ats> <technique> <submitted|blocked> <note> 
 # (ats="--role-id", technique=<role_id>, note="submitted").
 _FLAG_TAKES_VALUE = {
     "--role-id", "--company", "--source", "--fit-score", "--resume-lane",
-    "--lane", "--date", "--experiment-variant",
+    "--lane", "--date", "--timestamp-basis", "--experiment-variant",
 }
 _FLAG_NO_VALUE = {"--no-telemetry"}
 
@@ -169,6 +283,7 @@ def parse_cli_args(argv):
     date = None
     emit_telemetry = True
     experiment_variant = ""
+    timestamp_basis = TIMESTAMP_BASIS_DEFAULT
     positionals = []
     i = 1
     while i < len(argv):
@@ -191,6 +306,12 @@ def parse_cli_args(argv):
                 lane = val or ""
             elif tok == "--date":
                 date = val or None
+            elif tok == "--timestamp-basis":
+                # Closed vocabulary, never inferred: an unrecognized basis
+                # fails closed with usage, exactly like an unknown flag.
+                if val not in TIMESTAMP_BASES:
+                    raise SystemExit(USAGE)
+                timestamp_basis = val
             elif tok == "--experiment-variant":
                 experiment_variant = val or ""
             elif tok == "--fit-score":
@@ -216,7 +337,8 @@ def parse_cli_args(argv):
             "source": source, "fit_score": fit_score,
             "resume_lane": resume_lane, "lane": lane, "date": date,
             "emit_telemetry": emit_telemetry,
-            "experiment_variant": experiment_variant}
+            "experiment_variant": experiment_variant,
+            "timestamp_basis": timestamp_basis}
 
 
 def main(argv):
@@ -229,7 +351,8 @@ def main(argv):
                resume_lane=parsed["resume_lane"], lane=parsed["lane"],
                date=parsed["date"],
                emit_telemetry=parsed["emit_telemetry"],
-               experiment_variant=parsed["experiment_variant"])
+               experiment_variant=parsed["experiment_variant"],
+               timestamp_basis=parsed["timestamp_basis"])
     except ValueError as ex:
         # Unknown ATS key / placeholder literals / bad date — refuse loudly,
         # never write a phantom record.

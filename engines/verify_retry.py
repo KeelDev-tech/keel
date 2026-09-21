@@ -34,7 +34,7 @@ import time
 import fcntl
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -970,8 +970,11 @@ def _record_run(record):
         os.makedirs(os.path.dirname(_RUNS_LOG), exist_ok=True)
         with open(_RUNS_LOG, "a") as f:
             f.write(json.dumps(record) + "\n")
-    except OSError:
-        pass
+    except OSError as ex:
+        # 2026-09-19 (silent-defect sweep): was `pass` — a logging failure
+        # is still non-fatal, but it must be observable, not silent.
+        print(f"telemetry: verify run record append failed: {ex}",
+              file=sys.stderr)
 
 
 # ---------------------------------------------------------------------------
@@ -1104,11 +1107,124 @@ def parity_probe(scanned, async_verdicts):
     return agree, total, drifts
 
 
+# ---------------------------------------------------------------------------
+# Verification accounting (gap-plan item c): every selected verification
+# candidate ends a wave as attempted with a typed result, skipped with a
+# specific reason, or unresolved. Attempt records are pure data — building
+# them never changes verdict/promotion/queue behavior. The missing pieces
+# covered here: a wave ID, per-candidate typed results for cooldown-skipped
+# and url_bearing_only-filtered candidates (previously only counted, never
+# recorded per-candidate), the selection policy revision, actual active
+# processing time per candidate, and next-eligible time for parked
+# candidates.
+# ---------------------------------------------------------------------------
+
+#: Selection policy revision for candidate selection in _scan_and_apply
+#: (queue pool -> cooldown filter -> url_bearing_only filter -> cursor window).
+SELECTION_POLICY = "window-cursor-v1"
+
+_VERDICT_DOMAIN = frozenset({"live", "dead", "ambiguous", "no_url", "skipped"})
+_SKIP_REASON_DOMAIN = frozenset({"in_cooldown", "url_bearing_only_filter",
+                                 "lock_skipped", "none"})
+
+
+def build_attempt_record(role_id, queue_name, entry, verdict, detail,
+                         active_ms, wave_id, skip_reason="none",
+                         next_eligible_at=None,
+                         selection_policy=SELECTION_POLICY):
+    """Build one per-candidate verification-accounting record. Pure.
+
+    `verdict` is enforced against the scan_lead_sync result domain plus
+    "skipped"; anything else raises ValueError (fail-closed — an unknown
+    verdict must never be recorded as a real result). `skip_reason` uses
+    its own closed domain. active_ms is the actual processing time for
+    this candidate in the wave (0 for never-scanned skips). `entry` is
+    read, never mutated.
+    """
+    if verdict not in _VERDICT_DOMAIN:
+        raise ValueError(f"unknown verification verdict {verdict!r}")
+    if skip_reason not in _SKIP_REASON_DOMAIN:
+        raise ValueError(f"unknown skip reason {skip_reason!r}")
+    return {
+        "attempt_id": f"{wave_id}:{role_id}",
+        "wave_id": wave_id,
+        "role_id": role_id,
+        "queue": queue_name,
+        "discovery_source": entry.get("source"),
+        "ats": entry.get("ats"),
+        "posting_identity": posting_url(entry),
+        "verdict": verdict,
+        "skip_reason": skip_reason,
+        "active_ms": active_ms,
+        "evidence_detail": detail,
+        "next_eligible_at": next_eligible_at,
+        "selection_policy": selection_policy,
+    }
+
+
+def _parse_iso_ts(raw):
+    """Parse an ISO stamp to an aware datetime; None when unparseable.
+
+    Fail-open: a bad stamp never strands a candidate — the caller falls
+    back to the run timestamp."""
+    if not raw or not isinstance(raw, str):
+        return None
+    try:
+        dt = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=PDT)
+    return dt
+
+
+def _compute_next_eligible_at(entry, verdict, skip_reason, run_dt):
+    """Next eligible scan time as an ISO stamp, or None.
+
+    Parked verdicts (ambiguous/no_url) re-enter after the verification
+    cooldown from THIS attempt. Cooldown-skipped candidates re-enter after
+    the cooldown from their last attempt (parseable stamp); when the stamp
+    is missing or bad, from this run (fail-open, never stranded by a bad
+    stamp). Resolved verdicts (live/dead) get None — nothing to retry. The
+    cooldown interval is read from VERIFY_COOLDOWN_H, the same constant
+    in_cooldown uses.
+    """
+    if skip_reason == "in_cooldown":
+        base = _parse_iso_ts(entry.get("last_verify_attempt")) or run_dt
+    elif verdict in ("ambiguous", "no_url"):
+        base = run_dt
+    else:
+        return None
+    return (base + timedelta(hours=VERIFY_COOLDOWN_H)).isoformat()
+
+
+def assemble_attempt_record(entry, queue_name, wave_id, verdict, detail,
+                            active_ms, skip_reason, run_dt):
+    """Assemble a full attempt record, computing next_eligible_at.
+
+    Pure: `entry` is read (posting_url / source / ats /
+    last_verify_attempt), never mutated. Raises ValueError on an
+    out-of-domain verdict — the same fail-closed choice as
+    build_attempt_record.
+    """
+    next_eligible = _compute_next_eligible_at(entry, verdict, skip_reason,
+                                              run_dt)
+    return build_attempt_record(entry.get("role_id"), queue_name, entry,
+                                verdict, detail, active_ms, wave_id,
+                                skip_reason=skip_reason,
+                                next_eligible_at=next_eligible)
+
+
 def main():
     live = "--live" in sys.argv
     limit = None
     if "--limit" in sys.argv:
         limit = int(sys.argv[sys.argv.index("--limit") + 1])
+
+    # Stable wave ID for this run: every run record and every
+    # per-candidate attempt record in this wave shares it. Generated BEFORE
+    # the singleton check so the skipped_lock record carries it too.
+    wave_id = "verify-" + datetime.now(PDT).strftime("%Y%m%d-%H%M%S")
 
     # --live singleton: exactly one --live run proceeds; a contender exits 0
     # after recording skipped_lock.
@@ -1119,15 +1235,15 @@ def main():
             print("verify_retry: another --live run is in flight — "
                   "skipping this run (exit 0)")
             _record_run({"ts": _now_iso(), "live": live, "limit": limit,
-                         "status": "skipped_lock"})
+                         "status": "skipped_lock", "wave_id": wave_id})
             return
     try:
-        return _scan_and_apply(live, limit)
+        return _scan_and_apply(live, limit, wave_id)
     finally:
         _release_run_singleton(run_singleton)
 
 
-def _scan_and_apply(live, limit):
+def _scan_and_apply(live, limit, wave_id=None):
     url_bearing_only = "--url-bearing-only" in sys.argv
     std, ni, rej = load(STD_Q), load(NI_Q), load(REJ_Q)
     std_by_id = {e.get("role_id"): e for e in std}
@@ -1145,24 +1261,50 @@ def _scan_and_apply(live, limit):
     # check; promotion to READY only for verification-ONLY leads (is_verify_only
     # decides at apply time). Needs-input queue: verification-only entries.
     # The retry cooldown skips leads scanned too recently (last_verify_attempt).
+    #
+    # Verification accounting: one typed attempt record per selected
+    # candidate — attempted, cooldown-skipped, and url_bearing_only-filtered
+    # alike. Pure data; never changes verdict/promotion/queue behavior.
     cands = []
+    attempts = []
+    run_dt = datetime.now(PDT)
     skipped_cooldown = 0
     for e in std:
         if (e.get("status") or "").upper() == "PARKED-PENDING-VERIFICATION":
             if in_cooldown(e):
                 skipped_cooldown += 1
+                attempts.append(assemble_attempt_record(
+                    e, "standard", wave_id, "skipped",
+                    "in verify cooldown (last_verify_attempt < "
+                    f"{VERIFY_COOLDOWN_H}h) — not scanned", 0,
+                    "in_cooldown", run_dt))
                 continue
             cands.append(("standard", e))
     for e in ni:
         if is_verify_only(e):
             if in_cooldown(e):
                 skipped_cooldown += 1
+                attempts.append(assemble_attempt_record(
+                    e, "needs_input", wave_id, "skipped",
+                    "in verify cooldown (last_verify_attempt < "
+                    f"{VERIFY_COOLDOWN_H}h) — not scanned", 0,
+                    "in_cooldown", run_dt))
                 continue
             cands.append(("needs_input", e))
     if url_bearing_only:
         # Skip the URL-less sub-pool (no enrichment API burn); URL-bearing
-        # verification + dead-marking still run.
-        cands = [(q, e) for q, e in cands if posting_url(e)]
+        # verification + dead-marking still run. Filtered candidates are
+        # recorded, not dropped silently.
+        kept = []
+        for q, e in cands:
+            if posting_url(e):
+                kept.append((q, e))
+            else:
+                attempts.append(assemble_attempt_record(
+                    e, q, wave_id, "skipped",
+                    "url_bearing_only filter — no posting URL; enrichment "
+                    "skipped", 0, "url_bearing_only_filter", run_dt))
+        cands = kept
     # Rotate the pool by cursor so consecutive runs walk everything.
     cands, new_cursor = window_candidates(cands, limit, load_cursor())
     if live:
@@ -1175,7 +1317,11 @@ def _scan_and_apply(live, limit):
 
     for i, (qname, e) in enumerate(cands):
         rid = e.get("role_id")
+        t0 = time.perf_counter()
         r2, verdict, detail, enr = scan_lead_sync(qname, e, enrich_events)
+        active_ms = int((time.perf_counter() - t0) * 1000)
+        attempts.append(assemble_attempt_record(
+            e, qname, wave_id, verdict, detail, active_ms, "none", run_dt))
         results[verdict if verdict in results else "ambiguous"].append(rid)
         if enr:
             print(f"  [{i+1}/{len(cands)}] {rid}: ENRICHED {enr} "
@@ -1185,8 +1331,9 @@ def _scan_and_apply(live, limit):
             time.sleep(1.5)
 
     _record_run({"ts": _now_iso(), "live": live, "limit": limit,
-                 "status": "scanned",
-                 "results": {k: len(v) for k, v in results.items()}})
+                 "status": "scanned", "wave_id": wave_id,
+                 "results": {k: len(v) for k, v in results.items()},
+                 "attempts": attempts})
 
     if not live:
         print("\nDRY RUN — no queues or telemetry touched. "
@@ -1321,8 +1468,8 @@ def _scan_and_apply(live, limit):
           f"reconciled={len(reconcile)} left_parked="
           f"{len(results['ambiguous']) + len(results['no_url'])}")
     _record_run({"ts": _now_iso(), "live": True, "limit": limit,
-                 "status": "applied", "promoted": moved, "dead": dead_n,
-                 "held": held})
+                 "status": "applied", "wave_id": wave_id, "promoted": moved,
+                 "dead": dead_n, "held": held})
 
 
 if __name__ == "__main__":

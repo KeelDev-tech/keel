@@ -356,7 +356,8 @@ def enumerate_boards(boards, live=False):
                 if live:
                     board_seen[jid] = utcnow()  # don't resurface
                 continue
-            verdict, _ev = dedupe_gate.check_candidate(company, title, url)
+            verdict, _ev = dedupe_gate.check_candidate(
+                company, N.norm_title(title), url)
             if verdict == "duplicate":
                 skipped_dup += 1
                 dups += 1

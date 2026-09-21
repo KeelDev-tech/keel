@@ -18,12 +18,16 @@ HONESTY RULES (fail-closed analytics):
     gaps with counts and shares, never silently dropped.
   - Source tiers are assigned by conservative rules; anything ambiguous
     lands in "unknown". No guessing.
-  - Employer responses link to ledger rows by normalized company name and
-    are attributed to the most recent linkable row (SUBMITTED,
-    INTERVIEW_INVITED, WAITLISTED, ASSESSMENT) at-or-before the event
-    timestamp. Dead rows (SKIP/CLOSED/REJECTED/...) are never indexed, so
-    an event matching a dead lead stays unlinked rather than
-    misattributed. The linking rule is printed in every report.
+  - Employer responses link to ledger rows through tiered linkage:
+    (1) deterministic role_id match; (2) receipt/submission-ref match
+    against the row's submission_ref / receipt_ref / confirmation
+    evidence; (3) posting_url / ats_job_id identity match against the
+    row's posting_url / application_url; (4) normalized company-name
+    fallback — a single candidate keeps the existing latest-date<=ts
+    rule. Ambiguous company matches are held in an explicit review queue
+    (HOLD_AMBIGUOUS_FOR_REVIEW), never silently resolved. Every linked
+    or held event carries a "linkage" provenance dict; original evidence
+    is never mutated. The linking rule is printed in every report.
   - "Hypothesis-ready" bullets are hedged and labeled as hypotheses, not
     claims.
 
@@ -55,6 +59,7 @@ ONLY those lines and stays silent otherwise.
 """
 
 import collections
+import hashlib
 import json
 import os
 import re
@@ -132,6 +137,15 @@ def load_responses(events_path=None):
                 "company_key": (d.get("company_key") or "").strip().lower(),
                 "outcome": outcome,
                 "source": e.get("source") or "",
+                # Linkage evidence (additive; powers deterministic tiers).
+                "role_id": (d.get("role_id") or "").strip(),
+                "receipt_ref": (d.get("receipt_ref") or
+                                d.get("submission_ref") or
+                                d.get("confirmation_ref") or "").strip(),
+                "message_id": d.get("message_id") or "",
+                "match_how": d.get("match_how") or "",
+                "posting_url": d.get("posting_url") or "",
+                "ats_job_id": (d.get("ats_job_id") or "").strip(),
             })
     return out
 
@@ -192,33 +206,176 @@ def source_tier(row):
 
 
 # ---------------------------------------------------------------- linking
+# Toggle for tier-4 company-name ambiguity. When True (default), a
+# response event whose normalized company name matches more than one
+# distinct linkable ledger row is NOT attributed — it is held in an
+# explicit review queue and reported as held, never silently resolved.
+# When False, the legacy behavior applies (latest-date<=ts rule across
+# all candidates).
+HOLD_AMBIGUOUS_FOR_REVIEW = True
+
+# Query version pinned into every report's snapshot block. Bump when the
+# linkage rules, denominators, or metric definitions change so
+# historical reports stay comparable.
+QUERY_VERSION = "outcome-analytics/1"
+
+# Plain-language denominator contract, published in every snapshot.
+DENOMINATOR_DEFINITION = (
+    "denominators are SUBMITTED ledger rows; response rates count "
+    "distinct applications; decisive rates use decisive applications")
+
+
+def _norm_ref(ref):
+    """Normalize a receipt/submission reference for comparison."""
+    return re.sub(r"\s+", "", (ref or "").strip().lower())
+
+
+def _norm_url(url):
+    """Normalize a posting/application URL for identity comparison."""
+    return (url or "").strip().rstrip("/").lower()
+
+
+def _row_refs(r):
+    """Normalized receipt/submission reference values on a ledger row."""
+    refs = set()
+    for k in ("submission_ref", "receipt_ref", "confirmation_ref",
+              "reference_id"):
+        v = _norm_ref(r.get(k))
+        if v:
+            refs.add(v)
+    return refs
+
+
+def _row_urls(r):
+    """Normalized posting/application URLs on a ledger row."""
+    urls = set()
+    for k in ("posting_url", "application_url", "job_url"):
+        v = _norm_url(r.get(k))
+        if v:
+            urls.add(v)
+    return urls
+
+
+def _row_confirmation_evidence(r):
+    """Free-text confirmation evidence fields on a ledger row."""
+    return [str(r.get(k) or "") for k in ("confirmation_text",
+                                          "confirmation_url")]
+
 
 def link_responses(rows, events):
     """Attribute each response event to one linkable ledger row.
 
-    Rule: normalized company match; among matching linkable rows, pick
-    the one with the latest parseable date_submitted that is <= the event
-    ts (fallback: latest parseable date_submitted; then the first match).
-    The listener's raw company_key is normalized the same way as ledger
-    names before matching (previously compared raw against spaceless
-    keys — a latent miss). Events with no company match stay unlinked and
-    are reported as such. Returns (row_index -> [events], unlinked_events)
-    with indices into the `rows` list passed in. Only rows whose status is
-    in LINKABLE_STATUSES are indexed here (dead rows stay unlinked even if
-    a caller passes them unfiltered — fail-closed).
+    Tiered linkage (first hit wins):
+      Tier 1 — deterministic: event details.role_id matches a linkable
+        row's role_id.
+      Tier 2 — receipt: event details.receipt_ref (or submission_ref /
+        confirmation_ref) matches the row's submission_ref / receipt_ref
+        / confirmation_ref exactly, or appears inside the row's
+        confirmation_text / confirmation_url evidence.
+      Tier 3 — provider identity: event details.posting_url matches the
+        row's posting_url / application_url exactly (normalized), or the
+        event's ats_job_id appears inside a row posting URL.
+      Tier 4 — company-name fallback: normalized company match; among
+        matching linkable rows, the existing latest-date<=ts rule applies
+        (fallback: latest parseable date_submitted; then the first match).
+        If the company name matches more than one distinct linkable row,
+        the event is NOT attributed — it is held for review when
+        HOLD_AMBIGUOUS_FOR_REVIEW is True (fail-closed; ambiguous matches
+        are never silently resolved).
+
+    Only rows whose status is in LINKABLE_STATUSES are indexed at any
+    tier (dead rows stay unlinked even if a caller passes them unfiltered
+    — fail-closed). The listener's raw company_key is normalized the same
+    way as ledger names before matching.
+
+    Every linked or held event is a COPY of the input event with a
+    "linkage" provenance dict {"tier", "rule", "basis"} attached; the
+    original event dicts are never mutated. Unlinked events pass through
+    unchanged (no company match at any tier).
+
+    Returns (linked, unlinked, held_for_review): linked is row-index ->
+    [event copies] into the `rows` list passed in; unlinked is the list
+    of events with no match; held_for_review is the list of ambiguous
+    tier-4 event copies. Held events are neither linked nor unlinked and
+    must stay OUT of rate denominators.
     """
     linkable_idx = [i for i, r in enumerate(rows)
                     if r.get("status") in LINKABLE_STATUSES]
     by_company = collections.defaultdict(list)
+    by_role_id = {}
+    by_ref = collections.defaultdict(list)
+    by_url = collections.defaultdict(list)
     for i in linkable_idx:
-        key = norm_company(rows[i].get("company"))
+        r = rows[i]
+        key = norm_company(r.get("company"))
         if key:
             by_company[key].append(i)
+        rid = (r.get("role_id") or "").strip()
+        if rid and rid not in by_role_id:
+            by_role_id[rid] = i
+        for ref in _row_refs(r):
+            by_ref[ref].append(i)
+        for u in _row_urls(r):
+            by_url[u].append(i)
+
     linked = collections.defaultdict(list)
     unlinked = []
+    held = []
+
+    def attach(e, tier, rule, basis):
+        """Copy the event and attach tier provenance (never mutates e)."""
+        c = dict(e)
+        c["linkage"] = {"tier": tier, "rule": rule, "basis": basis}
+        return c
+
     for e in events:
-        keys = {norm_company(e["company"]),
-                norm_company(e["company_key"])}
+        # --- Tier 1: deterministic role_id match ---------------------
+        rid = (e.get("role_id") or "").strip()
+        if rid and rid in by_role_id:
+            i = by_role_id[rid]
+            linked[i].append(attach(e, 1, "role_id match",
+                                    f"event role_id={rid!r} == row "
+                                    f"role_id (row idx {i})"))
+            continue
+        # --- Tier 2: receipt / submission ref -------------------------
+        ref = _norm_ref(e.get("receipt_ref") or e.get("submission_ref"))
+        tier2 = None
+        if ref and ref in by_ref:
+            i = sorted(by_ref[ref])[0]
+            tier2 = (i, f"event receipt_ref={ref!r} == row ref (row idx {i})")
+        if tier2 is None and ref:
+            for i in linkable_idx:  # substring inside confirmation evidence
+                ev = [x for x in _row_confirmation_evidence(rows[i])
+                      if ref and ref in x.lower()]
+                if ev:
+                    tier2 = (i, f"event receipt_ref={ref!r} inside row "
+                                f"confirmation evidence (row idx {i})")
+                    break
+        if tier2 is not None:
+            i, basis = tier2
+            linked[i].append(attach(e, 2, "receipt_ref match", basis))
+            continue
+        # --- Tier 3: posting / ATS job identity -----------------------
+        eurl = _norm_url(e.get("posting_url"))
+        jobid = (e.get("ats_job_id") or "").strip().lower()
+        tier3 = None
+        if eurl and eurl in by_url:
+            i = sorted(by_url[eurl])[0]
+            tier3 = (i, f"event posting_url == row posting_url (row idx {i})")
+        if tier3 is None and jobid:
+            for i in linkable_idx:
+                if any(jobid in u for u in _row_urls(rows[i])):
+                    tier3 = (i, f"event ats_job_id={jobid!r} inside row "
+                                f"posting_url (row idx {i})")
+                    break
+        if tier3 is not None:
+            i, basis = tier3
+            linked[i].append(attach(e, 3, "posting/ats identity match",
+                                    basis))
+            continue
+        # --- Tier 4: company-name fallback ------------------------------
+        keys = {norm_company(e.get("company")),
+                norm_company(e.get("company_key"))}
         keys.discard("")
         cand = []
         for k in keys:
@@ -227,7 +384,14 @@ def link_responses(rows, events):
         if not cand:
             unlinked.append(e)
             continue
-        ets = parse_ts(e["ts"])
+        identities = {_row_id_key(rows[i]) for i in cand}
+        if len(identities) > 1 and HOLD_AMBIGUOUS_FOR_REVIEW:
+            held.append(attach(
+                e, 4, "ambiguous company match held for review",
+                f"company {e.get('company')!r} matched "
+                f"{len(identities)} distinct linkable rows; not attributed"))
+            continue
+        ets = parse_ts(e.get("ts"))
         best, best_sub = None, None
         for i in cand:
             sts = parse_ts(rows[i].get("date_submitted"))
@@ -235,13 +399,27 @@ def link_responses(rows, events):
                 best, best_sub = i, sts
             elif best is None and sts and (best_sub is None or sts > best_sub):
                 best, best_sub = i, sts
-        linked[best if best is not None else cand[0]].append(e)
-    return linked, unlinked
+        i = best if best is not None else cand[0]
+        linked[i].append(attach(
+            e, 4, "company-name fallback (latest-date<=ts rule)",
+            f"company {e.get('company')!r} matched 1 row; latest "
+            f"date_submitted<=ts attributed (row idx {i})"))
+    return linked, unlinked, held
 
 
 def _row_id(r):
     """Stable identity for cross-list index mapping."""
     return r.get("role_id") or (r.get("company"), r.get("title"))
+
+
+def _row_id_key(r):
+    """Distinct-row identity for tier-4 ambiguity (role_id, or
+    company+title when the row has no role_id)."""
+    rid = (r.get("role_id") or "").strip()
+    if rid:
+        return ("role_id", rid)
+    return ("company+title", norm_company(r.get("company")),
+            (r.get("title") or "").strip().lower())
 
 
 # ---------------------------------------------------------------- metrics
@@ -254,6 +432,32 @@ def rate(num, den):
             "note": None}
 
 
+_DECISIVE_OUTCOMES = ("REJECTION", "INTERVIEW_INVITE", "ASSESSMENT",
+                      "INFO_REQUEST", "OFFER")
+
+
+def _app_outcome_sets(idxs, linked):
+    """Distinct outcome set per application.
+
+    Repeated messages on one application (e.g. three AUTO_ACKs) count once
+    for rate purposes; raw event volumes stay in the per-outcome counters.
+    """
+    return [{e["outcome"] for e in linked.get(i, [])} for i in idxs]
+
+
+def _app_rates(app_sets, n_sub):
+    decisive = set(_DECISIVE_OUTCOMES)
+    decisive_apps = sum(1 for s in app_sets if s & decisive)
+    apps_with = lambda o: sum(1 for s in app_sets if o in s)
+    return {
+        "decisive_applications": decisive_apps,
+        "ack_rate": rate(apps_with("AUTO_ACK"), n_sub),
+        "rejection_rate": rate(apps_with("REJECTION"), decisive_apps),
+        "invite_rate": rate(apps_with("INTERVIEW_INVITE"), decisive_apps),
+        "offer_rate": rate(apps_with("OFFER"), decisive_apps),
+    }
+
+
 def lane_metrics(rows, linked):
     lanes = collections.defaultdict(list)
     for i, r in enumerate(rows):
@@ -262,20 +466,16 @@ def lane_metrics(rows, linked):
     for lane, idxs in sorted(lanes.items()):
         evs = [e for i in idxs for e in linked.get(i, [])]
         by_out = collections.Counter(e["outcome"] for e in evs)
+        app_sets = _app_outcome_sets(idxs, linked)
         n_sub = len(idxs)
-        n_linked = len({i for i in idxs if linked.get(i)})
-        decisive = sum(by_out[o] for o in
-                       ("REJECTION", "INTERVIEW_INVITE", "ASSESSMENT",
-                        "INFO_REQUEST", "OFFER"))
+        n_linked = sum(1 for s in app_sets if s)
+        decisive = sum(by_out[o] for o in _DECISIVE_OUTCOMES)
         out[lane] = {
             "submissions": n_sub,
             "submissions_with_linked_response": n_linked,
             "decisive_outcomes": decisive,
             "outcomes": dict(by_out),
-            "ack_rate": rate(by_out.get("AUTO_ACK", 0), n_sub),
-            "rejection_rate": rate(by_out.get("REJECTION", 0), decisive),
-            "invite_rate": rate(by_out.get("INTERVIEW_INVITE", 0), decisive),
-            "offer_rate": rate(by_out.get("OFFER", 0), decisive),
+            **_app_rates(app_sets, n_sub),
         }
     return out
 
@@ -288,16 +488,13 @@ def tier_metrics(rows, linked):
     for tier, idxs in sorted(tiers.items()):
         evs = [e for i in idxs for e in linked.get(i, [])]
         by_out = collections.Counter(e["outcome"] for e in evs)
-        decisive = sum(by_out[o] for o in
-                       ("REJECTION", "INTERVIEW_INVITE", "ASSESSMENT",
-                        "INFO_REQUEST", "OFFER"))
+        app_sets = _app_outcome_sets(idxs, linked)
+        decisive = sum(by_out[o] for o in _DECISIVE_OUTCOMES)
         out[tier] = {
             "submissions": len(idxs),
             "decisive_outcomes": decisive,
             "outcomes": dict(by_out),
-            "ack_rate": rate(by_out.get("AUTO_ACK", 0), len(idxs)),
-            "invite_rate": rate(by_out.get("INTERVIEW_INVITE", 0), decisive),
-            "offer_rate": rate(by_out.get("OFFER", 0), decisive),
+            **_app_rates(app_sets, len(idxs)),
         }
     return out
 
@@ -372,13 +569,72 @@ def hypotheses(lanes):
     return out
 
 
+def _snapshot(rows, events, held, unlinked, linked):
+    """Published analytics snapshot: pins this report's data boundary.
+
+    cutoff_utc is the data cut (max parseable timestamp across included
+    rows and events) — generated_at is run time, not the data boundary.
+    cohort_id is a stable id over the exact inputs so a report rebuilt
+    from the same inputs pins the same cohort; new evidence changes the
+    inputs and therefore the cohort_id, never the old report.
+    """
+    stamps = []
+    rows_bad_dates = 0
+    for r in rows:
+        d = parse_ts(r.get("date_submitted"))
+        if d is None:
+            rows_bad_dates += 1
+        else:
+            stamps.append(d)
+    for e in events:
+        d = parse_ts(e.get("ts"))
+        if d is not None:
+            stamps.append(d)
+    cutoff = (max(stamps).astimezone(timezone.utc).isoformat()
+              if stamps else None)
+    role_ids = sorted(str(r.get("role_id") or "") for r in rows)
+    ev_ids = sorted(json.dumps({
+        "ts": e.get("ts") or "", "company": e.get("company") or "",
+        "company_key": e.get("company_key") or "",
+        "outcome": e.get("outcome") or "",
+        "ref": e.get("receipt_ref") or ""}, sort_keys=True)
+        for e in events)
+    params = {"min_n_for_rates": MIN_N, "latency_min_n": LATENCY_MIN_N,
+              "linkable_statuses": sorted(LINKABLE_STATUSES),
+              "query_version": QUERY_VERSION}
+    blob = json.dumps({"role_ids": role_ids, "events": ev_ids,
+                       "params": params}, sort_keys=True)
+    cohort_id = hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
+    latency_excluded_untrusted = 0
+    for i, r in enumerate(rows):
+        if not parse_ts(r.get("date_submitted")):
+            continue
+        for e in linked.get(i, []):
+            if e["outcome"] == "AUTO_ACK" and not e.get("ts_trustworthy"):
+                latency_excluded_untrusted += 1
+    return {
+        "cutoff_utc": cutoff,
+        "cohort_id": cohort_id,
+        "query_version": QUERY_VERSION,
+        "denominator_definition": DENOMINATOR_DEFINITION,
+        "missingness": {
+            "rows_missing_or_unparseable_date_submitted": rows_bad_dates,
+            "latency_samples_excluded_untrusted_ts":
+                latency_excluded_untrusted,
+            "events_unlinked": len(unlinked),
+            "events_held_for_review": len(held),
+        },
+    }
+
+
 def build_report(rows, events, link_rows=None):
     """rows: submitted rows (metric denominators stay submission-based).
     link_rows: rows events may link to (defaults to rows); events landing
     on advanced (invited/waitlisted) rows count as linked but don't feed
-    lane/tier denominators."""
+    lane/tier denominators. Held-for-review events are neither linked nor
+    unlinked and stay OUT of all rates."""
     link_src = link_rows if link_rows is not None else rows
-    linked_raw, unlinked = link_responses(link_src, events)
+    linked_raw, unlinked, held = link_responses(link_src, events)
     # Re-key linked events onto the submitted-row index space.
     submitted_ids = {_row_id(r): j for j, r in enumerate(rows)}
     linked = collections.defaultdict(list)
@@ -395,6 +651,7 @@ def build_report(rows, events, link_rows=None):
     lat = ack_latency_hours(rows, linked)
     linked_n = sum(len(v) for v in linked_raw.values())
     unlinked_rate = (len(unlinked) / len(events)) if events else 0
+    held_rate = (len(held) / len(events)) if events else 0
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "inputs": {"submitted_rows": len(rows),
@@ -403,12 +660,20 @@ def build_report(rows, events, link_rows=None):
                    "events_linked": linked_n,
                    "events_linked_to_advanced_rows": advanced_linked,
                    "events_unlinked": len(unlinked),
-                   "unlinked_rate": round(unlinked_rate, 3)},
-        "linking_rule": ("normalized company match; attributed to the most "
-                         "recent linkable ledger row (SUBMITTED / "
-                         "INTERVIEW_INVITED / WAITLISTED / ASSESSMENT) "
-                         "at-or-before the event ts"),
+                   "unlinked_rate": round(unlinked_rate, 3),
+                   "events_held_for_review": len(held),
+                   "held_rate": round(held_rate, 3)},
+        "linking_rule": ("tiered linkage: (1) deterministic role_id "
+                         "match; (2) receipt/submission-ref match; "
+                         "(3) posting_url / ats_job_id identity match; "
+                         "(4) normalized company-name fallback "
+                         "attributed to the most recent linkable ledger "
+                         "row (SUBMITTED / INTERVIEW_INVITED / WAITLISTED / "
+                         "ASSESSMENT) at-or-before the event ts. "
+                         "Ambiguous company matches are held for review, "
+                         "never silently resolved"),
         "min_n_for_rates": MIN_N,
+        "snapshot": _snapshot(rows, events, held, unlinked, linked),
         "data_gaps": gaps,
         "lanes": lanes,
         "source_tiers": tiers,
@@ -417,6 +682,10 @@ def build_report(rows, events, link_rows=None):
         "unlinked_events": [
             {"ts": e["ts"], "company": e["company"],
              "outcome": e["outcome"]} for e in unlinked[:20]],
+        "held_for_review": [
+            {"ts": e.get("ts"), "company": e.get("company"),
+             "outcome": e.get("outcome"),
+             "linkage": e.get("linkage")} for e in held[:20]],
     }
     return report
 
@@ -441,6 +710,15 @@ def render_markdown(report):
       f"data-quality signal). "
       f"Rates need n≥{report['min_n_for_rates']} or read "
       f"'insufficient outcome data'._")
+    A("")
+    snap = report.get("snapshot") or {}
+    cutoff = snap.get("cutoff_utc") or "no parseable timestamps"
+    A("## Snapshot (data cut)")
+    A("")
+    A(f"_Cutoff (data boundary): {cutoff} · cohort "
+      f"`{snap.get('cohort_id')}` · query {snap.get('query_version')}. "
+      f"Historical reports keep their original cut when new evidence "
+      f"arrives — rebuilds from identical inputs pin the same cohort._")
     A("")
     A("## Data quality (gaps first)")
     A("")
@@ -494,6 +772,9 @@ def render_markdown(report):
     A("")
     A(f"- Linking: {report['linking_rule']}.")
     A(f"- Unlinked events this run: {report['inputs']['events_unlinked']}.")
+    A(f"- Ambiguous company matches held in the review queue: "
+      f"{report['inputs']['events_held_for_review']} — never silently "
+      f"resolved; held events are excluded from all rates.")
     A("- Legacy backfill labels normalized: interview_invited → "
       "INTERVIEW_INVITE; waitlisted → OTHER (limbo state); "
       "offer → OFFER.")

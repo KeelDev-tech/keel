@@ -109,7 +109,7 @@ ARTIFACTS_DIR = os.path.join(PIPE, "hidden_files/discovery-artifacts")
 LEAD_FILE_GLOB = "*-leads.json"
 QUEUE_DIR = os.path.join(DATA, "queues")
 STANDARD_QUEUE = os.path.join(QUEUE_DIR, "standard-queue.json")
-LEDGER = os.path.join(PIPE, "ledger/application-ledger.json")
+LEDGER = os.path.join(DATA, "application-ledger.json")
 # Operator-owned employer blocklist (setup.sh writes a starter file at this
 # path). The real production blocklist is personal data and is never
 # committed — populate it with your own never-apply employers, one per
@@ -783,7 +783,7 @@ def run_ingest(files, batch, dry_run=True, pipe=PIPE):
     staged_by_id = {e.get("role_id"): e for e in rows if e.get("role_id")}
 
     queue_ids, queue_keys = load_queue_keys(queue_dir)
-    ledger_keys = load_ledger_keys(os.path.join(pipe, "ledger", "application-ledger.json"))
+    ledger_keys = load_ledger_keys(os.path.join(pipe, "data", "application-ledger.json"))
     # Persistent dedupe index: built once per ingest run, auto-refreshes
     # when any source file changed. Fail-soft: legacy inline checks apply.
     index = None

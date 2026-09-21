@@ -225,5 +225,66 @@ class TestParkLead(unittest.TestCase):
             self.assertIn("not found", out["error"])
 
 
+class TestSyntheticTelemetryIsolation(unittest.TestCase):
+    """J-20260918-2130-gate-2313: fixture emissions must never reach the
+    real production events.jsonl.
+
+    The polluter was TestParkLead.test_stale_status_reason_overwritten,
+    which calls prescreen.park_lead("STRIPE-TEST-1", ...) against a tmpdir
+    queue — but park_lead emitted gate telemetry to the REAL events file
+    (~43 rows since 2026-09-15). The is_synthetic_role_id guard in
+    park_lead is the fix; the canary below fails if any test ever writes
+    to the real path again.
+    """
+
+    def _real_events_stat(self):
+        import log_event
+        p = log_event.EVENTS
+        try:
+            st = os.stat(p)
+            return p, st.st_size, st.st_mtime_ns
+        except FileNotFoundError:
+            return p, None, None
+
+    def test_is_synthetic_role_id_semantics(self):
+        # Fixture ids are synthetic ...
+        self.assertTrue(prescreen.is_synthetic_role_id("STRIPE-TEST-1"))
+        self.assertTrue(prescreen.is_synthetic_role_id("TEST-LEAD-1"))
+        self.assertTrue(prescreen.is_synthetic_role_id("R-STALE-FIXTURE-2"))
+        # ... but real sweep traffic keeps flowing: FIRETEST-* are real
+        # leads, and bare R-STALE carries no synthetic token (its
+        # parked-sweep pollution is a different emitter, owned by the
+        # octopus isolation fix, not this guard).
+        self.assertFalse(prescreen.is_synthetic_role_id("FIRETEST-9"))
+        self.assertFalse(prescreen.is_synthetic_role_id("R-STALE"))
+        self.assertFalse(prescreen.is_synthetic_role_id(
+            "ARM1C-COINBASE-SR-STRAT-PROGRAM-LEAD-20260915"))
+        self.assertFalse(prescreen.is_synthetic_role_id(""))
+
+    def test_canary_fixture_park_emits_no_production_telemetry(self):
+        """CANARY: fails if a fixture park_lead writes to the real
+        production events.jsonl. Snapshots the real file (size+mtime)
+        around the exact polluting call shape and demands zero delta."""
+        _, size0, mtime0 = self._real_events_stat()
+        with tempfile.TemporaryDirectory() as qdir:
+            lead = {"role_id": "STRIPE-TEST-1", "company": "Stripe",
+                    "title": "Test", "status": "READY",
+                    "status_reason": "stale", "unresolved": []}
+            json.dump([lead],
+                      open(os.path.join(qdir, "standard-queue.json"), "w"))
+            json.dump([],
+                      open(os.path.join(qdir, "needs_input-queue.json"), "w"))
+            reasons = ["Required office-commitment question needs the "
+                       "applicant's explicit answer (travel)"]
+            out = prescreen.park_lead("STRIPE-TEST-1", reasons,
+                                      queue_dir=qdir)
+            self.assertTrue(out["ok"], out)
+        _, size1, mtime1 = self._real_events_stat()
+        self.assertEqual(
+            (size1, mtime1), (size0, mtime0),
+            "CANARY: fixture park_lead wrote to the real production "
+            "events.jsonl — the synthetic-role guard was bypassed or removed")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

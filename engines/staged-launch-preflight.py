@@ -101,6 +101,11 @@ def _guard_go(role_id, company, title):
     try:
         ok, info = launch_lock.prelaunch_guard(role_id, "preflight", company,
                                                title, owner="preflight")
+    except ValueError:
+        # Corrupt lease (K20): never silently absorbed — the ValueError
+        # must propagate loudly for operator reconciliation
+        # (silent-defect sweep 2026-09-19).
+        raise
     except Exception as ex:
         return False, f"prelaunch_guard raised ({ex})"
     verdict = (info or {}).get("verdict", "")

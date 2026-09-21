@@ -69,6 +69,16 @@ def launch_ts(ev):
     return ts
 
 
+class _LaunchRows(list):
+    """List of repaired launches that also carries the count of corrupt
+    JSON lines skipped during repair (2026-09-19 silent-defect sweep:
+    previously dropped silently). Behavior as a list is unchanged."""
+
+    def __init__(self):
+        super().__init__()
+        self.skipped_lines = 0
+
+
 def repaired_launches(events_path=None, since=None, until=None):
     """browser_launched events, repaired per the module docstring.
 
@@ -76,7 +86,7 @@ def repaired_launches(events_path=None, since=None, until=None):
     best-available launch instant (details.start_ts preferred).
     """
     path = events_path or EVENTS
-    rows = []
+    rows = _LaunchRows()
     try:
         with open(path) as f:
             for line in f:
@@ -86,6 +96,10 @@ def repaired_launches(events_path=None, since=None, until=None):
                 try:
                     ev = json.loads(line)
                 except json.JSONDecodeError:
+                    # 2026-09-19 (silent-defect sweep): was `continue` —
+                    # silently dropped lines must be observable in the
+                    # summary output, not invisible.
+                    rows.skipped_lines += 1
                     continue
                 if ev.get("event_type") != "browser_launched":
                     continue
@@ -101,7 +115,7 @@ def repaired_launches(events_path=None, since=None, until=None):
     except FileNotFoundError:
         return []
     rows.sort(key=lambda r: r[0])
-    kept = []
+    kept = _LaunchRows()
     last_kept = {}  # role_id -> ts of last kept event
     for ts, rid, src in rows:
         prev = last_kept.get(rid)
@@ -110,6 +124,7 @@ def repaired_launches(events_path=None, since=None, until=None):
             continue  # same-role double emission; keep the first
         kept.append((ts, rid, src))
         last_kept[rid] = ts
+    kept.skipped_lines = rows.skipped_lines
     return kept
 
 
@@ -130,6 +145,7 @@ def summarize(launches):
     out = {
         "n_launches": len(launches),
         "n_gaps": len(gaps),
+        "skipped_lines": getattr(launches, "skipped_lines", 0),
         "p50_min": round(nearest_rank(gaps, 0.50), 2) if gaps else None,
         "p90_min": round(nearest_rank(gaps, 0.90), 2) if gaps else None,
         "max_gap_min": round(max(gaps), 2) if gaps else None,

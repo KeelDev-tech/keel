@@ -34,7 +34,11 @@ events evidenced by the ledger/queues — never invented.
 
 import json
 import os
+import re
 import sys
+import uuid
+import fcntl
+import contextlib
 from datetime import datetime, timezone
 
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -46,6 +50,26 @@ EVENT_TYPES = {
     "browser_launched", "gate_encountered", "gate_cleared", "gate_blocked",
     "account_created", "submitted", "employer_response", "error",
     "staged_ingested", "staged_rejected", "staging_flood_gate",
+    # 2026-09-18 (Keel 0.6.0 trust port): keel_trust authority admission —
+    # single scoped local admission; never submission evidence. Registered
+    # additively in the EVENT vocabulary (not GATE_TYPES — it is not a gate).
+    "authority_use",
+    # 2026-09-19 (Keel 0.11.0 port): keel_local.supply PoolHealthObserver
+    # emits "pool_health" through injected loggers, and
+    # monitors/pulse_snapshot.py reads pool_health events from this log;
+    # the 0.11-ported monitors/pool_health.py wires PoolHealthObserver to
+    # this very logger. Aggregate supply observation; never a verification
+    # outcome. Registered additively — canonical names (incl. "submitted")
+    # are unchanged.
+    "pool_health",
+    # 2026-09-19 (silent-defect sweep): producers emit these, but the logger
+    # rejected them (ValueError, swallowed by the callers' except) — run
+    # telemetry was silently dropped. Registered additively; spellings are
+    # verbatim the producer emissions:
+    # - engines/verify_cron.py:249 emits "verify_cron_run"
+    # - engines/verify_retry.py:1029-1045 emits "url_enriched"/"url_enrich_failed"
+    "verify_cron_run",
+    "url_enriched", "url_enrich_failed",
 }
 
 # Stable gate vocabulary for details["gate"] on gate_encountered/gate_blocked.
@@ -117,6 +141,13 @@ GATE_TYPES = {
     # (SWEEP19P-STRIPE into CENSUS3X-GH-STRIPE) emitted duplicate_merged
     # in production telemetry; registered so the logger no longer warns.
     "duplicate_merged",
+    # 2026-09-19 (silent-defect sweep): monitors/ewma_drift.py's module
+    # docstring (:45-47) claims these gate values are "registered
+    # additively in log_event.GATE_TYPES" — they never were, so the
+    # monitor's drift alerts would be warned-on (stderr) rather than
+    # clean vocabulary. Registered additively; spellings are verbatim the
+    # docstring's emission contract.
+    "yield_drift", "gate_surge",
     # 2026-09-16 (ARM 142 / pulse 142): CS-Recruiting NAPA-CA held as a
     # location-suffix twin of the SUBMITTED AMCANYON twin; gate_blocked
     # emitted with gate=duplicate_application (was unknown -> warning).
@@ -196,24 +227,72 @@ SECRET_KEYS = {
 }
 
 
-def scrub(details: dict) -> dict:
-    """Drop secret-looking detail keys. Returns a cleaned copy."""
-    clean = {}
-    for k, v in details.items():
-        if str(k).lower() in SECRET_KEYS:
-            print(f"  telemetry: dropped secret-looking detail key '{k}' (not logged)",
-                  file=sys.stderr)
-            continue
-        clean[k] = v
-    return clean
+def scrub(details, _depth=0):
+    """Bounded recursive redaction (ported from Keel 0.11 reference, 2026-09-18).
+    Secret-looking keys are redacted to [REDACTED] (key kept, value hidden);
+    Bearer credentials and key=value secret patterns inside strings are
+    redacted too. Replaces the previous top-level-only drop. Free prose may
+    still contain personal data."""
+    if _depth > 16:
+        raise ValueError("telemetry nesting limit")
+    if isinstance(details, dict):
+        clean = {}
+        for key, value in details.items():
+            normalized = re.sub(r"[^a-z0-9]", "", str(key).lower())
+            if normalized in {re.sub(r"[^a-z0-9]", "", k) for k in SECRET_KEYS} or any(
+                    fragment in normalized for fragment in
+                    ("password", "token", "secret", "apikey", "credential", "cookie", "authorization")):
+                clean[key] = "[REDACTED]"
+            else:
+                clean[key] = scrub(value, _depth + 1)
+        return clean
+    if isinstance(details, list):
+        return [scrub(value, _depth + 1) for value in details]
+    if isinstance(details, str):
+        details = re.sub(r"(?i)\bBearer\s+[A-Za-z0-9._~+/-]+=*", "Bearer [REDACTED]", details)
+        details = re.sub(r"(?i)((?:password|token|api_key|secret)=)[^&\s]+", r"\1[REDACTED]", details)
+        return details
+    if isinstance(details, float) and (details != details or details in (float("inf"), float("-inf"))):
+        raise ValueError("non-finite telemetry value")
+    if details is not None and not isinstance(details, (bool, int, float, str)):
+        raise ValueError(f"unsupported telemetry value type: {type(details).__name__}")
+    return details
+
+
+@contextlib.contextmanager
+def _event_lock():
+    """Exclusive advisory lock so event_id conflict check + append is atomic.
+
+    Additive for the trust authority receipt contract (single grant use under
+    concurrency). The lock file lives next to the events file; the log stays
+    append-only JSONL.
+    """
+    os.makedirs(os.path.dirname(EVENTS), exist_ok=True)
+    with open(EVENTS + ".lock", "a") as lockf:
+        fcntl.flock(lockf.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lockf.fileno(), fcntl.LOCK_UN)
 
 
 def log(event_type: str, role_id: str = "", company: str = "", ats: str = "",
-        source: str = "", details: dict = None) -> dict:
+        source: str = "", details: dict = None, event_id: str = None) -> dict:
     if event_type not in EVENT_TYPES:
         raise ValueError(f"unknown event_type '{event_type}'. "
                          f"valid: {sorted(EVENT_TYPES)}")
     details = scrub(details or {})
+    # 2026-09-18 (Keel 0.5.0 trust port): optional caller-supplied event id.
+    # keel_trust's grant-consumption receipt requires the logger to echo a
+    # caller-supplied event_id back in the returned receipt. Additive only:
+    # event_id=None preserves the previous call shape (an id is generated).
+    if event_id is None:
+        event_id = uuid.uuid4().hex
+        caller_supplied_event_id = False
+    elif not isinstance(event_id, str) or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,160}", event_id):
+        raise ValueError("invalid event_id")
+    else:
+        caller_supplied_event_id = True
     gate = details.get("gate")
     if gate and gate not in GATE_TYPES:
         print(f"  telemetry: unknown gate '{gate}' — not in GATE_TYPES; "
@@ -222,15 +301,38 @@ def log(event_type: str, role_id: str = "", company: str = "", ats: str = "",
     event = {
         "ts": datetime.now(timezone.utc).isoformat(),
         "event_type": event_type,
+        "event_id": event_id,
         "role_id": role_id or "",
-        "company": company or "",
+        "company": scrub(str(company or "")),
         "ats": ats or "",
         "source": source or "",
         "details": details,
     }
+    # 2026-09-18 (Keel 0.6.0 trust port): minimal event-id replay semantics.
+    # When the caller supplies an event_id, the check-and-append is atomic:
+    # an identical earlier payload is returned as-is (idempotent replay, no
+    # new row); a conflicting payload fails closed with ValueError; only a
+    # genuinely new event_id is appended. Callers without an event_id keep
+    # the previous plain-append behavior.
+    comparison = {k: v for k, v in event.items() if k != "ts"}
     os.makedirs(os.path.dirname(EVENTS), exist_ok=True)
-    with open(EVENTS, "a") as f:
-        f.write(json.dumps(event) + "\n")
+    with _event_lock():
+        if caller_supplied_event_id:
+            try:
+                with open(EVENTS, "r") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        previous = json.loads(line)
+                        if previous.get("event_id") == event_id:
+                            if {k: v for k, v in previous.items() if k != "ts"} != comparison:
+                                raise ValueError("event_id reused with a different payload")
+                            return previous
+            except FileNotFoundError:
+                pass
+        with open(EVENTS, "a") as f:
+            f.write(json.dumps(event) + "\n")
     return event
 
 

@@ -29,10 +29,12 @@ Covers:
 Run: python3 test_fanout_gate.py
 """
 import importlib.util
+import io
 import json
 import os
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from datetime import datetime, timedelta, timezone
 
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -87,6 +89,12 @@ class FanoutGateCase(unittest.TestCase):
                             "inflight": [], "needs_input": 73,
                             "pending_verify": pool_size},
               "known_gates": [],
+              # The production watermark always carries this (build_watermark
+              # writes it); the ARM 119 cadence-breach requirement keys off
+              # it. Seeded 180 min back so the cadence is breached unless a
+              # verify-retry signal in the window re-stamps it to now.
+              "last_verify_retry_signal_ts":
+                  (now - timedelta(minutes=180)).isoformat(),
               "verify_drought_runs": drought_in}
         return self.fg.evaluate(snap, wm, now)
 
@@ -210,6 +218,148 @@ class FanoutGateCase(unittest.TestCase):
         reasons, _sig, extra = self.evaluate([], pool_size=5, drought_in=2)
         self.assertEqual(self.drought_reason(reasons),
                          ["verify_drought:3_runs_no_verification"])
+
+    # --- 11-14. Workstream 2 (2026-09-17): verify contention is keyed ONLY
+    # off true_concurrent_mutation, never off the benign internal
+    # scan_apply_derivation_delta. The old combined race metric
+    # double-counted verify's own re-derivation and sent an arm chasing a
+    # phantom contention bug.
+    def make_scan_summary(self, ts, tcm=None, sad=None, role_id="V-SCAN"):
+        scan = self.make_event("scan_summary", "verify-retry", ts,
+                               role_id=role_id)
+        scan["details"] = {"scanned": 25, "apply_races": (tcm or 0) + (sad or 0)}
+        if tcm is not None:
+            scan["details"]["true_concurrent_mutation"] = tcm
+        if sad is not None:
+            scan["details"]["scan_apply_derivation_delta"] = sad
+        return scan
+
+    def contention_reason(self, reasons):
+        return [r for r in reasons if r.startswith("verify_contention:")]
+
+    def test_true_concurrent_mutation_burst_fans_out(self):
+        now = datetime.now(timezone.utc)
+        scan = self.make_scan_summary(now - timedelta(minutes=5), tcm=3, sad=47)
+        reasons, _sig, _extra = self.evaluate([scan], pool_size=5)
+        self.assertEqual(self.contention_reason(reasons),
+                         ["verify_contention:true_concurrent_mutation_x3"])
+
+    def test_derivation_delta_alone_never_fans_out(self):
+        # The phantom-chase regression: 50 internal re-derivations and
+        # zero real mutations must NOT trip the contention reason.
+        now = datetime.now(timezone.utc)
+        scan = self.make_scan_summary(now - timedelta(minutes=5), tcm=0, sad=50)
+        reasons, _sig, _extra = self.evaluate([scan], pool_size=5)
+        self.assertEqual(self.contention_reason(reasons), [])
+
+    def test_pre_split_summary_without_new_keys_never_fans_out(self):
+        # Backward compatibility: summaries emitted before the split carry
+        # neither key — no contention reason, no crash.
+        now = datetime.now(timezone.utc)
+        scan = self.make_scan_summary(now - timedelta(minutes=5))
+        reasons, _sig, _extra = self.evaluate([scan], pool_size=5)
+        self.assertEqual(self.contention_reason(reasons), [])
+
+    def test_contention_window_returns_four_tuple(self):
+        now = datetime.now(timezone.utc)
+        scan = self.make_scan_summary(now - timedelta(minutes=5), tcm=2, sad=9)
+        queue = [{"role_id": "PV-0", "status": "PARKED-PENDING-VERIFICATION"}]
+        with open(self.queue_path, "w") as f:
+            json.dump(queue, f)
+        with open(self.telemetry_path, "w") as f:
+            f.write(json.dumps(scan) + "\n")
+        out = self.fg.scan_telemetry_window(now - timedelta(minutes=10))
+        self.assertEqual(len(out), 4)
+        self.assertEqual(out[3], 2,
+                         "contention sums true_concurrent_mutation only, "
+                         "not the derivation delta")
+
+
+class ReadyFloorCase(unittest.TestCase):
+    """READY floor (Trent P0, 2026-09-17): the launchable pool must never
+    starve. Regression for the 2026-09-17 19:42Z incident — the digest
+    showed "zero cushion" (READY 3 vs 17 launches/2h) and nothing acted on
+    it, because the content-hash pre-filter QUIETed the "nothing changed"
+    state that IS the starvation failure mode."""
+
+    def setUp(self):
+        self.fg = load_fanout_gate()
+        self.tmp = tempfile.mkdtemp(prefix="fgfloor-")
+
+    def floor_reason(self, ready):
+        return self.fg.ready_floor_reason({"ready": ready})
+
+    # --- 1. below the floor breaches ---
+    def test_zero_ready_breaches(self):
+        r = self.floor_reason(0)
+        self.assertIsNotNone(r)
+        self.assertIn("EMERGENCY_REFILL", r)
+        self.assertIn("ready=0", r)
+
+    def test_four_ready_breaches(self):
+        r = self.floor_reason(4)
+        self.assertIsNotNone(r)
+        self.assertIn("EMERGENCY_REFILL", r)
+
+    # --- 2. at/above the floor does not ---
+    def test_at_floor_no_breach(self):
+        self.assertIsNone(self.floor_reason(5))
+
+    def test_above_floor_no_breach(self):
+        self.assertIsNone(self.floor_reason(47))
+
+    # --- 3. unreadable ready fails toward breach, never toward silence ---
+    def test_garbage_ready_fails_toward_breach(self):
+        for bad in (None, "garbage", {"x": 1}):
+            r = self.fg.ready_floor_reason({"ready": bad})
+            self.assertIsNotNone(r, "bad ready %r must breach, not silence"
+                                 % (bad,))
+        # missing key is equally unreadable -> breach, not silence
+        self.assertIsNotNone(self.fg.ready_floor_reason({}))
+
+    # --- 4. the exact incident: unchanged files + starving pool must FANOUT ---
+    def test_floor_bypass_prefilter_on_unchanged_files(self):
+        now = datetime.now(timezone.utc)
+        snap_path = os.path.join(self.tmp, "state-snapshot.json")
+        wm_path = os.path.join(self.tmp, "materiality-watermark.json")
+        snap = {"ledger_submitted": 195, "ledger_rows": 254,
+                "standard_queue": 2717, "needs_input": 148,
+                "ready": 0, "strategic_ready": 0, "strategic_firing": 0,
+                "inflight": [],
+                "latest_telemetry_ts": now.isoformat()}
+        with open(snap_path, "w") as f:
+            json.dump(snap, f)
+        # Watermark whose hashes and signature MATCH the snapshot: the
+        # pre-filter sees "nothing changed" and would QUIET without the
+        # floor bypass.
+        hashes = {name: self.fg.sha256_file(path)
+                  for name, path in self.fg.WATCHED_FILES.items()}
+        wm = {"pulse_count": 320,  # next = 321, not a forced scan (every 6th)
+              "last_run_ts": (now - timedelta(minutes=10)).isoformat(),
+              "hashes": hashes,
+              "signature": {"ledger_submitted": 195, "ready": 0,
+                            "inflight": [], "needs_input": 148,
+                            "pending_verify": 0},
+              "known_gates": [],
+              "verify_drought_runs": 0,
+              "last_verify_retry_signal_ts": now.isoformat()}
+        with open(wm_path, "w") as f:
+            json.dump(wm, f)
+        # Point main() at the synthetic files (QUEUE/TELEMETRY stay on the
+        # real paths so the hashes above stay valid).
+        old_snap, old_wm = self.fg.SNAPSHOT, self.fg.WATERMARK
+        self.fg.SNAPSHOT, self.fg.WATERMARK = snap_path, wm_path
+        try:
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                with self.assertRaises(SystemExit):
+                    self.fg.main()
+        finally:
+            self.fg.SNAPSHOT, self.fg.WATERMARK = old_snap, old_wm
+        out = json.loads(buf.getvalue())
+        self.assertEqual(out["verdict"], "FANOUT")
+        self.assertEqual(out["reasons"],
+                         ["ready_floor_breach:ready=0_floor=5:EMERGENCY_REFILL"])
 
 
 if __name__ == "__main__":

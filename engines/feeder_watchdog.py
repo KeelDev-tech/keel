@@ -73,6 +73,7 @@ from datetime import datetime, timedelta, timezone
 BASE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE)
 import log_event  # noqa: E402 — append-only telemetry
+import queue_entries  # noqa: E402 — shared queue-entry loader
 
 from keel_paths import HOME as PIPE  # noqa: E402
 QUEUE = os.path.join(PIPE, "data", "queues", "standard-queue.json")
@@ -95,7 +96,7 @@ MARKER_TIMESTAMP_MISSING = "marker_timestamp_missing"
 
 def load_queue():
     d = json.load(open(QUEUE))
-    return d if isinstance(d, list) else d.get("entries", d.get("items", []))
+    return queue_entries.load_queue_entries(d)
 
 
 def _blocklist_txt():

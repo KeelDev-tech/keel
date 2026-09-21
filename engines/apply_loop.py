@@ -105,6 +105,7 @@ from keel_paths import HOME, DATA, TELEMETRY  # noqa: E402 — repo path convent
 import form_intel
 import log_event  # noqa: E402 — telemetry: additive event logging only
 import prescreen  # noqa: E402 — pre-launch packet screen (PARK before spend)
+import queue_io  # noqa: E402 — canonical locked queue writes (silent-defect sweep 2026-09-19)
 import rate_limits  # noqa: E402 — employer application budgets
 import record_outcome  # noqa: E402 — outcome telemetry
 
@@ -167,16 +168,22 @@ def load_strategic_queue():
 
 
 def _save_queue_file(path, items):
-    d = json.load(open(path))
-    if isinstance(d, list):
-        d = items
-    else:
-        key = "entries" if "entries" in d else "items"
-        d[key] = items
-    tmp = path + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(d, f, indent=2)
-    os.replace(tmp, path)
+    # Canonical-path rule (silent-defect sweep 2026-09-19): every queue
+    # write holds queue_io.queue_lock and goes through
+    # queue_io.atomic_write_json (unique tmp + fsync + atomic rename).
+    # The old unlocked read-modify-write with a fixed path+".tmp" name
+    # let a stale snapshot silently clobber a canonical commit (IN-FLIGHT
+    # reverted to PARKED-NEEDS-INPUT, reproduced 2026-09-19). The
+    # list-vs-dict envelope shape is preserved; queue_lock is
+    # reentrant-in-process so callers that already hold it are safe.
+    with queue_io.queue_lock(owner="apply_loop:_save_queue_file"):
+        d = json.load(open(path))
+        if isinstance(d, list):
+            d = items
+        else:
+            key = "entries" if "entries" in d else "items"
+            d[key] = items
+        queue_io.atomic_write_json(path, d)
 
 
 def save_queue(items):
@@ -560,6 +567,11 @@ def _launch_guard(role_id, company, title):
                 return True, task_id, ""
             return (False, task_id,
                     "launch lock HELD: %s" % ((info or {}).get("status", "")))
+        except ValueError:
+            # Corrupt lease (K20): never absorbed into a fail-open
+            # "proceeding" — the ValueError must propagate loudly for
+            # operator reconciliation (silent-defect sweep 2026-09-19).
+            raise
         except Exception as ex:
             return True, task_id, f"guard tooling failed ({ex}); proceeding"
     except ImportError:
@@ -967,6 +979,37 @@ def refresh_buffer(tagged=None, now=None):
             pass
 
 
+def _buffered_launch_task_id(role_id):
+    """The task_id that owns the launch lock for a buffered packet.
+
+    Read BEFORE _claim_buffered: on the claim-dead path _claim_buffered
+    deletes the packet file carrying launch_task_id, which would destroy
+    the owner id needed to release the lock (silent 2h lock leak —
+    silent-defect sweep 2026-09-19)."""
+    for s in load_buffer_state():
+        if s.get("role_id") == role_id:
+            return s.get("launch_task_id") or ""
+    return ""
+
+
+def _claim_or_release(entry, bpath, role_id):
+    """Claim a buffered packet; on the claim-dead path release the
+    buffer-time launch lock and return None.
+
+    _claim_buffered deletes the packet file (which carries launch_task_id)
+    on the DEAD path, so the owner id is read from the buffer state BEFORE
+    the claim — otherwise the lock leaks for the full 2h TTL
+    (silent-defect sweep 2026-09-19). _release_launch_lock is a no-op when
+    the task_id is unknown."""
+    claim_task_id = _buffered_launch_task_id(role_id)
+    path = _claim_buffered(entry, bpath)
+    if not path:
+        # claim-dead: posting dead, packet dropped — release the
+        # buffer-time launch lock.
+        _release_launch_lock(role_id, claim_task_id)
+    return path
+
+
 def _claim_buffered(entry, bpath):
     """Claim a fresh buffered packet: move it to the packets root and run
     the live-cache claim gate. DEAD -> drop the packet, log lead_dead, and
@@ -1158,9 +1201,9 @@ def main():
         bpath = _buffered_fresh_packet(role_id)
         task_id = ""
         if bpath:
-            path = _claim_buffered(entry, bpath)
+            path = _claim_or_release(entry, bpath, role_id)
             if not path:
-                continue  # claim-dead: posting dead, packet dropped
+                continue  # claim-dead: posting dead, packet dropped, lock released
         else:
             go, task_id, greason = _launch_guard(
                 role_id, company, entry.get("title"))

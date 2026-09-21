@@ -57,6 +57,16 @@ TRIAGE_DEFERRED_STATUS = "PARKED-TRIAGE-DEFERRED"
 # service-specialist titles ("maitre d"), wellness/housekeeping/guest-services
 # and F&B shift-supervisor titles, and pipeline/future postings. Keeping
 # them would burn verify HTTP on leads that cannot reach materials.
+# Implementation-family expansion (2026-09-20, ARM 569-2, blackboard
+# J-20260920-0232-meth-3340): measured on 174 title-family-miss rejects
+# from the 2026-09-19 LinkedIn staging sweep — 12 were implementation-family
+# and 11 genuine on-lane roles (Rippling x2, DailyPay, Canary, Courier
+# Health, Exiger, FIS, Profound, Moveworks, PreSales Collective,
+# RemoteHunter) were parked PARKED-TRIAGE-DEFERRED on a title that no lane
+# family recognized. The bare token's junk-collision risk is negligible:
+# "Implementation Engineer"-class engineering titles still defer on the
+# excluded-keyword gate (TRIAGE_MISS runs after HITS) — the same fail-safe
+# the other families rely on.
 TRIAGE_HITS = re.compile(
     r"(operations|revenue ops|sales ops|business ops|product ops|program ops|"
     r"go-to-market|gtm|chief of staff|ai tooling|ai operations|trust & safety|"
@@ -64,7 +74,8 @@ TRIAGE_HITS = re.compile(
     r"enablement|"
     r"program manager|technical program|program lead|project manager|"
     r"business systems|systems analyst|"
-    r"general manager|director of outlets)",
+    r"general manager|director of outlets|"
+    r"implementation)",
     re.I)
 
 # Exclusion keywords: RAMP-proven base + "talent" (measured: keeps Senior

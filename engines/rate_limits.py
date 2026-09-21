@@ -63,8 +63,11 @@ def _submitted_date(row):
             continue
         try:
             # Handles "2026-09-14 19:03 PDT" and ISO "2026-09-14T19:51:23-07:00".
+            # Check the "T" separator only in the date portion: the "T" inside
+            # "PDT" must not send the "YYYY-MM-DD HH:MM PDT" form down the
+            # ISO branch (it is not ISO-parseable and would parse as None).
             return datetime.fromisoformat(str(val).split(" PDT")[0]
-                                          .replace(" ", "T", 1) if "T" not in str(val)
+                                          .replace(" ", "T", 1) if "T" not in str(val).split(" ")[0]
                                           else str(val)).date()
         except ValueError:
             continue
@@ -85,7 +88,7 @@ def count_used(employer, ledger_path=None, window_days=180, today=None):
         ledger = json.load(open(ledger_path or DEFAULT_LEDGER))
     except FileNotFoundError:
         return 0  # no ledger yet -> no submissions used
-    rows = ledger if isinstance(ledger, list) else ledger.get("applications", [])
+    rows = ledger if isinstance(ledger, list) else ledger.get("rows", ledger.get("applications", []))
     today = today or date.today()
     cutoff = today - timedelta(days=window_days)
     used = 0

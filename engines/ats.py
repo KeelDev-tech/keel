@@ -16,81 +16,58 @@ import re
 import urllib.request
 from urllib.parse import urlparse
 
-ATS_PATTERNS = {
-    "greenhouse": [
-        r"boards\.greenhouse\.io",
-        r"job-boards\.greenhouse\.io",
-        r"boards-api\.greenhouse\.io",
-        r"greenhouse\.io",
-        r"[?&]gh_jid=",  # Greenhouse's own job-id query param on employer career pages
-                         # (e.g. /careers/positions/7980600?gh_jid=7980600) — identity
-                         # only; detection never assumes a direct board URL from it.
-    ],
-    "lever": [
-        r"lever\.co",
-        r"api\.lever\.co",
-    ],
-    "ashby": [
-        r"jobs\.ashbyhq\.com",
-        r"api\.ashbyhq\.com",
-    ],
-    "workday": [
-        r"myworkdayjobs\.com",
-        r"wd\d+\.myworkdayjobs\.com",
-    ],
-    "icims": [
-        r"icims\.com",
-    ],
-    "smartrecruiters": [
-        r"smartrecruiters\.com",
-    ],
-    "jobvite": [
-        r"jobs\.jobvite\.com",
-    ],
-    "breezy": [
-        r"breezy\.hr",
-    ],
-    "applytojob": [
-        r"applytojob\.com",
-    ],
-    "workatastartup": [
-        r"ycombinator\.com/companies",
-    ],
-    "rippling": [
-        r"ats\.rippling\.com",
-    ],
-    "tealhq": [
-        r"tealhq\.com",
-    ],
-    "oracle_recruiting_cloud": [
-        r"fa\.[a-z0-9]+\.oraclecloud\.com",  # Oracle HCM Candidate Experience tenants (e.g. egmn.fa.us2.oraclecloud.com)
-    ],
-    "comeet": [
-        r"comeet\.co",
-    ],
-    "teamtailor": [
-        r"teamtailor\.com",
-    ],
-    "careerpuck": [
-        r"careerpuck\.com",  # third-party career-board host; resolve the proxied ATS per posting
-    ],
-    "workable": [
-        r"workable\.com",
-        r"apply\.workable\.com",
-    ],
-    "recruitee": [
-        r"recruitee\.com",
-    ],
-    "pinpoint": [
-        r"pinpointhq\.com",
-    ],
-    "personio": [
-        r"jobs\.personio\.com",
-    ],
-    "bamboohr": [
-        r"bamboohr\.com",
-    ],
+# Parsed-identity matching rules. Whole-URL substring matching is retired: a
+# vendor token in a path, fragment or unrelated query parameter no longer
+# attributes the URL to that vendor.
+#
+# Each ATS maps to:
+#   "hosts": regexes matched against the parsed, lowercased hostname only
+#            (userinfo and port stripped; dot-boundary anchored);
+#   "paths": (host_regex, path_regex) pairs for host+path identity;
+#   "query": regexes matched against the raw query string for trusted
+#            provider identifiers.
+ATS_RULES = {
+    "greenhouse": {
+        "hosts": [r"(^|\.)greenhouse\.io$"],
+        "paths": [],
+        # Greenhouse's own job-id query param on employer career pages
+        # (e.g. /careers/positions/7980600?gh_jid=7980600) — identity only;
+        # detection never assumes a direct board URL from it.
+        "query": [r"(^|&)gh_jid="],
+    },
+    "lever":        {"hosts": [r"(^|\.)lever\.co$"], "paths": [], "query": []},
+    "ashby":        {"hosts": [r"(^|\.)ashbyhq\.com$"], "paths": [], "query": []},
+    "workday":      {"hosts": [r"(^|\.)myworkdayjobs\.com$"], "paths": [], "query": []},
+    "icims":        {"hosts": [r"(^|\.)icims\.com$"], "paths": [], "query": []},
+    "smartrecruiters": {"hosts": [r"(^|\.)smartrecruiters\.com$"], "paths": [], "query": []},
+    "jobvite":      {"hosts": [r"(^|\.)jobvite\.com$"], "paths": [], "query": []},
+    "breezy":       {"hosts": [r"(^|\.)breezy\.hr$"], "paths": [], "query": []},
+    "applytojob":   {"hosts": [r"(^|\.)applytojob\.com$"], "paths": [], "query": []},
+    "workatastartup": {
+        "hosts": [],
+        "paths": [(r"(^|\.)ycombinator\.com$", r"^/companies(/|$)")],
+        "query": [],
+    },
+    "rippling":     {"hosts": [r"(^|\.)ats\.rippling\.com$"], "paths": [], "query": []},
+    "tealhq":       {"hosts": [r"(^|\.)tealhq\.com$"], "paths": [], "query": []},
+    "oracle_recruiting_cloud": {
+        # Oracle HCM Candidate Experience tenants (e.g. egmn.fa.us2.oraclecloud.com)
+        "hosts": [r"(^|\.)fa\.[a-z0-9]+\.oraclecloud\.com$"], "paths": [], "query": [],
+    },
+    "comeet":       {"hosts": [r"(^|\.)comeet\.co$"], "paths": [], "query": []},
+    "teamtailor":   {"hosts": [r"(^|\.)teamtailor\.com$"], "paths": [], "query": []},
+    # third-party career-board host; resolve the proxied ATS per posting
+    "careerpuck":   {"hosts": [r"(^|\.)careerpuck\.com$"], "paths": [], "query": []},
+    "workable":     {"hosts": [r"(^|\.)workable\.com$"], "paths": [], "query": []},
+    "recruitee":    {"hosts": [r"(^|\.)recruitee\.com$"], "paths": [], "query": []},
+    "pinpoint":     {"hosts": [r"(^|\.)pinpointhq\.com$"], "paths": [], "query": []},
+    "personio":     {"hosts": [r"(^|\.)personio\.com$"], "paths": [], "query": []},
+    "bamboohr":     {"hosts": [r"(^|\.)bamboohr\.com$"], "paths": [], "query": []},
 }
+
+# Canonical platform-key registry. record_outcome.VALID_ATS reads the keys;
+# the values are the structured rules above.
+ATS_PATTERNS = ATS_RULES
 
 
 # Aggregator/redirector domains whose application_url is NOT the final ATS page.
@@ -125,13 +102,62 @@ def is_aggregator(url: str) -> bool:
     return any(host.endswith(a) for a in AGGREGATORS)
 
 
+def _split_url(url):
+    """Parse a URL into (host, path, query) on parsed identity.
+
+    Returns None when the URL is absent or unparseable — callers treat that
+    as 'unknown', never as a guess. Schemeless host forms ("boards
+    .greenhouse.io/x") are canonicalized with "//" so the hostname still
+    parses.
+    """
+    if not isinstance(url, str) or not url.strip():
+        return None
+    text = url.strip()
+    if "://" not in text and not text.startswith("//"):
+        text = "//" + text
+    try:
+        parts = urlparse(text)
+        host = (parts.hostname or "").lower()
+    except Exception:
+        return None
+    if not host:
+        return None
+    return host, parts.path or "", parts.query or ""
+
+
+def detect_ats_explain(url):
+    """Return (ats_key, evidence).
+
+    evidence lists every rule that fired as (rule_kind, ats_key, detail)
+    where rule_kind is "host", "host_path" or "query". Multiple hits mean
+    the URL is ambiguous; the primary detect_ats keeps first-table-order for
+    a stable single answer, and the full evidence is recorded here instead
+    of silently discarded.
+    """
+    split = _split_url(url)
+    if split is None:
+        return "unknown", []
+    host, path, query = split
+    hits = []
+    for ats, rules in ATS_RULES.items():
+        for rule in rules["hosts"]:
+            if re.search(rule, host):
+                hits.append(("host", ats, host))
+                break
+        for host_rule, path_rule in rules["paths"]:
+            if re.search(host_rule, host) and re.search(path_rule, path):
+                hits.append(("host_path", ats, host + path))
+        for qrule in rules["query"]:
+            if re.search(qrule, query):
+                hits.append(("query", ats, qrule))
+    if not hits:
+        return "unknown", []
+    return hits[0][1], hits
+
+
 def detect_ats(url: str) -> str:
     """Return the ATS key for a URL, or 'unknown'."""
-    for ats, patterns in ATS_PATTERNS.items():
-        for pat in patterns:
-            if re.search(pat, url, re.IGNORECASE):
-                return ats
-    return "unknown"
+    return detect_ats_explain(url)[0]
 
 
 # ---------------------------------------------------------------------------

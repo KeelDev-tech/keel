@@ -21,6 +21,7 @@ import json
 import os
 import sys
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlsplit, urlunsplit
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
@@ -34,7 +35,15 @@ PRUNE_AFTER_HOURS = 24  # entries older than this are dropped on write
 
 
 def _norm_url(u):
-    return (u or "").strip().rstrip("/").lower()
+    # K22 mirror port (2026-09-18): lowercase scheme + host only. Path/query
+    # case is significant — a changed application_url differing only in
+    # path/query case must NOT match a cached entry, or the claim gate would
+    # skip a required HTTP re-check. Fragments are dropped (never sent over
+    # HTTP). Trailing-slash folding preserved from the original.
+    p = urlsplit((u or "").strip())
+    norm = urlunsplit((p.scheme.lower(), p.netloc.lower(),
+                       p.path, p.query, ""))
+    return norm.rstrip("/")
 
 
 def _load():
@@ -89,6 +98,11 @@ def fresh_live(role_id, url=None, ttl_hours=TTL_HOURS):
         ts = datetime.fromisoformat(entry.get("ts", ""))
         if ts.tzinfo is None:
             ts = ts.replace(tzinfo=timezone.utc)
-        return (datetime.now(timezone.utc) - ts) <= timedelta(hours=ttl_hours)
+        # K21 mirror port (2026-09-18): age must be non-negative AND within
+        # TTL. A future-dated "live" stamp (clock skew, tampered cache)
+        # previously satisfied (now - ts) <= ttl and short-circuited the
+        # claim-time re-verify — fail closed instead (caller re-checks).
+        age = datetime.now(timezone.utc) - ts
+        return timedelta(0) <= age <= timedelta(hours=ttl_hours)
     except Exception:
         return False
