@@ -25,6 +25,13 @@ ATS vendors. See [SPLIT.md](SPLIT.md).
 
 *Live terminal demo on sample data (22s): fit scoring, prescreen gates, and the ATS capability radar refusing a board it can't reach honestly.*
 
+⭐ If the honest-automation contract resonates, **star the repo** — it's the fastest way to help other builders find Keel.
+
+<!-- Launch wins — uncomment the day they happen (Cal.com pattern: ship the badge the same day).
+[![HN #1](https://img.shields.io/badge/HN-%231-orange.svg)](https://news.ycombinator.com/)
+[![PH #1](https://img.shields.io/badge/Product_Hunt-%231-red.svg)](https://www.producthunt.com/)
+-->
+
 ## What it does
 
 - **Discovery** — search query playbooks and sweep prompts for finding real
