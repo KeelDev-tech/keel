@@ -71,6 +71,16 @@
           "@type": "Question",
           "name": "Is Keel open source?",
           "acceptedAnswer": { "@type": "Answer", "text": "Yes — open-core, Apache-2.0. Public: discovery/scoring, truthful resume tailoring, answer bank, prescreen gates, ATS detection and capability radar, launch-packet builder, telemetry, dashboard. Private by design: submission-behavior techniques that ATS vendors could fingerprint." }
+        },
+        {
+          "@type": "Question",
+          "name": "Does Keel need accounts, API keys, or phone home?",
+          "acceptedAnswer": { "@type": "Answer", "text": "No. Keel is stdlib-only Python that runs on your machine: no accounts, no API keys, no subscription, no phone-home. The only network traffic the pipeline itself makes is read-only HTTP liveness and form-intel probes against the job boards it evaluates. Your profile, answer bank, queues, and ledger live in your own working copy." }
+        },
+        {
+          "@type": "Question",
+          "name": "What does the 209-submission evidence figure mean?",
+          "acceptedAnswer": { "@type": "Answer", "text": "209 verified submissions (recounted 2026-09-22; 202 with quoted confirmation evidence, 3 with pointer evidence, 1 URL-only, 3 unevidenced — counted, never estimated): the total row count of the private production pipeline's submission ledger, published with its evidence split. Public readers cannot independently rerun the private pipeline, and the public repo makes no submission claims of its own." }
         }
       ]
     }
