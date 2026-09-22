@@ -101,7 +101,11 @@ PIPELINE = os.path.expanduser("~/workspace/job-pipeline")
 ENGINES = os.path.join(PIPELINE, "engines", "application-executor")
 
 sys.path.insert(0, KEEL_DIR)          # keel_flow, keel_local resolve live
-sys.path.insert(0, ENGINES)            # pool_guardian.pool_state, verify_retry
+# NOTE: ENGINES (the private pipeline's engine dir) is deliberately NOT added
+# to sys.path. An import-time insert here once shadowed same-named test
+# modules (test_launch_lock_x20, test_prescreen) during unittest discovery
+# and broke CI. Pipeline engines load lazily by absolute path via
+# _pipeline_module() below, which never touches sys.path.
 
 ADAPTER_VERSION = "export_flow_snapshot/1.3.0"  # 1.3.0 (2026-09-20 ARM 3):
 # readiness gates mapped to real ledger / lock-dir / buffer evidence
@@ -1300,7 +1304,7 @@ def main():
           f"releases={len(releases)}", file=sys.stderr)
 
     # --- pool: exact guardian logic -------------------------------------------
-    from pool_guardian import pool_state
+    pool_state = _pipeline_module("pool_guardian").pool_state
     ready, actionable = pool_state(now=now)
     pool = {"schema_version": 1, "ready": ready, "actionable": actionable,
             "observed_at": observed_at}

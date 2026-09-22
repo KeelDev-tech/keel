@@ -9,7 +9,14 @@ import sys
 import tempfile
 import threading
 
-import pytest
+try:
+    import pytest
+except ImportError:
+    # stdlib-only CI has no pytest installed: the module must still import
+    # cleanly under `python -m unittest discover`. These pytest-style tests
+    # are collected only under pytest; without it the fixture below is a
+    # no-op and the test functions are not collected by unittest.
+    pytest = None
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 ENGINES = os.path.join(BASE, "..", "engines")
@@ -17,7 +24,18 @@ sys.path.insert(0, ENGINES)
 import launch_lock as ll
 
 
-@pytest.fixture()
+def _fixture(*dargs, **dkwargs):
+    """pytest.fixture when pytest is available, else a no-op decorator."""
+    if pytest is not None:
+        return pytest.fixture(*dargs, **dkwargs)
+
+    def _wrap(fn):
+        return fn
+
+    return _wrap
+
+
+@_fixture()
 def iso(tmp_path, monkeypatch):
     """Isolate LOCK_DIR and LEDGER_PATH per test."""
     lock_dir = str(tmp_path / "locks")

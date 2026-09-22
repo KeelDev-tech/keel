@@ -40,6 +40,14 @@ from datetime import datetime, timedelta, timezone
 BASE = os.path.dirname(os.path.abspath(__file__))
 FG_PATH = os.path.abspath(os.path.join(BASE, "..", "monitors", "fanout_gate.py"))
 
+if not os.path.isfile(FG_PATH):
+    # monitors/ is git-ignored (private operational surface); fanout_gate.py
+    # exists only in dev checkouts. Skip the whole module under stdlib CI
+    # instead of erroring on the missing file.
+    raise unittest.SkipTest(
+        "monitors/fanout_gate.py not present (git-ignored); skipping fanout-gate tests"
+    )
+
 
 def load_fanout_gate():
     spec = importlib.util.spec_from_file_location("fanout_gate", FG_PATH)

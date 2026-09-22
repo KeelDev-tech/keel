@@ -6,8 +6,6 @@ Run: python3 -m pytest test_cost_model.py
 import os
 import sys
 
-import pytest
-
 BASE = os.path.dirname(os.path.abspath(__file__))
 ENGINES = os.path.join(BASE, "..", "engines")
 sys.path.insert(0, ENGINES)
