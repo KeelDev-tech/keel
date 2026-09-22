@@ -4,7 +4,7 @@
 >
 > Self host. Reclaim the time.
 >
-> Keel is an open-core job-application autopilot with a truthfulness contract: it only ever claims what you tell it is true. Free and open source (Apache-2.0). 55 verified submissions. Zero lies.
+> Keel is an open-core job-application autopilot with a truthfulness contract: it only ever claims what you tell it is true. Free and open source (Apache-2.0). 209 verified submissions. Zero lies.
 
 ## Key pages
 
