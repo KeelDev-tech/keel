@@ -5,6 +5,10 @@ All notable changes to Keel are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- The apply loop exits with actionable setup guidance instead of a traceback
+  when the workspace queue file is missing.
+
 ### Added
 - Safety rails as code: `docs/OPERATING-CONSTRAINTS.md` documents the
   numbered operating constraints (C-01…C-20), each enforced in a named

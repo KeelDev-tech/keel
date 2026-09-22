@@ -153,7 +153,14 @@ def load_answer_bank():
 
 
 def load_queue():
-    d = json.load(open(QUEUE))
+    try:
+        with open(QUEUE) as queue_file:
+            d = json.load(queue_file)
+    except FileNotFoundError:
+        sys.exit(
+            f"{QUEUE} not found - run ./setup.sh first "
+            "(or set KEEL_HOME to your workspace)"
+        )
     return d if isinstance(d, list) else d.get("entries", d.get("items", []))
 
 
