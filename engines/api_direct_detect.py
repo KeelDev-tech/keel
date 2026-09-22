@@ -41,6 +41,10 @@ resolve the proxied ATS per posting). All fail-closed here: detect()
 returns candidate=False with reason until a supervised verification
 proves a direct path.
 
+ASHBY (added 2026-09-22): recognized by detect() via engines/ats.py
+(jobs.ashbyhq.com); no proven pure-HTTP submission path — candidate=False
+with a documented reason until a supervised verification proves one.
+
 BROWSER-ONLY / REFUSED (verdicts assigned 2026-09-16 by concrete probes,
 registry entries carry the evidence): phenom (reCAPTCHA explicit-render
 wall + posting applyUrl hops off Phenom to another ATS -- listing
@@ -101,10 +105,14 @@ LEVER_REASON = (
     "submission impossible; browser path required "
     "(lever_submit.py offers a dry-run pre-flight only)")
 
-# New platforms (onboarded 2026-09-15, registry verdict 'unknown'):
-# no proven direct path — fail closed to the browser path until a
-# supervised verification proves one.
+# New platforms (onboarded 2026-09-15, registry verdict 'unknown';
+# ashby added 2026-09-22): no proven direct path — fail closed to the
+# browser path until a supervised verification proves one.
 NEW_PLATFORM_REASONS = {
+    "ashby": (
+        "Ashby: no proven pure-HTTP submission path — api_submit.py handles "
+        "the Greenhouse direct-board form only; browser path required until "
+        "a supervised verification proves one"),
     "oracle_recruiting_cloud": (
         "Oracle Recruiting Cloud: JS SPA, apply path not HTTP-renderable "
         "(registry verdict 'unknown'); browser path required"),
