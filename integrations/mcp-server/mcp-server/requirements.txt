@@ -1,0 +1,9 @@
+# Keel MCP server dependencies.
+# mcp>=2 implements the latest MCP spec (verified 2026-07-28 in SDK 2.2.0),
+# which satisfies the hackathon's minimum spec version 2025-11-25.
+mcp>=2.2.0
+httpx>=0.27
+starlette>=0.37
+uvicorn>=0.29
+reportlab>=4.0  # Keel's one documented third-party dep (resume_tailor import)
+pytest>=8.0
