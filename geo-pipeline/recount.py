@@ -82,6 +82,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(EVIDENCE_GATE)))
 from ledger_append import canon_ledger_status  # noqa: E402
 
 
+
 def fail(msg):
     print(f"recount: FATAL: {msg}", file=sys.stderr)
     sys.exit(1)
@@ -179,6 +180,7 @@ def main():
         1 for r in rows
         if isinstance(r, dict) and canon_ledger_status(r.get("status")) == "SUBMITTED"
     )
+
     if direct != total_submitted:
         fail(f"audit total_submitted ({total_submitted}) != direct SUBMITTED count ({direct})")
 
@@ -212,11 +214,13 @@ def main():
             "(backfilled-only pairs are real historical stops and count); "
             "queue-level events without role_id and TEST- fixtures are excluded. "
             "Launch figure 55 is the historical canon counted 2026-09-15 00:17 PT. "
-            "Submission figures recounted 2026-09-22: 209 canonical SUBMITTED rows "
-            "(207 exact-status plus the 2 historical lowercase-alias rows counted "
-            "per LEDGER_STATUS_ALIAS); evidence split 202 quoted / 3 pointer / "
-            "1 url_only / 3 unevidenced. The 2026-09-21 published figure (214) no "
-            "longer matches the ledger; the ledger is the count of record. "
+            f"Submission figures recounted {counted_at[:10]}: {total_submitted} canonical "
+            "SUBMITTED rows (exact-status plus the 2 historical lowercase-alias rows "
+            "counted per LEDGER_STATUS_ALIAS); evidence split "
+            f"{audit.get('evidenced')} quoted / {audit.get('pointer')} pointer / "
+            f"{audit.get('url_only')} url_only / {audit.get('unevidenced')} unevidenced. "
+            "The ledger is the count of record. "
+
             "Full methodology in docs/data-story.md."
         ),
         "refresh_policy": (

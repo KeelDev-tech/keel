@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Keel — Honesty report: how the 209 verified submissions are counted</title>
+<meta name="description" content="Evidence-graded methodology behind Keel's submission count: what counts as evidence, how the ledger is recounted, and what you cannot independently verify.">
+<meta property="og:title" content="Keel — Honesty report">
+<meta property="og:description" content="209 verified submissions, counted not estimated: evidence grades, recount methodology, and the limits of what a public reader can verify.">
+<meta property="og:type" content="website">
+<link rel="stylesheet" href="style.css">
+<style>
+  .evidence-table { width: 100%; border-collapse: collapse; margin: 24px 0; font-size: 16px; }
+  .evidence-table th, .evidence-table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--rule); }
+  .evidence-table th { font-family: var(--mono); font-size: 12px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--gold); }
+  .evidence-table td.num { font-family: var(--mono); font-size: 20px; color: var(--ink); }
+  .evidence-table td p { margin: 0; }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="kicker">Honesty Report</div>
+    <h1>209</h1>
+    <p class="positioning">Verified submissions, counted — never estimated.</p>
+    <p class="lede">209 verified submissions (recounted 2026-09-22; 202 with quoted confirmation evidence, 3 with pointer evidence, 1 URL-only, 3 unevidenced — counted, never estimated). This page documents exactly what that sentence means, how it is produced, and where it stops being checkable by you.</p>
+    <div class="cta-row">
+      <a class="btn ghost" href="index.html">Back to Keel</a>
+      <a class="btn ghost" href="spot-the-ai-resume-lie.html">Take the honesty quiz</a>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <section class="block">
+    <div class="wrap">
+      <div class="kicker">The Count</div>
+      <h2>What the number is</h2>
+      <p>A private production pipeline — the one Keel's discipline was built to run — holds <strong>209 rows</strong> in its application ledger in canonical SUBMITTED status, as counted on 2026-09-22. "Verified submissions" has exactly one definition here: <strong>ledger rows whose status is SUBMITTED</strong>, and the pipeline's own reporting rule records that status only on <strong>explicit page-confirmation evidence</strong> — the confirmation the application page itself shows. Nothing counts because a worker said it tried; nothing counts on a 200 OK; nothing is projected, extrapolated, or rounded up.</p>
+      <table class="evidence-table">
+        <tr><th>Evidence grade</th><th>Count</th><th>What it means</th></tr>
+        <tr>
+          <td>Quoted confirmation</td><td class="num">202</td>
+          <td><p>The page's confirmation text was quoted into the record at submit time — the words the ATS showed (e.g. an "application submitted" confirmation together with its reference number), not a worker's claim.</p></td>
+        </tr>
+        <tr>
+          <td>Pointer evidence</td><td class="num">3</td>
+          <td><p>A pointer to a retained confirmation artifact rather than the full quoted text — a reference to evidence held elsewhere in the pipeline's records.</p></td>
+        </tr>
+        <tr>
+          <td>URL-only</td><td class="num">1</td>
+          <td><p>The job posting URL is on record; no confirmation text was retained. Counted, graded, and disclosed — not quietly dropped and not upgraded.</p></td>
+        </tr>
+        <tr>
+          <td>Unevidenced</td><td class="num">3</td>
+          <td><p>The ledger marks the row submitted with no retained evidence. Also counted, also disclosed. A count that hid its weakest rows would not be a count.</p></td>
+        </tr>
+      </table>
+      <p class="fineprint">The split comes from the canonical audit reader (engines/outcome-tracking/evidence_gate.py, `audit` CLI). The figures above are published 2026-09-22 and move only when the ledger moves.</p>
+    </div>
+  </section>
+
+  <section class="block">
+    <div class="wrap">
+      <div class="kicker">Method</div>
+      <h2>How the recount works</h2>
+      <p>The public repo ships <strong>geo-pipeline/recount.py</strong>, the same script that produces the published figures. It reads two private sources — the production ledger (<code>application-ledger.json</code>) and the append-only telemetry log (<code>telemetry/events.jsonl</code>) — and outputs aggregates only. No identifying detail ever leaves the private side.</p>
+      <p>The recount is deliberately boring:</p>
+      <p><strong>Canonical status match.</strong> A row counts as SUBMITTED under the canonical ledger-status aliasing (a naive exact-string match once undercounted 209 to 207 because two historical rows were lowercase; the cross-check now uses the same canonicalizer on both sides, and the run fails if they disagree).</p>
+      <p><strong>Two-way cross-check.</strong> A direct row count and the evidence-audit reader must agree to the row, or the recount aborts with no write.</p>
+      <p><strong>Fail closed.</strong> Any source read error produces a non-zero exit and no partial write; stats.json is written atomically (temp file + rename). Gate figures are distinct (lead, gate) pairs in <code>gate_blocked</code> events, with backfilled pairs deduped on the pair and TEST- fixtures excluded.</p>
+      <p><strong>No re-verification.</strong> The recount counts the ledger; it does not re-verify confirmations. A count that re-interpreted history would not be a recount. The launch figure of 55 (counted 2026-09-15 00:17 PT) is a historical canon and is never recomputed.</p>
+      <p class="fineprint">Full methodology: <a href="https://github.com/KeelDev-tech/keel/blob/main/docs/data-story.md">docs/data-story.md</a>. Machine-readable canon: <a href="https://github.com/KeelDev-tech/keel/blob/main/docs/geo/stats.json">docs/geo/stats.json</a> — regenerated by recount, never hand-edited.</p>
+    </div>
+  </section>
+
+  <section class="block">
+    <div class="wrap">
+      <div class="kicker">Limits</div>
+      <h2>What you cannot independently verify</h2>
+      <p>Honesty requires stating the checkability boundary plainly:</p>
+      <p><strong>You cannot rerun the private pipeline.</strong> The ledger rows, the confirmation artifacts, and the execution layer that submitted them stay private by design — publishing submission fingerprints would get the pipeline blocked by ATS vendors (<a href="https://github.com/KeelDev-tech/keel/blob/main/SPLIT.md">SPLIT.md</a>). A reader of this repo cannot independently replay the 209 submissions or re-inspect the quoted confirmations. The recount script is public; its inputs are not.</p>
+      <p><strong>The public repo makes no submission claims of its own.</strong> Keel the public project is the tools, the gates, and the telemetry discipline — the machinery that made "only ever claims what you tell it is true" operational. The 209 figure belongs to the private production pipeline that used this exact discipline; the public repo did not produce it.</p>
+      <p><strong>The weakest rows are named on purpose.</strong> The 3 unevidenced and 1 URL-only rows are part of the 209, disclosed here rather than silently excluded. If that bothers you, it should — that discomfort is the grade working as designed.</p>
+      <p class="fineprint">Eligibility is not claimed either: Keel is free and open source (Apache-2.0), ships no accounts, no quotas, and no paid tiers. Anything that would cost money or misrepresent eligibility is outside its contract — see the <a href="index.html#contract">truthfulness contract</a>.</p>
+    </div>
+  </section>
+
+  <section class="block">
+    <div class="wrap">
+      <div class="kicker">Refusals</div>
+      <h2>The other number: what never shipped</h2>
+      <p>Honest automation is measured in refusals. In the same recount, <strong>3,427 leads</strong> were stopped by a gate rather than shipped with a lie — including <strong>4</strong> where the fabrication gate tripped specifically because the system refused to invent an answer. Needs-input parks (488), unmappable required questions, unverifiable postings (15), travel commitments never signed by a bot, essays never ghostwritten. The full per-gate table is in <a href="https://github.com/KeelDev-tech/keel/blob/main/docs/geo/stats.json">stats.json</a>.</p>
+      <p class="fineprint">Counted 2026-09-22 from distinct (lead, gate) pairs in gate_blocked telemetry events.</p>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Keel — honest automation. Apache-2.0.</span>
+    <span><a href="https://github.com/KeelDev-tech/keel">github.com/KeelDev-tech/keel</a></span>
+    <span><a href="index.html">Home</a></span>
+  </div>
+</footer>
+
+</body>
+</html>

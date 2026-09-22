@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Keel — Spot the AI resume lie (quiz)</title>
+<meta name="description" content="A 5-round quiz: can you spot the invented resume line? All examples are synthetic. Teaches Keel's truthfulness principles. Works fully offline.">
+<link rel="stylesheet" href="style.css">
+<style>
+  .quiz-card { background: var(--bg2); border: 1px solid var(--rule); padding: 32px; margin: 24px 0; }
+  .quiz-card h3 { font-size: 22px; margin-bottom: 8px; color: var(--ink); }
+  .quiz-snippet { font-family: var(--mono); font-size: 14px; background: #0f0e0c; border: 1px solid var(--rule); padding: 16px 18px; margin: 18px 0; white-space: pre-wrap; color: var(--ink-dim); line-height: 1.6; }
+  .quiz-opts { display: flex; flex-direction: column; gap: 10px; margin: 18px 0; }
+  .quiz-opt { text-align: left; background: transparent; border: 1px solid var(--rule); color: var(--ink); padding: 12px 16px; font-family: inherit; font-size: 16px; cursor: pointer; line-height: 1.5; }
+  .quiz-opt:hover:not(:disabled) { border-color: var(--gold); }
+  .quiz-opt:disabled { cursor: default; opacity: 0.85; }
+  .quiz-opt.correct { border-color: #6fae6f; background: rgba(111,174,111,0.08); }
+  .quiz-opt.wrong { border-color: #b0563f; background: rgba(176,86,63,0.08); }
+  .quiz-expl { border-top: 1px solid var(--rule); padding-top: 18px; margin-top: 6px; display: none; }
+  .quiz-expl.show { display: block; }
+  .quiz-expl .principle { color: var(--gold); font-family: var(--mono); font-size: 13px; letter-spacing: 0.15em; text-transform: uppercase; display: block; margin-bottom: 8px; }
+  .quiz-nav { margin-top: 20px; display: none; }
+  .quiz-nav.show { display: block; }
+  .quiz-progress { font-family: var(--mono); font-size: 13px; color: var(--ink-faint); letter-spacing: 0.2em; }
+  .quiz-score { font-family: var(--mono); font-size: 14px; color: var(--gold); }
+  .quiz-result { text-align: center; padding: 48px 0; }
+  .quiz-result .big { font-size: 56px; color: var(--ink); margin: 16px 0; }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="kicker">Quiz</div>
+    <h1>Spot the AI resume lie</h1>
+    <p class="positioning">Five synthetic examples. One lie per round.</p>
+    <p class="lede">Every example below is <strong>fictional</strong> — the applicant is "Alex Candidate," a person who does not exist. The lies are the exact kinds of inventions Keel's gates exist to stop. No network needed; everything runs in this page.</p>
+  </div>
+</header>
+
+<main>
+  <section class="block">
+    <div class="wrap">
+      <p><span class="quiz-progress" id="progress"></span> &nbsp; <span class="quiz-score" id="score"></span></p>
+      <div id="quiz"></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Keel — honest automation. Apache-2.0.</span>
+    <span><a href="https://github.com/KeelDev-tech/keel">github.com/KeelDev-tech/keel</a></span>
+    <span><a href="index.html">Home</a> · <a href="honesty-report.html">Honesty report</a></span>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  var ROUNDS = [
+    {
+      title: "Round 1 — The invented metric",
+      snippet: "Alex Candidate's real history:\n  \u2022 Led a team of 6 engineers; shipped 3 product releases\n\nThe AI's \"improved\" version adds:\n  \u2022 Scaled the org from 5 to 50 and grew revenue 340% year over year",
+      question: "Which bullet should Keel keep?",
+      options: [
+        { text: "Keep the 340% revenue bullet — bigger numbers pass ATS filters.", lie: true },
+        { text: "Keep Alex's original bullet — only claim what the applicant actually said.", lie: false }
+      ],
+      explanation: "The 340% figure was invented. No banked answer, no provenance, no truth. Keel's answer bank carries values with a provenance receipt — who said it, when, through which mechanism. A value with no source is a value that does not ship.",
+      principle: "Truthfulness gates \u2014 never bridge a missing fact with fiction"
+    },
+    {
+      title: "Round 2 — The invented skill",
+      snippet: "Alex Candidate's verified skills (banked):\n  \u2022 Python \u2014 professional, 5 years\n\nThe AI's skills section reads:\n  \u2022 Expert: Kubernetes, Rust, Go, Terraform",
+      question: "Where is the lie?",
+      options: [
+        { text: "Nowhere \u2014 listing adjacent skills is just smart tailoring.", lie: true },
+        { text: "The proficiency claims: Kubernetes, Rust, Go, Terraform were never banked as Alex's skills.", lie: false }
+      ],
+      explanation: "\"Expert: Kubernetes\" for someone who never touched Kubernetes is a lie on Alex's behalf, and it poisons the channel for every honest applicant. Keel resolves skills only from the bank; anything unbanked abstains instead of guessing.",
+      principle: "Answer resolver \u2014 fail closed, abstain on the unknown"
+    },
+    {
+      title: "Round 3 — The invented degree",
+      snippet: "Alex Candidate's education:\n  \u2022 Enrolled in online CS courses, 2025\u20132026 (in progress)\n\nThe AI's education section reads:\n  \u2022 B.S. Computer Science, Stanford University, 2019",
+      question: "Spot it.",
+      options: [
+        { text: "The Stanford degree \u2014 enrollments are never represented as completed credentials.", lie: false },
+        { text: "The dates \u2014 2019 is oddly specific, but the degree itself is fine to keep.", lie: true }
+      ],
+      explanation: "The entire degree is fabricated \u2014 institution, credential, and year. Keel treats education as class-1 verified data: completed credentials are banked; enrollments stay enrollments. Inventing a degree is the fastest way to get a candidate blacklisted and the pipeline blocked.",
+      principle: "Verified facts only \u2014 never represent what is not true"
+    },
+    {
+      title: "Round 4 — The auto-filled \"Yes\"",
+      snippet: "Form question on the application:\n  [ ] \"Do you have 5+ years of Kubernetes experience? *\"\n\nAlex's bank has no Kubernetes answer at all.\n\nThe auto-apply bot checks \"Yes\" to keep the application moving.",
+      question: "What does Keel do here?",
+      options: [
+        { text: "Check \"Yes\" \u2014 the filter would reject Alex otherwise, and filters are just machines.", lie: true },
+        { text: "Abstain, report the gap, and park the lead until Alex answers.", lie: false }
+      ],
+      explanation: "A \"Yes\" with no banked answer is a fabricated qualification \u2014 exactly what Keel's resolver abstains on. In Keel's production recount, the fabrication gate tripped 4 times: each was a moment the system stopped rather than invented. Checking the box would have been a lie told in Alex's name.",
+      principle: "Fail closed \u2014 unverifiable means parked, never proceeded"
+    },
+    {
+      title: "Round 5 — The attestation the AI signs for you",
+      snippet: "Required checkbox before submit:\n  [ ] \"I certify this application was completed without\n       AI assistance.\"\n\nThe bot is about to auto-agree so the application goes through.",
+      question: "Why is the auto-agree a lie?",
+      options: [
+        { text: "It isn't \u2014 attestations are boilerplate; everyone clicks through.", lie: true },
+        { text: "It's a false attestation about the AI's own use \u2014 and no-AI pledges are never pre-authorized in Keel.", lie: false }
+      ],
+      explanation: "An AI auto-agreeing that \"no AI was used\" is a lie about itself, signed in the applicant's name. In Keel, no-AI/unaided-work attestations are a hard-stop class: they always park for the applicant's own decision, and standard legal attestations (arbitration, background-check consent) are the only ones pre-authorized. Boilerplate is not consent.",
+      principle: "Explicit confirmation \u2014 nothing counts unless it is true"
+    }
+  ];
+
+  var idx = 0, correct = 0;
+  var quizEl = document.getElementById("quiz");
+  var progressEl = document.getElementById("progress");
+  var scoreEl = document.getElementById("score");
+
+  function renderRound() {
+    var r = ROUNDS[idx];
+    progressEl.textContent = "ROUND " + (idx + 1) + " / " + ROUNDS.length;
+    scoreEl.textContent = "SCORE " + correct + " / " + idx;
+
+    var html = '<div class="quiz-card">';
+    html += "<h3>" + r.title + "</h3>";
+    html += '<div class="quiz-snippet">' + escapeHtml(r.snippet) + "</div>";
+    html += "<p><strong>" + escapeHtml(r.question) + "</strong></p>";
+    html += '<div class="quiz-opts">';
+    r.options.forEach(function (o, i) {
+      html += '<button class="quiz-opt" data-i="' + i + '">' + escapeHtml(o.text) + "</button>";
+    });
+    html += "</div>";
+    html += '<div class="quiz-expl" id="expl"><span class="principle">' + escapeHtml(r.principle) + "</span><p>" + escapeHtml(r.explanation) + "</p></div>";
+    html += '<div class="quiz-nav" id="nav">' + (idx < ROUNDS.length - 1
+      ? '<button class="quiz-opt" id="next">Next round \u2192</button>'
+      : '<button class="quiz-opt" id="next">See your result \u2192</button>') + "</div>";
+    html += "</div>";
+    quizEl.innerHTML = html;
+
+    var buttons = quizEl.querySelectorAll(".quiz-opt[data-i]");
+    buttons.forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var chosen = r.options[parseInt(btn.getAttribute("data-i"), 10)];
+        buttons.forEach(function (b2) {
+          b2.disabled = true;
+          var o2 = r.options[parseInt(b2.getAttribute("data-i"), 10)];
+          if (!o2.lie) b2.classList.add("correct");
+        });
+        if (chosen.lie) {
+          btn.classList.add("wrong");
+        } else {
+          correct++;
+        }
+        document.getElementById("expl").classList.add("show");
+        document.getElementById("nav").classList.add("show");
+        scoreEl.textContent = "SCORE " + correct + " / " + (idx + 1);
+      });
+    });
+    document.getElementById("next").addEventListener("click", function () {
+      idx++;
+      if (idx < ROUNDS.length) renderRound(); else renderResult();
+    });
+  }
+
+  function renderResult() {
+    progressEl.textContent = "COMPLETE";
+    scoreEl.textContent = "FINAL SCORE " + correct + " / " + ROUNDS.length;
+    var verdict = correct === ROUNDS.length
+      ? "Perfect. You think like the gates."
+      : correct >= 3
+        ? "Solid \u2014 a couple of inventions almost slipped past."
+        : "The bots would have loved you. Try again.";
+    var html = '<div class="quiz-card quiz-result">';
+    html += '<div class="kicker">Result</div>';
+    html += '<div class="big">' + correct + " / " + ROUNDS.length + "</div>";
+    html += "<p>" + verdict + "</p>";
+    html += '<p class="fineprint">The principles above are Keel\u2019s honest-automation contract, enforced in code: <a href="https://github.com/KeelDev-tech/keel">answer_resolver.py</a>, <a href="https://github.com/KeelDev-tech/keel">prescreen.py</a>, <a href="https://github.com/KeelDev-tech/keel">submit_intent.py</a>.</p>';
+    html += '<div class="cta-row" style="justify-content:center"><a class="btn" href="https://github.com/KeelDev-tech/keel">Read the code</a> <a class="btn ghost" href="honesty-report.html">How the 209 are counted</a></div>';
+    html += "</div>";
+    quizEl.innerHTML = html;
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  renderRound();
+})();
+</script>
+
+</body>
+</html>

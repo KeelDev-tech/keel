@@ -29,7 +29,11 @@ Rendered-option workflow (agent turn, uses browser.open):
        option labels; the browser task selects from verified labels, never
        guessing.
 """
-import json, os, re, sys, urllib.request
+import copy
+import json, os, re, sys, time
+
+import http_cache  # shared short-TTL GET cache (pre-request admission +
+                   # durable 429 cooldowns, same semantics as verify)
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 from keel_paths import DATA  # noqa: E402
@@ -55,9 +59,8 @@ def fetch_apply_html(org, posting_id):
 
 
 def fetch(url):
-    req = urllib.request.Request(url, headers=UA)
-    with urllib.request.urlopen(req, timeout=25) as r:
-        return r.read().decode("utf-8", "replace")
+    body, _, _ = http_cache.fetch(url, timeout=25)
+    return body.decode("utf-8", "replace")
 
 
 def greenhouse_embed_intel(board, token):
@@ -121,7 +124,7 @@ def lever_intel(org, posting_id):
             "questions": qs, "rendered_option_fetch_needed": []}
 
 
-def probe_url(url):
+def _probe_url_uncached(url):
     m = re.search(r"job-boards\.greenhouse\.io/embed/job_app\?for=([^&]+)&token=(\d+)", url)
     if m:
         return greenhouse_embed_intel(m.group(1), m.group(2))
@@ -132,9 +135,121 @@ def probe_url(url):
     m = re.search(r"lever\.co/([^/]+)/([a-f0-9-]+)", url)
     if m:
         return lever_intel(m.group(1), m.group(2))
+    if re.search(r"[?&]gh_jid=\d+", url or ""):
+        # gh_jid branch: employer career URLs carry the Greenhouse job id
+        # as gh_jid while the host's first DNS label is (usually) the board
+        # token. Use the SAME canonical guesser the verify path uses, so
+        # form intel can never drift from the path that verifies. A wrong
+        # guess fail-closes downstream (embed fetch 404s -> exception, same
+        # as every other branch above). Lazy import keeps this low-level
+        # module's import graph unchanged; no guess -> fall through to
+        # unknown-ATS rather than inventing a verdict.
+        try:
+            from verify_retry import _gh_jid_guesses
+            guesses = _gh_jid_guesses([url])
+        except Exception:
+            guesses = []
+        if guesses:
+            return greenhouse_embed_intel(guesses[0][0], guesses[0][1])
     return {"ats": "unknown", "form_url": url, "questions": [],
             "rendered_option_fetch_needed": [],
             "note": "No HTTP-level extraction for this ATS; agent must read the rendered form with browser.open."}
+
+
+# Process-memory form-intel memoization. Repeated probes for the same
+# (board, employer) pair — e.g. screening many roles at one employer —
+# refetch the same form on every packet build. This in-process cache
+# dedupes those within a conservative TTL. Keyed by (board, employer),
+# NOT by URL: one employer's postings on a board share the same form
+# template, and a URL-keyed cache would miss across postings. TTL is
+# conservative (600s, aligned with http_cache's short-TTL HTTP behavior):
+# forms change, and this cache lives only for the life of one process.
+# Cache-internal errors always fail OPEN to a fresh normal probe — a
+# broken cache must never block or poison a packet build. Callers that
+# mutate the returned intel get a deep copy, so caller mutation can
+# never poison the cached entry. NOTE: intel is pre-launch advisory
+# (the brief's Step 0 re-enumerates the live form at task time); within
+# the TTL window the cached payload reflects the first-probed posting,
+# including its form_url — no pipeline consumer reads intel["form_url"],
+# so that staleness is cosmetic.
+_FORM_INTEL_MEMO_TTL = 600
+_form_intel_memo = {}  # (board, employer) -> (expires_epoch, intel_dict)
+
+
+def _memo_board_key(url):
+    """Board token for the memo key, mirroring _probe_url_uncached's dispatch."""
+    try:
+        u = url or ""
+        m = re.search(r"job-boards\.greenhouse\.io/embed/job_app\?for=([^&]+)&token=(\d+)", u)
+        if m:
+            return "greenhouse:" + m.group(1).lower()
+        m = re.search(r"boards\.greenhouse\.io/([^/]+)/jobs/(\d+)", u)
+        if m:
+            return "greenhouse:" + m.group(1).lower()
+        m = re.search(r"lever\.co/([^/]+)/([a-f0-9-]+)", u)
+        if m:
+            return "lever:" + m.group(1).lower()
+        if re.search(r"[?&]gh_jid=\d+", u):
+            try:
+                from verify_retry import _gh_jid_guesses
+                guesses = _gh_jid_guesses([u])
+            except Exception:
+                guesses = []
+            if guesses:
+                return "greenhouse:" + str(guesses[0][0]).lower()
+        host = re.search(r"https?://([^/]+)", u)
+        if host:
+            return "host:" + host.group(1).lower()
+    except Exception:
+        pass
+    return "unknown"
+
+
+def probe_url(url, employer=None):
+    """Probe a posting's form; results memoized per (board, employer).
+
+    employer: the caller's employer string. Combined with the board token
+    derived from the URL it forms the memo key. When employer is omitted
+    or blank there is no (board, employer) pair to key on, so the memo is
+    bypassed entirely and the call behaves exactly as the pre-memo
+    probe_url(url) — this keeps ad-hoc/CLI callers on the legacy path.
+    Signature is backward compatible: probe_url(url) behaves exactly as
+    before.
+    """
+    employer_key = (employer or "").strip().lower()
+    if not employer_key:
+        return _probe_url_uncached(url)
+    memo_key = (_memo_board_key(url), employer_key)
+    try:
+        hit = _form_intel_memo.get(memo_key)
+        if hit is not None and hit[0] > time.time():
+            return copy.deepcopy(hit[1])
+    except Exception:
+        pass  # cache-internal error: fail open to a fresh probe
+    intel = _probe_url_uncached(url)
+    try:
+        _form_intel_memo[memo_key] = (time.time() + _FORM_INTEL_MEMO_TTL,
+                                      copy.deepcopy(intel))
+    except Exception:
+        pass  # fail open: a broken cache never blocks the build
+    return intel
+
+
+def probe_with_employer(url, employer):
+    """probe_url with optional employer context, tolerant of strict doubles.
+
+    Calls probe_url(url, employer=employer); when the installed probe_url
+    is a strict replacement accepting only url (test doubles, external
+    shims), retries without the employer context instead of failing the
+    packet build. A TypeError raised from INSIDE a real probe still
+    surfaces from the retry (same uncached code path, memo bypassed), so
+    genuine failures are never masked — only the signature mismatch is
+    absorbed.
+    """
+    try:
+        return probe_url(url, employer=employer)
+    except TypeError:
+        return probe_url(url)
 
 
 def merge_options(intel, options_map):

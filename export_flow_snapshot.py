@@ -107,6 +107,7 @@ sys.path.insert(0, KEEL_DIR)          # keel_flow, keel_local resolve live
 # and broke CI. Pipeline engines load lazily by absolute path via
 # _pipeline_module() below, which never touches sys.path.
 
+
 ADAPTER_VERSION = "export_flow_snapshot/1.3.0"  # 1.3.0 (2026-09-20 ARM 3):
 # readiness gates mapped to real ledger / lock-dir / buffer evidence
 # (J-20260920-1831-feed-3884): attempt_state from ledger + attempt journal,
@@ -1305,6 +1306,7 @@ def main():
 
     # --- pool: exact guardian logic -------------------------------------------
     pool_state = _pipeline_module("pool_guardian").pool_state
+
     ready, actionable = pool_state(now=now)
     pool = {"schema_version": 1, "ready": ready, "actionable": actionable,
             "observed_at": observed_at}

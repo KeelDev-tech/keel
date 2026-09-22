@@ -50,7 +50,6 @@ ATS_RULES = {
     },
     "rippling":     {"hosts": [r"(^|\.)ats\.rippling\.com$"], "paths": [], "query": []},
     "tealhq":       {"hosts": [r"(^|\.)tealhq\.com$"], "paths": [], "query": []},
-    "workable":     {"hosts": [r"(^|\.)workable\.com$"], "paths": [], "query": []},
     "oracle_recruiting_cloud": {
         # Oracle HCM Candidate Experience tenants (e.g. egmn.fa.us2.oraclecloud.com)
         "hosts": [r"(^|\.)fa\.[a-z0-9]+\.oraclecloud\.com$"], "paths": [], "query": [],

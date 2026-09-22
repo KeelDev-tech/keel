@@ -47,6 +47,10 @@ if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 import verify_retry as vr  # noqa: E402
 import ats  # noqa: E402
+import host_cooldowns  # noqa: E402
+import http_policy  # noqa: E402
+import time  # noqa: E402
+
 
 # ---------------------------------------------------------------------------
 # Trial tuning
@@ -65,6 +69,14 @@ GLOBAL_LIMIT = 40         # max concurrent requests overall (shared proxy
 JITTER_MIN_S = 0.05         # jitter before each request (politeness)
 JITTER_MAX_S = 0.25
 UA = {"User-Agent": "Mozilla/5.0"}
+
+SCAN_BUDGET_S = 600         # outer deadline for the whole async scan
+                            # window. Per-request machinery is
+                            # deadline-bounded, but aggregate wall scales
+                            # with pool size; the default 600s sits under
+                            # the scheduler's own timeout backstop.
+                            # Override per-call via budget_s.
+
 
 # Per-run stats, reset by reset_stats(). Never raises.
 STATS = {"requests": 0, "r429": 0, "r5xx": 0, "timeouts": 0}
@@ -95,34 +107,122 @@ def _global_semaphore():
     return _global_sem
 
 
-async def _get(session, url, timeout, read_body=True):
+async def _acquire_all(sems, timeout):
+    """Acquire semaphores within a bounded wait; release partial acquisitions
+    on failure so a deadline-exceeded waiter never leaks a slot."""
+    acquired = []
+    try:
+        for s in sems:
+            await asyncio.wait_for(s.acquire(), timeout=timeout)
+            acquired.append(s)
+    except BaseException:
+        for s in acquired:
+            s.release()
+        raise
+    return acquired
+
+
+async def _read_body_capped(resp, limit=http_policy.MAX_BODY_BYTES):
+    """Stream a response body, hard-capped at `limit` decompressed bytes.
+
+    aiohttp negotiates compression (Accept-Encoding: gzip, deflate), so the
+    cap applies to decompressed bytes via the decoded content stream — a
+    Content-Length pre-check would measure the compressed size and is
+    therefore not used here. Raises http_policy.NetworkPolicyError when the
+    body exceeds the cap. (K43)
+    """
+    chunks, size = [], 0
+    async for chunk in resp.content.iter_chunked(65536):
+        size += len(chunk)
+        if size > limit:
+            raise http_policy.NetworkPolicyError("response exceeds size limit")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+async def _get(session, url, timeout, read_body=True,
+               limit=http_policy.MAX_BODY_BYTES):
+
     """One polite GET. Returns (status, body_bytes, final_url).
 
     Raises aiohttp.ClientResponseError on non-2xx (mirrors urllib's
     HTTPError); aiohttp.ClientError subclasses on network failures.
+    Raises host_cooldowns.HostCoolingDown when the host has an active
+    429 cooldown (callers treat as defer/ambiguous, never an error).
+    Raises http_policy.NetworkPolicyError on URL/DNS policy violations
+    or when the body exceeds `limit` (default 4 MiB; board-API
+    callers pass http_policy.ASHBY_BOARD_LIMIT — callers treat as
+    ambiguous).
     """
-    sem = _sem_for(url)
+    deadline = time.monotonic() + timeout
+    # K41: pre-request admission (URL policy + bounded DNS check refusing
+    # non-public destinations) before any byte is sent. Runs in a thread
+    # so the event loop never blocks on the resolver.
+    target = await asyncio.to_thread(http_policy.admit, url)
+    host = http_policy.hostname_of(target)
+    # K43/K44 port: durable cross-process 429 cooldown. A host throttled
+    # by any worker fails fast here instead of burning requests into it —
+    # the standing "429 = hard stop" rule made durable across process
+    # boundaries.
+    host_cooldowns.check_host(host)
+    sem = _sem_for(target)
     gsem = _global_semaphore()
     await asyncio.sleep(random.uniform(JITTER_MIN_S, JITTER_MAX_S))
-    async with gsem, sem:
-        try:
-            async with session.get(
-                url, headers=UA,
-                timeout=aiohttp.ClientTimeout(total=timeout),
-                allow_redirects=True,
-            ) as resp:
-                STATS["requests"] += 1
-                if resp.status == 429:
-                    STATS["r429"] += 1
-                elif 500 <= resp.status < 600:
-                    STATS["r5xx"] += 1
-                body = await resp.read() if read_body else b""
-                final = str(resp.url)
-                resp.raise_for_status()  # mirrors urllib raising HTTPError
-                return resp.status, body, final
-        except asyncio.TimeoutError:
-            STATS["timeouts"] += 1
-            raise
+    # Semaphore/queue waits consume the caller's deadline (K43): the total
+    # time for one _get never exceeds `timeout`.
+    acquired = await _acquire_all(
+        (gsem, sem), host_cooldowns.deadline_remaining(deadline))
+    try:
+        # K41/K43: redirects are followed manually (allow_redirects=False)
+        # so every hop is independently re-admitted and the hop count is
+        # capped at http_policy.MAX_REDIRECTS (3).
+        seen = {target}
+        hops = 0
+        while True:
+            remaining = host_cooldowns.deadline_remaining(deadline)
+            try:
+                async with session.get(
+                    target, headers=UA,
+                    timeout=aiohttp.ClientTimeout(total=remaining),
+                    allow_redirects=False,
+                ) as resp:
+                    STATS["requests"] += 1
+                    if resp.status == 429:
+                        STATS["r429"] += 1
+                        host_cooldowns.record_429(
+                            host, resp.headers.get("Retry-After"))
+                    elif 500 <= resp.status < 600:
+                        STATS["r5xx"] += 1
+                    if resp.status in http_policy.REDIRECT_STATUSES:
+                        loc = resp.headers.get("Location")
+                        hops += 1
+                        if not loc or hops > http_policy.MAX_REDIRECTS:
+                            raise http_policy.NetworkPolicyError(
+                                "redirect limit or missing destination")
+                        nxt = urllib.parse.urljoin(target, loc)
+                        if nxt in seen:
+                            raise http_policy.NetworkPolicyError(
+                                "redirect loop")
+                        seen.add(nxt)
+                        # Each hop is re-admitted (K41); the cooldown is
+                        # re-checked in case the hop moved hosts.
+                        target = await asyncio.to_thread(
+                            http_policy.admit, nxt)
+                        host = http_policy.hostname_of(target)
+                        host_cooldowns.check_host(host)
+                        continue
+                    body = (await _read_body_capped(resp, limit=limit)
+                            if read_body else b"")
+                    final = str(resp.url)
+                    resp.raise_for_status()  # mirrors urllib raising HTTPError
+                    return resp.status, body, final
+            except asyncio.TimeoutError:
+                STATS["timeouts"] += 1
+                raise
+    finally:
+        for s in acquired:
+            s.release()
+
 
 
 async def async_resolve_final_url(session, url, timeout=15):
@@ -136,11 +236,13 @@ async def async_resolve_final_url(session, url, timeout=15):
         return url
 
 
-async def async_get_json(session, url, timeout=20):
+async def async_get_json(session, url, timeout=20,
+                         limit=http_policy.MAX_BODY_BYTES):
     """Mirror of ats._get_json: GET + json.loads. Non-2xx raises
     aiohttp.ClientResponseError (caller maps .status like HTTPError.code)."""
     import json
-    _status, body, _final = await _get(session, url, timeout)
+    _status, body, _final = await _get(session, url, timeout, limit=limit)
+
     return json.loads(body.decode("utf-8"))
 
 
@@ -303,8 +405,13 @@ async def async_lever_posting(session, org, posting_id):
 
 
 async def async_ashby_board_jobs(session, board):
+    # API-first liveness: big boards ride http_policy.ASHBY_BOARD_LIMIT,
+    # not the 4 MiB posting-page cap — large boards declare content above
+    # it and every lead on them went ambiguous at 0% promotion.
     d = await async_get_json(
-        session, f"https://api.ashbyhq.com/posting-api/job-board/{board}")
+        session, f"https://api.ashbyhq.com/posting-api/job-board/{board}",
+        limit=http_policy.ASHBY_BOARD_LIMIT)
+
     return [
         {
             "id": j.get("id"),
@@ -533,15 +640,29 @@ async def scan_one_async(session, qname, entry, enrich_events):
     return rid, verdict, detail, None
 
 
-async def scan_window_async(entries, enrich_events=None):
+async def scan_window_async(entries, enrich_events=None,
+                          budget_s=SCAN_BUDGET_S):
     """Batch-scan a list of (qname, entry) pairs concurrently.
 
-    Returns dict role_id -> (verdict, detail, enriched_url_or_None).
+    Returns (results, unscanned_rids): results maps role_id ->
+    (verdict, detail, enriched_url_or_None); unscanned_rids lists rids
+    from `entries` that got no verdict because the outer budget expired.
+
     One shared ClientSession (trust_env=True for the egress proxy);
     per-host semaphore + jitter pace requests. Entry dicts are mutated
     in place exactly like the sync scan (stamps, ats_url/queue_notes);
     enrich telemetry tuples append to `enrich_events` when given.
     No queue writes, no log_event emission — verdict computation only.
+
+    Outer budget (budget_s, default 600s): on expiry the gather is
+    cancelled, completed verdicts are kept as partial results, and the
+    caller skips unscanned rids WITHOUT stamping last_verify_attempt —
+    they stay pending and the next scheduled wave retries them (the
+    cadence stays the single retry owner; no retry-on-budget-exceeded
+    here). A child-raised TimeoutError is NOT budget exhaustion: it
+    re-raises, preserving the scan's existing crash-on-genuine-error
+    semantics.
+
     """
     if aiohttp is None:
         raise RuntimeError("verify_retry_async requires aiohttp "
@@ -561,5 +682,33 @@ async def scan_window_async(entries, enrich_events=None):
         async def one(qname, entry):
             out = await scan_one_async(session, qname, entry, enrich_events)
             results[out[0]] = (out[1], out[2], out[3])
-        await asyncio.gather(*(one(q, e) for q, e in entries))
-    return results
+        tasks = [asyncio.ensure_future(one(q, e)) for q, e in entries]
+        scan_deadline = time.monotonic() + budget_s
+        try:
+            timeout = host_cooldowns.deadline_remaining(scan_deadline)
+        except TimeoutError:
+            timeout = 0.0  # budget already exhausted: nothing gets scanned
+        try:
+            # wait_for with timeout<=0 fires immediately — the settle path
+            # below then marks everything unscanned.
+            await asyncio.wait_for(asyncio.gather(*tasks),
+                                   timeout=max(timeout, 0.0))
+        except (asyncio.TimeoutError, TimeoutError):
+            if time.monotonic() < scan_deadline:
+                # A child raised TimeoutError before the budget expired —
+                # not budget exhaustion; keep the crash semantics.
+                raise
+            # Budget exhausted: fall through to cancel + settle.
+        # Settle: cancel anything still pending so semaphores release
+        # promptly (_get's finally releases them); completed verdicts stay
+        # as partial results.
+        pending = [t for t in tasks if not t.done()]
+        for t in pending:
+            t.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+    scanned = set(results.keys())
+    unscanned_rids = [e.get("role_id") for _, e in entries
+                      if e.get("role_id") not in scanned]
+    return results, unscanned_rids
+

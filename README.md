@@ -80,6 +80,15 @@ ATS vendors. See [SPLIT.md](SPLIT.md).
   works holds 209 verified submissions as of 2026-09-22 — counted from its
   ledger under the docs/geo/stats.json methodology (202 evidenced /
   1 url-only / 3 unevidenced), never estimated.
+  See [the honesty report](site/honesty-report.html) for the evidence-graded
+  count and its methodology, and the [comparison with auto-apply bots](docs/keel-vs-autoapply-bots.md).
+
+![Keel honesty-gates demo](docs/assets/honesty-gates.gif)
+
+*Real terminal session (synthetic data, real engines): a missing answer
+abstains instead of inventing, an unverifiable posting parks, and a
+submission counts only on explicit confirmation. Run it yourself:
+`python3 demo/honesty_gates_demo.py`. See also [demo/](demo/).*
 
 ## Quick start (~5 minutes)
 

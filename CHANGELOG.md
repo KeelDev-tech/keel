@@ -5,6 +5,140 @@ All notable changes to Keel are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Safety rails as code: `docs/OPERATING-CONSTRAINTS.md` documents the
+  numbered operating constraints (C-01…C-20), each enforced in a named
+  engine module; the operator may extend them but never weaken them.
+- Credentials-vault convention (`docs/CREDENTIALS.md`): one file per
+  account, `0600` permissions, gitignored and excluded from packaging.
+- Operator policy template (`engines/policy.example.json`): travel /
+  office / relocation caps, attestation hard-stop classes, and the
+  pre-authorized attestation scope — example data only.
+- ATS discovery pack (`engines/ats_discovery/`): additional platform
+  adapters for board enumeration (detection only — no submission
+  behavior).
+- Direct ATS detection: Greenhouse/Lever/Ashby JSON board enumeration
+  and board classification (detection only — no submission behavior).
+- Outcome-tracking module (`engines/outcome_tracking/`): evidence gate
+  for submission claims and invite/offer surfaces over the append-only
+  telemetry log.
+- Input-resolution module (`engines/input_resolution/`): structured
+  handling of operator-input blockers with banking of reusable answers.
+- Launch lock (`engines/launch_lock.py`): one live application task per
+  role, so concurrent lanes cannot double-fire the same lead.
+- Lane watchdog (`engines/lane_watchdog.py`): evaluates pipeline health
+  red lines against live data.
+- Cost metering (`engines/cost_model.py`, `engines/cost_tracker.py`):
+  per-submission cost dimensions recorded additively on ledger rows;
+  zero-submission days render as explicit gaps, never interpolated.
+- Discovery-side dedupe gate (`engines/dedupe_gate.py`) and input-tray
+  classifier (`engines/genuine_pat.py`): parked items are classified so
+  genuinely operator-blocked leads stay parked while verification-only
+  items return to the verify pool.
+- Packet starvation watchdog (`engines/packet_watchdog.py`), clean-board
+  watch (`engines/clean_board_watch.py`), and page capture
+  (`engines/page_capture.py`) for discovery hygiene.
+- Field-question protocol (`engines/field_question_protocol.py`):
+  classifies form questions as answerable, derivable, or
+  applicant-only — applicant-only items park, never invented.
+- Batch staged-launch helper (`engines/batch_staged_launches.py`) and
+  parked-task sweep (`engines/parked_task_sweep.py`).
+- Worker charter (`worker-charter/`): the autonomous-worker prompt
+  template with constraint-tagged exemplars; the public assembler
+  deliberately does not mine the private technique library.
+- Verify hardening: `verify_retry.py` gains the run singleton, 24h
+  cooldowns, pool cursor rotation, stale-park guard, sync/async parity
+  probe, and prescreen promotion hooks; `verify_retry_async.py`
+  (async transport), `verify_cron.py` (cadence tick), `live_cache.py`
+  and `http_cache.py` (fail-closed HTTP caching layers).
+- Outcome recording: `record_outcome.py` (ATS-key enforcement,
+  placeholder refusal, consent-gated classification),
+  `outcome_analytics.py` (OFFER outcome, fail-closed ledger linking),
+  `inbox_listener.py` (OFFER classification, LinkedIn/Indeed
+  channel tripwires).
+- Queue governance: `queue_intake.py` (single validation point),
+  `queue_io.py` (atomic queue writes), `staging_ingest.py`
+  (staging → queue worker), `title_triage.py` (staging-side triage).
+- Executor-adjacent: `apply_loop.py` (READY-lead buffer/claim engine;
+  stops at launch packets per the executor contract),
+  `prescreen.py` (posting-eligibility + pre-promotion screens, opt-in
+  field-question-protocol hook), `rate_limits.py`.
+- Input brokering: `input_broker.py` (external draft brokering with a
+  local anti-invention verifier), `lever_submit.py` and
+  `breezy_preflight.py` (read-only automation-friendliness probes;
+  verdict: browser path only).
+- Answer-bank example (`engines/answer_bank.example.json`):
+  configurable attestation scope (pre-authorized keys, hard-stop
+  classes) — example data only.
+- Tests: launch-lock race (`test_launch_lock_x20.py`), evidence gate
+  (`test_evidence_gate.py`), input-resolution port
+  (`test_input_resolution_port.py`), preference sanitization
+  (`test_preferences.py`), cost model/tracker, worker-charter suite.
+- HTTP hardening (verification transport): `engines/http_cache.py` gains
+  URL/DNS admission, redirect admission, a 4 MiB response cap, and
+  durable cross-process 429 cooldowns (`engines/host_cooldowns.py`,
+  `engines/http_policy.py` — fail-closed admission policy shared by the
+  transport).
+- Async verify scan budget: `verify_retry_async.scan_window_async` accepts
+  a caller-configurable outer budget (default 600s), returns
+  `(results, unscanned_role_ids)`, and settles pending work on expiry —
+  unscanned roles stay unstamped for the next cadence instead of being
+  silently dropped.
+- Territorial work-authorization gate (`engines/work_auth_gates.py`):
+  canonical `work_auth_unverified` taxonomy with legacy
+  `{country}_work_auth_(unverified|no)` normalization, a pure
+  pre-staging screen that never infers authorization from city/ZIP,
+  and relocation-never-equals-work-auth separation; wired into
+  `staging_ingest.py` before the title gate with an append-only
+  reject ledger.
+- Form intelligence: `form_intel.py` uses the hardened shared
+  `http_cache`, adds conservative per-process memoization (deep-copied
+  results), and detects Greenhouse job IDs via public verifier-board
+  guesses (read-only probing — no submission mechanics).
+
+### Fixed
+- `setup.sh` writes queue files in the canonical top-level-list form and
+  no longer mutates the tracked `keel.config.json`; identity answers land
+  in `data/` only.
+- `docs/PERSONALIZE.md` rewritten as the single operator-neutral
+  "clone → first launch packet" guide.
+
+## [0.2.0] — 2026-09-15
+
+### Added
+- Public web home (`site/`): static GitHub-Pages-ready page with
+  `llms.txt`, sitemap, and OG hero image — a visitor-facing front door
+  for the repo.
+- GEO discoverability layer: citation-ready docs under `docs/geo/`
+  (comparison, FAQ, alternatives keyword pages), `llms.txt` at the repo
+  root, JSON-LD structured data, `docs/releases.xml` release feed, and
+  `docs/assets/demo.gif`.
+- GEO measurement pipeline: canonical recount probes and snapshot
+  history (`docs/geo/stats.json`,
+  `geo-pipeline/history/snapshots.jsonl`) tracking verified submission
+  figures over time.
+- GitHub Actions CI workflow (`.github/workflows/ci.yml`) running the
+  stdlib test suite (`python3 -m unittest discover -s tests`) on every
+  push.
+- Keel Doctrine (`KEEL_DOCTRINE.md`): one operating spine across the
+  five departments.
+- `docs/ROADMAP.md`: public roadmap covering shipped work (v0.1.0),
+  post-release items, and planned direction — no timelines.
+- Keel spine logo (`docs/assets/keel-logo.png`) in the README header.
+- Contributor footing: `CONTRIBUTING.md` onboarding,
+  `CODE_OF_CONDUCT.md` (Contributor Covenant v2.1, no personal contact
+  data), and `.github/FUNDING.yml` sponsorship entry points.
+- README cold-visitor audit: the quickstart is genuinely end-to-end —
+  a documented demo-seed step bridges `score_roles` output into the
+  READY queue so `apply_loop` builds a launch packet; network note
+  added (read-only HTTP liveness/form-intel probes); submission figure
+  refreshed to the ledger-verified canon (94 verified, 2026-09-15).
+- `docs/ARCHITECTURE.md` accuracy pass: telemetry path corrected to
+  `data/telemetry/events.jsonl`, event-type list aligned to
+  `log_event.py`'s stable list, data-flow step 2 corrected (score_roles
+  sets no status — the queue owns it), live re-verify tri-state
+  documented, `keel_paths.py` added to the module guide.
+
 ### Fixed
 - The apply loop exits with actionable setup guidance instead of a traceback
   when the workspace queue file is missing.

@@ -98,6 +98,14 @@ try:
 except Exception:
     _title_triage = None
 
+try:
+    # Territorial work-auth prefilter + canonical gate taxonomy.
+    # Fail-soft: if the module is unavailable the ingest path skips the
+    # screen (prescreen's work-auth gates still apply downstream).
+    import work_auth_gates as _work_auth_gates  # noqa: E402
+except Exception:
+    _work_auth_gates = None
+
 from keel_paths import HOME as PIPE, DATA, TELEMETRY  # noqa: E402 — repo root; never the private pipeline path
 STAGED_DIR = os.path.join(PIPE, "hidden_files/discovery-staging")
 # Directory separation: non-lead artifacts live here, never in staging.
@@ -454,6 +462,16 @@ def triage(rows, queue_ids, queue_keys, ledger_keys, index=None):
             reason = "employer blocklist"
         if reason:
             rejected.append((rid, reason))
+        # Territorial work-auth prefilter: a screen on the normalized
+        # location string at triage time, BEFORE any verify/packet cycles.
+        # Parks (reject ledger + rejected list) when the location explicitly
+        # names a foreign country and no banked own-words fact establishes
+        # authorization for it. Ambiguous location, remote/remote-in-territory
+        # roles, and US roles flow through UNCHANGED (never-infer).
+        # Configured relocation willingness is never consulted — relocation
+        # is not work authorization.
+        elif _work_auth_parked(e, rejected):
+            pass
         # P-2026-09-16-titlegate-1 (operator-approved 2026-09-16 ~12:55 PDT):
         # upstream pre-staging title gate. Replaces the P2-4 tag-and-ingest
         # (which accumulated 1,092 PARKED-TRIAGE-DEFERRED queue entries):
@@ -516,6 +534,94 @@ def _write_titlegate_reject(entry, reason):
     except Exception as ex:
         print(f"  titlegate: reject-ledger write failed: {ex}",
               file=sys.stderr)
+
+
+# Territorial work-auth prefilter support. Mirrors the titlegate
+# reject-ledger pattern above: parked leads are recoverable/auditable,
+# never silently dropped, and cost zero verify/packet cycles (they never
+# enter the queue).
+_WORKAUTH_REJECT_LEDGER_OVERRIDE = None
+_WORKAUTH_ANSWER_BANK_OVERRIDE = None
+_workauth_answer_bank_cache = None
+
+
+def _workauth_ledger_path():
+    """Work-auth reject-ledger location. Overridable via
+    si._WORKAUTH_REJECT_LEDGER_OVERRIDE for tests so unit tests never
+    touch the operator's ledger."""
+    if _WORKAUTH_REJECT_LEDGER_OVERRIDE:
+        return _WORKAUTH_REJECT_LEDGER_OVERRIDE
+    return os.path.join(PIPE, "hidden_files", "workauth-rejects.jsonl")
+
+
+def _workauth_answer_bank():
+    """Read-only load of the answer bank for the work-auth prefilter.
+
+    Loaded once per process; never written by this module (screening ONLY).
+    Tests inject a scratch bank via si._WORKAUTH_ANSWER_BANK_OVERRIDE.
+    """
+    global _workauth_answer_bank_cache
+    if _WORKAUTH_ANSWER_BANK_OVERRIDE is not None:
+        return _WORKAUTH_ANSWER_BANK_OVERRIDE
+    if _workauth_answer_bank_cache is None:
+        try:
+            with open(os.path.join(PIPE, "answer_bank.json")) as f:
+                _workauth_answer_bank_cache = json.load(f)
+        except Exception:
+            _workauth_answer_bank_cache = {}
+    return _workauth_answer_bank_cache
+
+
+def _write_workauth_reject(entry, note, gate, country, basis):
+    """Append a work-auth prefilter park to the reject ledger.
+
+    Append-only JSONL. The note carries the lowercase `needs_input` token
+    (verify_retry's park-guard matches only the lowercase token), the
+    canonical gate name, and the standing-fact citation. Best-effort: a
+    ledger write failure must never break the ingest flow (the park is
+    still recorded in the triage rejected list + audit).
+    """
+    try:
+        import json as _json
+        ledger = _workauth_ledger_path()
+        rec = {
+            "ts": _now_pdt(),
+            "role_id": entry.get("role_id"),
+            "company": entry.get("company"),
+            "title": entry.get("title"),
+            "location": entry.get("location"),
+            "fit_score": entry.get("fit_score"),
+            "gate": gate,            # canonical: work_auth_unverified
+            "country": country,      # slug, e.g. "india"
+            "standing_fact": basis,  # e.g. "india_work_auth=NO (operator's words ...)"
+            "note": note,
+        }
+        with open(ledger, "a") as f:
+            f.write(_json.dumps(rec) + "\n")
+    except Exception as ex:
+        print(f"  workauth: reject-ledger write failed: {ex}",
+              file=sys.stderr)
+
+
+def _work_auth_parked(e, rejected):
+    """Triage-time territorial work-auth park step.
+
+    Returns True when the entry was parked (reject ledger written +
+    rejected appended); False when it flows through unchanged. Fail-soft:
+    module unavailable -> never parks. Uses the SANCTIONED triage park
+    mechanism only (reject ledger + triage rejected list); no new queue
+    writer is invented here.
+    """
+    if _work_auth_gates is None:
+        return False
+    keep, note, gate, country, basis = \
+        _work_auth_gates.pre_staging_workauth_screen(
+            e.get("location", ""), bank=_workauth_answer_bank())
+    if keep:
+        return False
+    _write_workauth_reject(e, note, gate, country, basis)
+    rejected.append((e.get("role_id"), "work-auth: " + note))
+    return True
 
 
 # Intake materials gate (sour-518, 2026-09-16): a staged lead must never

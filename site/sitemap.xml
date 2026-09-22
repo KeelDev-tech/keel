@@ -18,4 +18,19 @@
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
+<<<<<<< HEAD
+  <url>
+    <loc>https://keeldev-tech.github.io/keel/honesty-report.html</loc>
+    <lastmod>2026-09-22</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://keeldev-tech.github.io/keel/spot-the-ai-resume-lie.html</loc>
+    <lastmod>2026-09-22</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+=======
+>>>>>>> fe784621cade437ce6888b6867ec8d16fd9d2b6a
 </urlset>
