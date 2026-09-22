@@ -74,6 +74,13 @@ STATS_JSON = os.environ.get("STATS_JSON", os.path.join(REPO, "docs", "geo", "sta
 LAUNCH_CANON = 55  # historical; counted 2026-09-15 00:17 PT; never recomputed
 PT = ZoneInfo("America/Los_Angeles")
 
+# Canonical ledger-status mapping lives next to the evidence gate. The
+# recount's cross-check must use the same canonicalization as the audit
+# (LEDGER_STATUS_ALIAS: the two historical lowercase "submitted" rows count
+# as SUBMITTED). Importing it here keeps the two definitions from drifting.
+sys.path.insert(0, os.path.dirname(os.path.abspath(EVIDENCE_GATE)))
+from ledger_append import canon_ledger_status  # noqa: E402
+
 
 def fail(msg):
     print(f"recount: FATAL: {msg}", file=sys.stderr)
@@ -164,8 +171,14 @@ def main():
     if not isinstance(total_submitted, int):
         fail("evidence_gate audit returned no integer total_submitted")
 
-    # Cross-check: direct SUBMITTED row count must agree with the audit.
-    direct = sum(1 for r in rows if isinstance(r, dict) and r.get("status") == "SUBMITTED")
+    # Cross-check: direct canonical SUBMITTED row count must agree with the
+    # audit. Both sides use canon_ledger_status (LEDGER_STATUS_ALIAS); a naive
+    # exact-match count falsely failed closed on 2026-09-22 (209 vs 207)
+    # because the two historical lowercase "submitted" rows were excluded.
+    direct = sum(
+        1 for r in rows
+        if isinstance(r, dict) and canon_ledger_status(r.get("status")) == "SUBMITTED"
+    )
     if direct != total_submitted:
         fail(f"audit total_submitted ({total_submitted}) != direct SUBMITTED count ({direct})")
 
@@ -199,6 +212,11 @@ def main():
             "(backfilled-only pairs are real historical stops and count); "
             "queue-level events without role_id and TEST- fixtures are excluded. "
             "Launch figure 55 is the historical canon counted 2026-09-15 00:17 PT. "
+            "Submission figures recounted 2026-09-22: 209 canonical SUBMITTED rows "
+            "(207 exact-status plus the 2 historical lowercase-alias rows counted "
+            "per LEDGER_STATUS_ALIAS); evidence split 202 quoted / 3 pointer / "
+            "1 url_only / 3 unevidenced. The 2026-09-21 published figure (214) no "
+            "longer matches the ledger; the ledger is the count of record. "
             "Full methodology in docs/data-story.md."
         ),
         "refresh_policy": (
