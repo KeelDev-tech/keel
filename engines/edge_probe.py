@@ -168,7 +168,7 @@ def _inconclusive(reason):
 def parse_board_url(url):
     """Parse a direct Greenhouse board URL into (board, job_id).
 
-    Public-edition replacement for the private greenhouse_direct helper.
+    Public-edition helper used alongside engines/ats.py for ATS detection.
     Raises ValueError when the URL is not a direct board URL.
     """
     m = re.search(r"(?:job-boards|boards)\.greenhouse\.io/([a-z0-9_\-]+)/jobs/(\d+)",

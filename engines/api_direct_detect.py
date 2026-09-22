@@ -11,7 +11,7 @@ Current rule (reuses the existing Enterprise heuristic — no new invention):
     career pages carrying a gh_jid param, aggregator URLs, and EU hosts
     are NOT candidates — api_submit.py cannot POST to them either.
   - The board must NOT use reCAPTCHA Enterprise (pure HTTP cannot mint a
-    valid enterprise token; greenhouse_direct.py detects this from the
+    valid enterprise token; engines/ats.py and engines/edge_probe.py detect this from the
     posting page's recaptcha enterprise.js marker).
 
 Fail-closed: unknown ATS, unparseable URL, or any fetch failure -> False.
@@ -72,7 +72,7 @@ ENTERPRISE_JS_PAT = re.compile(r'recaptcha[^"\\\']*enterprise\.js', re.I)
 def parse_board_url(url):
     """Parse a direct Greenhouse board URL into (board, job_id).
 
-    Public-edition local parser (replaces the private greenhouse_direct
+    Public-edition local parser used alongside engines/ats.py and engines/edge_probe.py
     helper). Raises ValueError when the URL is not a direct board URL.
     """
     m = re.search(r"(?:job-boards|boards)\.greenhouse\.io/([a-z0-9_\-]+)/jobs/(\d+)",
