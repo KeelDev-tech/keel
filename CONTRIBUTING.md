@@ -66,6 +66,31 @@ Conventions that matter:
   set in `engines/log_event.py`. New ATS patterns go in the additive
   pattern table in `engines/ats.py`.
 
+## Test standards (CI enforces these)
+
+CI is `python3 -m unittest discover -s tests` on 3.10 / 3.11 / 3.12 with
+**no `pip install` step**. A test that can't run from a clean checkout
+fails the whole suite. Three hard rules:
+
+1. **Stdlib only in `tests/` and in every import-time code path.** No
+   `pytest`, no third-party imports — one stray import aborts the *entire*
+   run with exit 1, not just your test. If a module genuinely needs an
+   optional dependency, guard it with `try/except ImportError` and a
+   no-op fallback.
+2. **Never `sys.path.insert` an absolute machine-local path at import
+   time.** It shadows same-named test modules during unittest discovery
+   and breaks CI on any machine where the directory exists. Load
+   local-only engines lazily by absolute path instead — never via
+   `sys.path`.
+3. **Tracked tests must not depend on git-ignored files without a skip.**
+   If your test loads something from an ignored directory (e.g.
+   `monitors/`), raise `unittest.SkipTest` when it's absent. A test that
+   errors on a clean checkout is a broken test.
+
+Before opening your PR, run the suite exactly as CI does, from the repo
+root: `python3 -m unittest discover -s tests`. If it's green there, it's
+green on CI.
+
 ## How to contribute
 
 **Issues first for anything non-trivial.** Bug reports and feature requests
