@@ -14,7 +14,7 @@ verification → launch packets — with honest automation as the product: it on
 ever claims what you tell it is true.
 
 Keel is the public half of a real production pipeline that holds
-**209 verified submissions** in its ledger (ledger-verified, as of 2026-09-22)
+**210 verified submissions** in its ledger (ledger-verified, as of 2026-09-22)
 using this exact discipline: fit scoring, truthfulness gates, clean-form
 checks, and fail-closed handling.
 The execution layer (how applications are actually submitted) stays private by
@@ -77,9 +77,9 @@ ATS vendors. See [SPLIT.md](SPLIT.md).
   is reported as a gap, never bridged with fiction.
 - **Keel promises no submissions.** The public repo is the discipline and
   the tools. The private production pipeline that proved the discipline
-  works holds 209 verified submissions as of 2026-09-22 — counted from its
-  ledger under the docs/geo/stats.json methodology (202 evidenced /
-  1 url-only / 3 unevidenced), never estimated.
+  works holds 210 verified submissions as of 2026-09-22 — counted from its
+  ledger under the docs/geo/stats.json methodology (200 evidenced /
+  3 pointer / 1 url-only / 6 unevidenced), never estimated.
   See [the honesty report](site/honesty-report.html) for the evidence-graded
   count and its methodology, and the [comparison with auto-apply bots](docs/keel-vs-autoapply-bots.md).
 
