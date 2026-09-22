@@ -137,6 +137,30 @@ Requirements: Python 3.10+ — stdlib only, no dependencies to install.
 CI runs the same suite on 3.10 / 3.11 / 3.12
 ([ci.yml](.github/workflows/ci.yml)).
 
+## Troubleshooting
+
+Fresh-clone failure modes, from experience:
+
+- **`./setup.sh` or `./start.sh` fails on a fresh clone.** Run from the
+  repo root (`cd keel` first) with Python 3.10+ on `PATH`
+  (`python3 --version`). The scripts assume the working-tree layout and
+  won't work from inside `engines/`.
+- **The smoke suite fails.** Run `python3 -m unittest discover -s tests`
+  from the repo root — the same command CI runs on 3.10 / 3.11 / 3.12.
+  One red test names its module and line; read the engine's docstring
+  contract before changing production code, since a new test can encode
+  a superseded contract while the engine is right.
+- **A module crashes on import with `ModuleNotFoundError`.** Tracked code
+  must run from a clean clone with stdlib only (no pip installs). Engines
+  must never `sys.path.insert` an absolute private-machine path at import
+  time, and must degrade gracefully when a git-ignored helper is absent
+  (e.g. `build_dashboard.py` once broke on clean clones because
+  `engines/safe_io.py` was missing).
+- **The dashboard shows "Unknown" counts.** `build_dashboard.py` renders
+  "Unknown" — never a healthy zero — when a source file is missing or
+  malformed. Check `data/application-ledger.json`, `data/queues/`, and
+  the warning banner at the top of the page.
+
 ## The honest-automation contract
 
 1. **Truthfulness gates** — hard requirements the profile can't support are
