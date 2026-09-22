@@ -54,6 +54,17 @@ committed upstream. The open-core boundary is the privacy model: what helps
 you run an honest pipeline is public; submission behavior stays private so
 applicant-tracking vendors can't fingerprint it.
 
+## Does Keel need accounts, API keys, or phone home?
+
+No. Keel is stdlib-only Python that runs on your machine: no accounts, no
+API keys, no subscription, no one else's server, no phone-home. The only
+network traffic the pipeline itself makes is read-only HTTP liveness and
+form-intel probes against the job boards it is evaluating (documented in
+the README) — it never exfiltrates your profile or answers anywhere. Your
+applicant profile, answer bank, queues, and ledger live in your own working
+copy; the repo ships sanitized examples only, and your personal data is
+never committed upstream.
+
 ## How much time does Keel save?
 
 "Self host. Reclaim the time." Keel takes over the repetitive hours of a
@@ -146,21 +157,33 @@ Open-core means the proof is public and the pipeline stays working.
 
 No. Keel never submits an application. The public loop stops at the launch
 packet — everything up to the point of submission, verified and gated. The
-private production pipeline that proved the discipline holds 55 verified
-submissions in its ledger at launch, and nothing counted as submitted there
-unless the page itself confirmed it.
+private production pipeline that proved the discipline holds 209 verified
+submissions in its ledger (recounted 2026-09-22; 55 at launch), and nothing
+counted as submitted there unless the page itself confirmed it.
 
 ## Where is the proof it works?
 
-The private production pipeline's ledger holds 55 verified submissions at
-launch — the traction figure, proof the discipline works. The public repo
-itself makes no submission claims; it is the tools, the gates, and the
-telemetry. Every event the system processes — discovery, verification, gates
+The private production pipeline's ledger holds 209 verified submissions
+(recounted 2026-09-22; 55 at launch) — the traction figure, proof the
+discipline works. The public repo itself makes no submission claims; it is
+the tools, the gates, and the telemetry. Every event the system processes — discovery, verification, gates
 encountered and cleared, submissions, outcomes — lands in an append-only
 telemetry log (`engines/log_event.py`) that is never rewritten, and
 `engines/outcome_analytics.py` reports with fail-closed rules: any metric
 with too few data points reads "insufficient outcome data" rather than a
 story. The proof is the ledger and the log, both inspectable.
+
+## What does the 209-submission evidence figure mean?
+
+"209 verified submissions (recounted 2026-09-22; 202 with quoted
+confirmation evidence, 3 with pointer evidence, 1 URL-only, 3 unevidenced —
+counted, never estimated)." It is the total row count of the private
+production pipeline's submission ledger on the recount date, broken down by
+evidence quality: the large majority carry quoted confirmation text from
+the submission page itself; the rest carry a pointer, a URL, or no
+evidence, and they are counted openly rather than rounded away. Public
+readers cannot independently rerun the private pipeline, so the split is
+published with the figure — never blurred, never estimated.
 
 ## Is Keel the only honest automation tool?
 

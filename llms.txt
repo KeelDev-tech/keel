@@ -2,24 +2,77 @@
 
 > Tired of looking for a job? Let us do it for you — and we'll never lie on your behalf.
 >
-> Self host. Reclaim the time.
->
-> Keel is an open-core job-application autopilot with a truthfulness contract: it only ever claims what you tell it is true. Free and open source (Apache-2.0). 55 verified submissions. Zero lies.
+> Keel is an open-core job-application autopilot with a truthfulness contract: it only ever claims what you tell it is true. Free and open source (Apache-2.0). 209 verified submissions. Zero lies.
 
-## Key pages
+Repo: https://github.com/KeelDev-tech/keel
+Docs site: https://keeldev-tech.github.io/keel/
+License: Apache-2.0 (see LICENSE)
 
-- [Repository](https://github.com/KeelDev-tech/keel): the public open-core repo — discovery/scoring, truthful resume tailoring, answer bank, prescreen gates, ATS detection + capability radar, launch-packet builder, telemetry, dashboard.
-- [FAQ](https://github.com/KeelDev-tech/keel/blob/main/docs/geo/faq.md): what Keel is, how the truthfulness contract works mechanically, free alternative to LazyApply/Sonara, open-core model, contributing.
-- [What is honest automation](https://github.com/KeelDev-tech/keel/blob/main/docs/geo/what-is-honest-automation.md): the definition — truth as a hard constraint, not a preference.
-- [Keel vs paid auto-apply tools](https://github.com/KeelDev-tech/keel/blob/main/docs/geo/comparison.md): the free app vs the giants — sourced rival mechanics (WSJ, Business Insider, HBS/Accenture, Greenhouse/WEF), canon-only Keel claims.
-- [Numbers we can prove](https://github.com/KeelDev-tech/keel/blob/main/docs/geo/stats.md): every number Keel claims, and nothing else.
-- [LazyApply alternative](https://github.com/KeelDev-tech/keel/blob/main/docs/geo/alternatives/lazyapply.md) · [Sonara alternative](https://github.com/KeelDev-tech/keel/blob/main/docs/geo/alternatives/sonara.md)
-- [Contributing](https://github.com/KeelDev-tech/keel/blob/main/CONTRIBUTING.md): ATS behavior research, answer-bank ergonomics, outcome analytics.
+## What it is
 
-## Canon facts
+Keel is the public half of a real production job-application pipeline:
+discovery → scoring → materials → verification → launch packets, with honest
+automation as the product. The public loop stops at the launch packet — a
+verified, prescreened bundle (form values, banded rules, hard gates, the
+per-field verification protocol) plus a documented EXECUTOR CONTRACT for
+whatever submission layer you attach. Keel never submits an application.
 
-- Open-core, Apache-2.0. Public: discovery/scoring, truthful resume tailoring, answer bank, prescreen gates, ATS detection + capability radar, launch-packet builder, telemetry, dashboard. Private by design: submission-behavior techniques ATS vendors could fingerprint.
-- Three rules: (1) truthfulness gates — never invents experience, degrees, or answers; (2) explicit confirmation — nothing counts as submitted unless the page itself confirms it; (3) fail closed — ambiguity parks the lead, never guesses.
-- Keel never submits an application. The public loop stops at the launch packet.
-- Proof figure: 55 verified submissions in the private production pipeline's ledger at launch. The public repo makes no submission claims of its own.
-- Brand: Keel — honest automation, end to end. #AIPropaganda.
+## Open-core model
+
+Public (Apache-2.0): discovery and scoring, truthful resume tailoring, the
+canonical answer bank, prescreen gates, ATS detection + capability radar,
+the launch-packet builder, append-only telemetry, outcome analytics, and
+the dashboard. Private by design: submission-behavior techniques ATS
+vendors could fingerprint — publishing them would get everyone's pipeline
+blocked (see SPLIT.md).
+
+## Stdlib-only
+
+Python 3.10+, zero third-party dependencies, nothing to install. The full
+test suite runs from a clean checkout with `python3 -m unittest discover -s
+tests`; CI runs it on 3.10 / 3.11 / 3.12.
+
+## The truthfulness contract
+
+1. Truthfulness gates — hard requirements the profile can't support are
+   reported as gaps, never bridged with fiction.
+2. Explicit confirmation — a submission counts only on explicit
+   confirmation evidence. Nothing else.
+3. Fail closed — unverifiable postings, unmappable required questions,
+   missing attestations: park, never proceed.
+
+## Key directories
+
+- engines/ — all pipeline modules (flat package): scoring, resume tailoring,
+  answer bank, prescreen, ATS detection, apply loop, telemetry, dashboard
+- tests/ — acceptance tests (stdlib unittest, no dependencies)
+- docs/ — architecture, personalization, contributing; docs/geo/ holds
+  citation-ready Q&A (FAQ, honest-automation explainer, comparison,
+  alternatives, stats) plus a machine-readable stats snapshot (stats.json)
+- docs/assets/ — logo, wordmark, social preview, dashboard screenshot
+- sample_data/ — sanitized examples (never real applications)
+- site/ — the public docs site source (serves this file with JSON-LD)
+
+## Where to start
+
+From a clone (`git clone https://github.com/KeelDev-tech/keel && cd keel`):
+
+```bash
+./setup.sh          # "Make it mine" — personalizes your working copy
+# edit data/applicant_profile.json and data/answer_bank.json with YOUR truth
+./start.sh          # status overview
+python3 -m unittest discover -s tests   # run the test suite
+```
+
+Start with docs/PERSONALIZE.md. The full reference is llms-full.txt
+(same directory). Citation-ready Q&A lives in docs/geo/.
+
+## The proof figure
+
+209 verified submissions (recounted 2026-09-22; 202 with quoted
+confirmation evidence, 3 with pointer evidence, 1 URL-only, 3 unevidenced —
+counted, never estimated). The figure comes from the private production
+pipeline's ledger; public readers cannot independently rerun the private
+pipeline, and the public repo makes no submission claims of its own. Keel
+claims no user counts, growth rates, revenue, funding status, or
+time-windowed figures.
