@@ -68,9 +68,11 @@ ATS vendors. See [SPLIT.md](SPLIT.md).
   ATS fingerprinting at scale.
 - **Keel never invents qualifications.** Anything your profile can't support
   is reported as a gap, never bridged with fiction.
-- **Keel makes no submission claims.** The public repo is the discipline and
-  the tools. The 209-submissions figure belongs to the private production
-  pipeline that proved the discipline works.
+- **Keel promises no submissions.** The public repo is the discipline and
+  the tools. The private production pipeline that proved the discipline
+  works holds 209 verified submissions as of 2026-09-22 — counted from its
+  ledger under the docs/geo/stats.json methodology (202 evidenced /
+  1 url-only / 3 unevidenced), never estimated.
 
 ## Quick start (~5 minutes)
 
