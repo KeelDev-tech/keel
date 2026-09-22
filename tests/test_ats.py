@@ -31,6 +31,16 @@ class TestDetectATS(unittest.TestCase):
             with self.subTest(url=url):
                 self.assertEqual(ats.detect_ats(url), "jazzhr")
 
+    def test_freshteam_job_urls(self):
+        urls = [
+            "https://example-corp.freshteam.com/jobs/AbC123/",
+            "https://example-corp.freshteam.com/jobs/AbC123/apply",
+            "https://EXAMPLE-CORP.FRESHTEAM.COM/jobs/AbC123/",
+        ]
+        for url in urls:
+            with self.subTest(url=url):
+                self.assertEqual(ats.detect_ats(url), "freshteam")
+
     def test_non_ats_url(self):
         self.assertEqual(ats.detect_ats("https://example.com/jobs/123"), "unknown")
 
