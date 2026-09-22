@@ -64,6 +64,7 @@ ATS_RULES = {
     "pinpoint":     {"hosts": [r"(^|\.)pinpointhq\.com$"], "paths": [], "query": []},
     "personio":     {"hosts": [r"(^|\.)personio\.com$"], "paths": [], "query": []},
     "bamboohr":     {"hosts": [r"(^|\.)bamboohr\.com$"], "paths": [], "query": []},
+    "jazzhr":       {"hosts": [r"(^|\.)jazzhr\.com$"], "paths": [], "query": []},
 }
 
 # Canonical platform-key registry. record_outcome.VALID_ATS reads the keys;

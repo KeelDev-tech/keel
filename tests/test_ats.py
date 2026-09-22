@@ -21,6 +21,16 @@ class TestDetectATS(unittest.TestCase):
             with self.subTest(url=url):
                 self.assertEqual(ats.detect_ats(url), "workable")
 
+    def test_jazzhr_job_urls(self):
+        urls = [
+            "https://example-corp.jazzhr.com/jobs/123456",
+            "https://example-corp.jazzhr.com/jobs/123456/apply",
+            "https://EXAMPLE-CORP.JAZZHR.COM/jobs/123456",
+        ]
+        for url in urls:
+            with self.subTest(url=url):
+                self.assertEqual(ats.detect_ats(url), "jazzhr")
+
     def test_non_ats_url(self):
         self.assertEqual(ats.detect_ats("https://example.com/jobs/123"), "unknown")
 
