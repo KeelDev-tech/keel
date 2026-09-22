@@ -150,6 +150,35 @@ def collect(home=HOME):
         data["warnings"].append(warning)
     data["parked"] = parked_items if parked_items is not None else []
 
+    # Gate-blocked breakdown: telemetry events with a gate field.
+    # Mirrors live's data/telemetry/events.jsonl layout under this HOME.
+    # Reads the existing schema only (event_type/type, details.gate) — no
+    # schema changes. Missing or unreadable -> None ("Unknown", never a
+    # healthy zero — K31). Malformed lines are skipped, not fatal.
+    gate_blocks = None
+    tel_path = home / "data" / "telemetry" / "events.jsonl"
+    try:
+        tel_text = tel_path.read_text()
+    except OSError:
+        data["warnings"].append(
+            "telemetry events.jsonl is missing; gate-block counts are unknown")
+    else:
+        counts = {}
+        for line in tel_text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                ev = json.loads(line)
+            except ValueError:
+                continue
+            if (ev.get("event_type") or ev.get("type")) != "gate_blocked":
+                continue
+            gate = (ev.get("details") or {}).get("gate") or "unknown"
+            counts[gate] = counts.get(gate, 0) + 1
+        gate_blocks = counts
+    data["gate_blocks"] = gate_blocks
+
     data["now"] = datetime.now(TZ).strftime("%A, %b %d — %I:%M %p")
     return data
 
@@ -197,6 +226,17 @@ def render(data):
         f"<div class='prow'><strong>{esc(p.get('title'))}</strong><br><span class='dim'>{esc(p.get('detail'))}</span></div>"
         for p in data["parked"]
     ) or "<p class='dim'>Nothing parked.</p>"
+
+    gate_blocks = data.get("gate_blocks")
+    if gate_blocks is None:
+        gate_html = "<p class='dim'>Unknown — telemetry log missing.</p>"
+    elif not gate_blocks:
+        gate_html = "<p class='dim'>No gate blocks recorded.</p>"
+    else:
+        gate_html = "\n".join(
+            f"<div class='qrow'><span>{esc(g)}</span><strong>{n}</strong></div>"
+            for g, n in sorted(gate_blocks.items(), key=lambda kv: (-kv[1], kv[0]))
+        )
 
     warning_html = ""
     if data["warnings"]:
@@ -263,6 +303,9 @@ footer{{margin:26px 0 10px;color:#5b6b7d;font-size:12px;line-height:1.6}}
 
 <h2>Parked / blocked</h2>
 {parked_html}
+
+<h2>Gate blocks</h2>
+{gate_html}
 
 <footer>
 Standing rules: clean leads needing nothing from you are auto-submitted. No outreach, no payments, no fabricated credentials. Items needing your input are parked, never prompted repeatedly. Counts increment only on explicit confirmation pages.

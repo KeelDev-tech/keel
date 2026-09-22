@@ -1,3 +1,6 @@
 {"ts": "2026-09-15T00:00:00Z", "type": "lead_discovered", "role_id": "EXAMPLE-001", "company": "Example Corp", "details": {"source": "sweep", "fit_score": 84}}
 {"ts": "2026-09-15T01:00:00Z", "type": "lead_verified", "role_id": "EXAMPLE-001", "company": "Example Corp", "details": {"url": "https://job-boards.greenhouse.io/example/jobs/0000000"}}
 {"ts": "2026-09-15T02:00:00Z", "type": "brief_built", "role_id": "EXAMPLE-001", "company": "Example Corp", "details": {"fit_score": 84}}
+{"ts": "2026-09-15T03:00:00Z", "type": "gate_blocked", "role_id": "EXAMPLE-002", "company": "Example Corp", "details": {"gate": "needs_input", "reasons": ["essay required"]}}
+{"ts": "2026-09-15T04:00:00Z", "type": "gate_blocked", "role_id": "EXAMPLE-003", "company": "Example Corp", "details": {"gate": "low_fit", "reasons": ["fit_score below band"]}}
+{"ts": "2026-09-15T05:00:00Z", "type": "gate_blocked", "role_id": "EXAMPLE-004", "company": "Example Corp", "details": {"gate": "needs_input", "reasons": ["attestation requires applicant"]}}
