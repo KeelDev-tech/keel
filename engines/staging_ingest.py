@@ -227,7 +227,22 @@ def sha256(path):
     return h.hexdigest()
 
 
-def settled_files(staged_dir=STAGED_DIR, settle_seconds=SETTLE_SECONDS):
+def _waived_set(staged_dir, waived):
+    """Normalize waived paths to realpaths inside the staged dir.
+
+    A waiver only ever applies to an existing file under staged_dir —
+    missing paths and paths outside the dir are silently ignored.
+    """
+    base = os.path.realpath(staged_dir)
+    out = set()
+    for w in (waived or ()):
+        rp = os.path.realpath(os.path.abspath(w))
+        if os.path.exists(rp) and (rp == base or rp.startswith(base + os.sep)):
+            out.add(rp)
+    return out
+
+
+def settled_files(staged_dir=STAGED_DIR, settle_seconds=SETTLE_SECONDS, waived=()):
     """Return settled ingestible staging files; skip active/probe/aux files.
 
     ALLOWLIST + RECORD-SHAPE FALLBACK (2026-09-15 cleanup-4, ARM 113):
@@ -241,13 +256,24 @@ def settled_files(staged_dir=STAGED_DIR, settle_seconds=SETTLE_SECONDS):
 
     Excludes: the _archived-* dirs, probe scripts, .md proposals, and any
     file touched within settle_seconds (active sweep still writing).
+
+    WAIVED (2026-09-21 settle-bypass fix): paths in `waived` skip the age
+    check — a producer passes its OWN just-written file (atomic write, so
+    complete at spawn time) and waives the settle wait for exactly that
+    file. Waived paths must exist inside the staged dir; the ingestibility
+    filter (allowlist/shape) is NEVER waived, so a waived token file or
+    missing path is still excluded.
     """
     now = time.time()
     out = []
+    waived_set = _waived_set(staged_dir, waived)
     # glob is non-recursive: _archived-* subdirs are never matched
     for path in sorted(glob.glob(os.path.join(staged_dir, "*.json"))):
         name = os.path.basename(path)
         if not name.endswith("-leads.json") and not is_lead_shaped(path):
+            continue
+        if os.path.realpath(path) in waived_set:
+            out.append(path)  # producer's own complete file: no settle wait
             continue
         age = now - os.path.getmtime(path)
         if age < settle_seconds:
@@ -256,17 +282,22 @@ def settled_files(staged_dir=STAGED_DIR, settle_seconds=SETTLE_SECONDS):
     return out
 
 
-def deferred_files(staged_dir=STAGED_DIR, settle_seconds=SETTLE_SECONDS):
+def deferred_files(staged_dir=STAGED_DIR, settle_seconds=SETTLE_SECONDS, waived=()):
     """Staging files skipped this run because they are still being written.
 
     Allowlist + record-shape fallback apply here too — only ingestible
-    files (by name or by shape) can defer ingest.
+    files (by name or by shape) can defer ingest. Files in `waived` are
+    reported as settled by settled_files(), so they are not deferred here
+    either (keeps main()'s settled/deferred counts consistent).
     """
     now = time.time()
     out = []
+    waived_set = _waived_set(staged_dir, waived)
     for path in sorted(glob.glob(os.path.join(staged_dir, "*.json"))):
         name = os.path.basename(path)
         if not name.endswith("-leads.json") and not is_lead_shaped(path):
+            continue
+        if os.path.realpath(path) in waived_set:
             continue
         age = now - os.path.getmtime(path)
         if age < settle_seconds:
@@ -1220,6 +1251,13 @@ def main(argv=None):
                     help="apply the ingestion (default is dry-run)")
     ap.add_argument("--settle", type=int, default=SETTLE_SECONDS,
                     help="seconds a staging file must be untouched (default 300)")
+    ap.add_argument("--only", nargs="+", default=None, metavar="FILE",
+                    help="producer's own just-written file(s): the settle wait "
+                         "is waived for exactly these paths (atomic write, so "
+                         "complete already). Every other staging file still "
+                         "honors --settle. 2026-09-21: replaces the blanket "
+                         "--settle 0 which waived the window for the whole "
+                         "staging dir.")
     ap.add_argument("--check-stale", action="store_true",
                     help="pulse-alert mode: list stale staged-but-unmerged files")
     args = ap.parse_args(argv)
@@ -1229,8 +1267,8 @@ def main(argv=None):
         print(json.dumps(stale, indent=1))
         return 0 if not stale else 2
 
-    files = settled_files(settle_seconds=args.settle)
-    deferred = deferred_files(settle_seconds=args.settle)
+    files = settled_files(settle_seconds=args.settle, waived=args.only)
+    deferred = deferred_files(settle_seconds=args.settle, waived=args.only)
     # Directory separation runs on every pass (dry or live): non-lead
     # artifacts are moved out of staging before ingest is even considered.
     artifacts_moved = sweep_nonlead_artifacts()

@@ -70,6 +70,11 @@ EVENT_TYPES = {
     # - engines/verify_retry.py:1029-1045 emits "url_enriched"/"url_enrich_failed"
     "verify_cron_run",
     "url_enriched", "url_enrich_failed",
+    # 2026-09-22 (COV-http_429_halt port): discovery-lane 429 hard stops
+    # were stdout-only — invisible to the safety coverage map. One row per
+    # halted run, emitted via emit_429_halt() below. Registered additively;
+    # spellings are verbatim the producer emissions.
+    "http_429_halt",
 }
 
 # Stable gate vocabulary for details["gate"] on gate_encountered/gate_blocked.
@@ -334,6 +339,28 @@ def log(event_type: str, role_id: str = "", company: str = "", ats: str = "",
         with open(EVENTS, "a") as f:
             f.write(json.dumps(event) + "\n")
     return event
+
+
+def emit_429_halt(scope, details=None, source=None):
+    """Emit one http_429_halt telemetry row for an HTTP 429 hard stop.
+
+    COV-http_429_halt (2026-09-18): 429 hard stops across the discovery
+    lane previously printed to stdout/stderr only — invisible to the
+    safety coverage map (a never-instrumented emergency path is a blind
+    spot). One row per halted run/scope; details carry the scope plus
+    whatever the halt site knows (board, host, propagated_from, counts).
+    Additive, read-only observability: the halt behavior at the call site
+    (exit 75 / platform skip / cooldown write) is unchanged, and emission
+    can never raise — a telemetry failure degrades to a stderr note
+    (fail closed, the never-halt doctrine).
+    """
+    try:
+        log("http_429_halt", role_id="", source=source or scope,
+            details={"scope": scope, "halt": "HTTP 429 hard stop",
+                     **(details or {})})
+    except Exception as ex:  # fail closed: never break the halt path
+        print(f"  telemetry: http_429_halt emission failed ({ex})",
+              file=sys.stderr)
 
 
 def log_gate_aggregate(gate, leads, source, reason="", extra=None):

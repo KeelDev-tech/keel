@@ -70,10 +70,14 @@ FLOW (live mode):
   write hidden_files/discovery-staging/clean-board-watch-<ts>-leads.json
   append per-board {ts, board, postings_seen, new_postings} rows to
     hidden_files/clean-board-watch-yield.jsonl  (feeds board-yield ranking)
-  then run staging_ingest.py --live --settle 0 — the sanctioned intake path
-    (validate -> dedupe -> BACKUP -> write -> telemetry -> archive). The file
-    just written is complete so settle=0 is safe; this also drains other
-    complete staging files the pulse would otherwise flag stale.
+  then run staging_ingest.py --live --only <the file just written> — the
+    sanctioned intake path (validate -> dedupe -> BACKUP -> write ->
+    telemetry -> archive). The file just written is complete (atomic
+    write), so the settle wait is waived for exactly that file; every
+    other staging file keeps the 300s settle window (2026-09-21 fix — the
+    old blanket --settle 0 waived the window for the whole staging dir).
+    This also drains other settled staging files the pulse would
+    otherwise flag stale.
 
 MODES:
   --dry-run   poll + diff + report only; no staging write, no ingest, no
@@ -112,6 +116,7 @@ import queue_intake  # noqa: E402
 import title_triage  # noqa: E402
 import greenhouse_json_enumerate as gje  # noqa: E402 (JSON phase, additive)
 import ashby_lever_json_enumerate as ale  # noqa: E402 (Ashby/Lever phase)
+from log_event import emit_429_halt  # noqa: E402 (COV-http_429_halt telemetry)
 
 from keel_paths import HOME, DATA  # noqa: E402
 REGISTRY = os.path.join(HOME, "hidden_files/greenhouse-board-enterprise.json")
@@ -422,6 +427,16 @@ def main(argv):
             capture_output=True, text=True, timeout=900)
         print(jp.stdout[-1500:])
         if jp.returncode == 75:
+            # COV-http_429_halt (2026-09-18): the child enumerator already
+            # emitted its own http_429_halt row; this row marks the
+            # clean-board-watch halt itself (return 75, no HTML-phase
+            # writes). Halt behavior unchanged.
+            emit_429_halt("clean-board-watch",
+                          {"halt": "429 hard stop propagated — exiting, "
+                                  "nothing written",
+                           "exit_code": 75,
+                           "propagated_from": "greenhouse-json-enumerate",
+                           "live": live})
             print("JSON enumerator hit 429 — HARD STOP, nothing written",
                   file=sys.stderr)
             return 75
@@ -447,6 +462,16 @@ def main(argv):
             capture_output=True, text=True, timeout=900)
         print(alp.stdout[-1500:])
         if alp.returncode == 75:
+            # COV-http_429_halt (2026-09-18): the child enumerator already
+            # emitted its own http_429_halt row; this row marks the
+            # clean-board-watch halt itself (return 75, no HTML-phase
+            # writes). Halt behavior unchanged.
+            emit_429_halt("clean-board-watch",
+                          {"halt": "429 hard stop propagated — exiting, "
+                                  "nothing written",
+                           "exit_code": 75,
+                           "propagated_from": "ashby-lever-json-enumerate",
+                           "live": live})
             print("Ashby/Lever enumerator hit 429 — HARD STOP, "
                   "nothing written", file=sys.stderr)
             return 75
@@ -473,6 +498,18 @@ def main(argv):
             html = fetch_html(f"https://job-boards.greenhouse.io/{board}")
         except urllib.error.HTTPError as e:
             if e.code == 429:
+                # COV-http_429_halt (2026-09-18): the 429 hard stop
+                # previously emitted to stdout/stderr only — invisible to
+                # the safety coverage map. One http_429_halt telemetry row
+                # per halted run. Halt behavior (return 75, nothing
+                # written) is unchanged.
+                emit_429_halt("clean-board-watch",
+                              {"halt": "429 hard stop — exiting, nothing "
+                                      "written",
+                               "exit_code": 75,
+                               "phase": "html",
+                               "board": board,
+                               "live": live})
                 print("429 rate limit — HARD STOP, nothing written",
                       file=sys.stderr)
                 return 75
@@ -573,9 +610,15 @@ def main(argv):
     else:
         print("no new postings — no staging file written")
     # sanctioned intake: validate -> dedupe -> BACKUP -> write -> telemetry
+    # -> archive. The settle wait is waived ONLY for the file just written
+    # (atomic write, so complete already); every other staging file keeps
+    # the 300s settle window (2026-09-21 settle-bypass fix).
+    ingest_argv = [sys.executable, os.path.join(BASE, "staging_ingest.py"),
+                   "--live"]
+    if staged_path:
+        ingest_argv += ["--only", staged_path]
     proc = subprocess.run(
-        [sys.executable, os.path.join(BASE, "staging_ingest.py"),
-         "--live", "--settle", "0"],
+        ingest_argv,
         capture_output=True, text=True, timeout=600)
     print(proc.stdout[-2000:])
     if proc.returncode != 0:

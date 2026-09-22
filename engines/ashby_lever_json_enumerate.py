@@ -45,8 +45,12 @@ FLOW (live mode):
     {ts, producer, per_board: {board: {postings_seen, new_postings,
      duplicates_skipped}}, staged, ingested, validation_errors, duration_s,
      http_429s}
-  then run staging_ingest.py --live --settle 0 — the sanctioned intake path
-    (validate -> dedupe -> BACKUP -> write -> telemetry -> archive).
+  then run staging_ingest.py --live --only <the file just written> — the
+    sanctioned intake path (validate -> dedupe -> BACKUP -> write ->
+    telemetry -> archive). The settle wait is waived for exactly the
+    file just written (atomic write, so complete already); every other
+    staging file keeps the 300s settle window (2026-09-21 settle-bypass
+    fix).
 
 MODES:
   --dry-run   poll + diff + report only; no staging write, no ingest, no
@@ -76,6 +80,7 @@ from ats_discovery import normalize as N  # noqa: E402
 import dedupe_gate  # noqa: E402
 import queue_intake  # noqa: E402
 import title_triage  # noqa: E402
+from log_event import emit_429_halt  # noqa: E402 (COV-http_429_halt telemetry)
 
 from keel_paths import HOME, DATA  # noqa: E402
 REGISTRY = os.path.join(HOME, "hidden_files/ashby-lever-board-registry.json")
@@ -438,7 +443,17 @@ def main(argv):
 
     try:
         res = enumerate_boards(boards, live=live)
-    except RateLimited:
+    except RateLimited as e:
+        # COV-http_429_halt (2026-09-18): the 429 hard stop previously
+        # emitted to stdout/stderr only — invisible to the safety coverage
+        # map. One http_429_halt telemetry row per halted run. Halt
+        # behavior (return 75, nothing written) is unchanged.
+        emit_429_halt("ashby-lever-json-enumerate",
+                      {"halt": "429 hard stop — exiting, nothing written",
+                       "exit_code": 75,
+                       "board": str(e) or None,
+                       "boards": len(boards),
+                       "live": live})
         print("429 rate limit — HARD STOP, nothing written",
               file=sys.stderr)
         return 75
@@ -464,6 +479,7 @@ def main(argv):
         return 0
 
     # live: write staging file, run sanctioned ingest, then record metrics
+    staged_path = None
     if res["entries"]:
         from staging_ingest import emission_precheck  # noqa: E402
         res["entries"], _pc_withheld, pc_report = emission_precheck(
@@ -484,9 +500,15 @@ def main(argv):
     else:
         print("no new postings — no staging file written")
     # sanctioned intake: validate -> dedupe -> BACKUP -> write -> telemetry
+    # -> archive. The settle wait is waived ONLY for the file just written
+    # (atomic write, so complete already); every other staging file keeps
+    # the 300s settle window (2026-09-21 settle-bypass fix).
+    ingest_argv = [sys.executable, os.path.join(BASE, "staging_ingest.py"),
+                   "--live"]
+    if staged_path:
+        ingest_argv += ["--only", staged_path]
     proc = subprocess.run(
-        [sys.executable, os.path.join(BASE, "staging_ingest.py"),
-         "--live", "--settle", "0"],
+        ingest_argv,
         capture_output=True, text=True, timeout=900)
     print(proc.stdout[-2000:])
     if proc.returncode != 0:
