@@ -85,8 +85,8 @@ ATS vendors. See [SPLIT.md](SPLIT.md).
 
 ![Keel honesty-gates demo](docs/assets/honesty-gates.gif)
 
-*Real terminal session (synthetic data, real engines): a missing answer
-abstains instead of inventing, an unverifiable posting parks, and a
+*Real terminal session (synthetic data, real engines): an unmapped question
+is reported instead of invented, an unverifiable posting parks, and a
 submission counts only on explicit confirmation. Run it yourself:
 `python3 demo/honesty_gates_demo.py`. See also [demo/](demo/).*
 

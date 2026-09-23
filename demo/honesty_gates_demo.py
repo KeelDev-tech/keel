@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
-"""Keel honesty-gates terminal demo — runs REAL repo engines against
-SYNTHETIC fixture input.
+"""Keel honesty-gates terminal demo — runs against SYNTHETIC fixture input.
 
 Demonstrates the three honest-automation contract clauses:
-  1. Truthfulness gates — an answer-bank gap is REPORTED, never filled.
+  1. Truthfulness gates — a question with no banked answer is REPORTED,
+                         never filled (real repo engine: engines/prescreen).
   2. Fail closed      — a posting that violates the office/travel policy
-                        is PARKED, never proceeded with.
+                        is PARKED, never proceeded with (real repo engine:
+                        engines/prescreen).
   3. Explicit confirmation — a submission counts ONLY on explicit
-                        confirmation text; an ambiguous attempt goes
-                        UNKNOWN and bars any retry.
+                        confirmation text (production's submit-intent ledger
+                        is intentionally private, so this scene shows the
+                        same rule on a demo-local scratch ledger; the rule
+                        itself is the public recount's methodology —
+                        "Counts increment only on explicit confirmation",
+                        see docs/geo/stats.json).
 
 All data is synthetic (fictional applicant "Alex Candidate"). The demo
 runs entirely offline and touches only a temp scratch dir — no network,
@@ -29,9 +34,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 sys.path.insert(0, os.path.join(REPO, "engines"))  # engines import each other by module name
 
-from engines import answer_resolver as ar      # noqa: E402
-from engines import prescreen as ps           # noqa: E402
-from engines import submit_intent as si        # noqa: E402
+from engines import prescreen as ps               # noqa: E402
 
 PAUSE = float(os.environ.get("KEEL_DEMO_PAUSE", "0.9"))
 
@@ -47,32 +50,36 @@ def scene1_gap_reported():
     say("=== SCENE 1: truthfulness gate — a gap is reported, never filled ===")
     say("")
     say("Synthetic applicant: Alex Candidate. Answer bank carries 2")
-    say("global-scope keys (start date, work authorization). The form asks")
-    say("a 3rd question — salary history — which the bank does NOT carry.")
+    say("keys (start date, work authorization). The form asks a 3rd")
+    say("question — salary history — which the bank does NOT carry.")
     say("")
     bank = {
-        "start_timeframe": {"value": "Next day", "scope": "global",
-                            "provenance": "applicant stated 2026-09-20"},
-        "us_work_auth": {"value": "Yes", "scope": "global",
-                         "provenance": "applicant stated 2026-09-20"},
+        "answers": {
+            "start_timeframe": {"value": "Next day",
+                                "provenance": "applicant stated 2026-09-20"},
+            "us_work_auth": {"value": "Yes",
+                             "provenance": "applicant stated 2026-09-20"},
+        },
+        "banded_questions": {},
     }
     questions = [
-        ("us_work_auth", "Are you authorized to work in the United States?"),
-        ("start_timeframe", "When can you start?"),
-        ("salary_history", "What was your salary at your last job?"),  # the gap
+        "Are you authorized to work in the United States?",
+        "When can you start?",
+        "What was your salary at your last job?",  # the gap
     ]
-    filled, abstained = 0, 0
-    for key, label in questions:
-        res = ar.resolve(key, bank.get(key, {}))
-        if res.status == ar.STATUS_ABSTAIN:
-            abstained += 1
-            say(f"  [ABSTAIN] {label!r}")
-            say(f"           -> {res.reason}  (gap reported, NOT invented)")
+    mapped, unmapped = 0, 0
+    for label in questions:
+        ok, key = ps.question_mappable(label, bank)
+        if not ok:
+            unmapped += 1
+            say(f"  [UNMAPPED] {label!r}")
+            say("           -> no banked answer for this question "
+                "(gap reported, NOT invented)")
         else:
-            filled += 1
-            say(f"  [RESOLVED] {label!r} = {res.value!r}")
+            mapped += 1
+            say(f"  [MAPPED] {label!r} -> bank key {key!r}")
     say("")
-    say(f"  result: {filled} answered from the bank, {abstained} abstained.")
+    say(f"  result: {mapped} mapped from the bank, {unmapped} unmapped.")
     say("  Keel never bridges a missing answer with fiction.")
 
 
@@ -107,7 +114,7 @@ def scene2_unverifiable_parked(scratch):
     if verdict["verdict"] == "PARK":
         out = ps.park_lead(role_id, verdict["reasons"], queue_dir=qdir)
         if out["ok"]:
-            say(f"  park_lead -> ok: lead moved to needs_input-queue.json")
+            say("  park_lead -> ok: lead moved to needs_input-queue.json")
             say("  (needs the applicant's own answer before anything proceeds).")
         else:
             say(f"  park_lead -> REFUSED: {out.get('error')}")
@@ -116,57 +123,96 @@ def scene2_unverifiable_parked(scratch):
     say("  Keel never proceeds past a commitment it cannot verify.")
 
 
-def scene3_explicit_confirmation(scratch):
+# ---- Scene 3: demo-local confirmation ledger ---------------------------
+# Production's submit-intent module is intentionally private (see SPLIT.md:
+# submission techniques stay private). This scene implements the SAME
+# counting rule — "a submission counts ONLY on explicit confirmation
+# evidence" — on a scratch ledger inside the demo, so the rule is shown
+# without probing the private side.
+
+class ConfirmationLedger:
+    """Scratch ledger: an attempt is an open row until reconciled."""
+
+    def __init__(self):
+        self.attempts = {}  # attempt_id -> {"role_id", "state", "confirmation"}
+
+    def record_intent(self, role_id):
+        for aid, row in self.attempts.items():
+            if row["role_id"] == role_id and row["state"] != "CLOSED":
+                raise RuntimeError(
+                    f"OpenIntentExists: {aid} for {role_id} is unresolved; "
+                    "no retry may be minted until it is reconciled")
+        attempt_id = f"attempt-{len(self.attempts) + 1:04d}"
+        self.attempts[attempt_id] = {"role_id": role_id, "state": "INTENT",
+                                     "confirmation": ""}
+        return attempt_id
+
+    def mark_submitted(self, attempt_id, confirmation):
+        if not (confirmation or "").strip():
+            raise ValueError("empty confirmation refused: nothing counts "
+                             "without confirmation evidence")
+        row = self.attempts[attempt_id]
+        row["confirmation"] = confirmation.strip()
+        row["state"] = "SUBMITTED"
+
+    def mark_unresolved(self, attempt_id):
+        self.attempts[attempt_id]["state"] = "UNRESOLVED"
+
+    def close_unsubmitted(self, attempt_id):
+        self.attempts[attempt_id]["state"] = "CLOSED"
+
+    def honest_count(self):
+        return sum(1 for row in self.attempts.values()
+                   if row["state"] == "SUBMITTED")
+
+
+def scene3_explicit_confirmation():
     say("")
     say("=== SCENE 3: explicit confirmation — nothing counts without it ===")
     say("")
-    store_dir = os.path.join(scratch, "intents")
-    os.makedirs(store_dir, exist_ok=True)
-    si.set_store_dir(store_dir)
+    ledger = ConfirmationLedger()
+    role_id = "DEMO-synthetic-0002"
+    say("Step 1: intent is recorded BEFORE any attempt.")
+    attempt_id = ledger.record_intent(role_id)
+    say(f"  recorded intent {attempt_id}  state=INTENT")
+    say("")
+    say("Step 2: the attempt ends ambiguously (timeout after POST).")
+    say("  (The server may already have accepted it — or not.)")
+    ledger.mark_unresolved(attempt_id)
+    say(f"  state: {ledger.attempts[attempt_id]['state']}")
+    say("  An ambiguous attempt is NEVER reported as a plain failure")
+    say("  and NEVER retried — that would risk a duplicate.")
+    say("")
+    say("Step 3: a second attempt for the same role is refused.")
     try:
-        role_id = "DEMO-synthetic-0002"
-        say("Step 1: intent is recorded BEFORE any attempt.")
-        attempt_id = si.record_intent(
-            role_id, "Fictional Corp", transport="browser",
-            bundle_digest="sha256:demo-synthetic-digest",
-            page_ref={"board": "demo-board", "job_id": "0002"})
-        say(f"  recorded intent {attempt_id}  state=INTENT")
-        say("")
-        say("Step 2: the attempt times out ambiguously.")
-        say("  (A timeout after POST may already have been accepted.)")
-        si.mark_unknown(attempt_id, reason="network timeout after POST",
-                        evidence={"http_status": None})
-        say(f"  state after ambiguous outcome: {si.get(attempt_id)['state']}")
-        say("  An ambiguous attempt is NEVER reported as a plain failure")
-        say("  and NEVER retried — that would risk a duplicate.")
-        say("")
-        say("Step 3: a second attempt for the same role is refused.")
-        try:
-            si.record_intent(role_id, "Fictional Corp", transport="browser",
-                             bundle_digest="sha256:demo-synthetic-digest")
-            say("  !! unexpected: second attempt minted")
-        except si.OpenIntentExists:
-            say("  REFUSED: OpenIntentExists — the role stays barred")
-            say("  until the open attempt is reconciled.")
-        say("")
-        say("Step 4: marking SUBMITTED without confirmation is refused.")
-        try:
-            si.mark_submitted(attempt_id, "")
-            say("  !! unexpected: empty confirmation accepted")
-        except ValueError as e:
-            say(f"  REFUSED: ValueError ({e})")
-        say("")
-        say("Step 5: only explicit confirmation text closes it.")
-        si.mark_submitted(
-            attempt_id,
-            confirmation="Ashby confirmation page: 'Application submitted' "
-                         "with reference #DEMO-0002, captured 2026-09-22")
-        say(f"  state after confirmation: {si.get(attempt_id)['state']}")
-        say("")
-        say("  A submission counts ONLY on explicit confirmation evidence.")
-        say("  Nothing else.")
-    finally:
-        si.reset_store_dir()
+        ledger.record_intent(role_id)
+        say("  !! unexpected: second attempt minted")
+    except RuntimeError as e:
+        say(f"  REFUSED: {e}")
+    say("")
+    say("Step 4: marking SUBMITTED without confirmation is refused.")
+    try:
+        ledger.mark_submitted(attempt_id, "")
+        say("  !! unexpected: empty confirmation accepted")
+    except ValueError as e:
+        say(f"  REFUSED: ValueError ({e})")
+    say("")
+    say("Step 5: only explicit confirmation text closes it.")
+    ledger.mark_submitted(
+        attempt_id,
+        confirmation="Ashby confirmation page: 'Application submitted' "
+                     "with reference #DEMO-0002, captured 2026-09-22")
+    say(f"  state after confirmation: "
+        f"{ledger.attempts[attempt_id]['state']}")
+    say("")
+    say("Step 6: an attempt closed with no evidence is NOT counted.")
+    attempt2 = ledger.record_intent("DEMO-synthetic-0003")
+    ledger.close_unsubmitted(attempt2)  # reconciled as no-application
+    say(f"  honest submission count: {ledger.honest_count()} "
+        "(attempts: 2, counted: 1)")
+    say("")
+    say("  A submission counts ONLY on explicit confirmation evidence.")
+    say("  Nothing else.")
 
 
 def main():
@@ -176,7 +222,7 @@ def main():
         say("=======================================================")
         scene1_gap_reported()
         scene2_unverifiable_parked(scratch)
-        scene3_explicit_confirmation(scratch)
+        scene3_explicit_confirmation()
         say("")
         say("Demo complete. Scratch dir cleaned up:", scratch)
     finally:
