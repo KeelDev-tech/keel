@@ -50,6 +50,11 @@ import time
 import urllib.parse
 import urllib.request
 
+try:
+    from .safe_http import urlopen as safe_urlopen
+except ImportError:  # Direct script / legacy engines-on-sys.path entry points.
+    from safe_http import urlopen as safe_urlopen
+
 BASE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE)
 
@@ -71,6 +76,49 @@ REQUEST_DELAY = 1.0  # polite pacing between live probes
 LEVER_HCAPTCHA_MARKERS = ("hcaptcha", "e33f87f8-88ec-4e1a-9a13-df9bbb1d8120")
 CAPTCHA_MARKERS = ("recaptcha", "hcaptcha", "turnstile", "enterprise.js",
                    "captcha")
+
+# Form-detector exclusions (responder fix 2026-09-22, J-20260922-1859-ats--4856):
+# forms matching these markers are NEVER counted as server-rendered
+# application forms. Login/register walls and keyword-search / job-alert
+# forms (the `jobalertssearchform` false positive that flipped icims +
+# successfactors browser_only->unknown on 2026-09-15 and again 2026-09-20,
+# the latter already judged a false positive in J-20260916-0410-ats--550)
+# carry email/keyword inputs that the old page-level heuristic mistook for
+# apply fields. Matched against the <form> tag's own id/class/name/action.
+NON_APPLY_FORM_MARKERS = (
+    r"log\.?in|sign\.?in|register|create.?account|forgot.?password",
+    r"job.?alert|job.?search|keyword.?search|search.?jobs",
+    r"newsletter|subscribe|cookie|consent|gdpr",
+)
+
+APPLY_FIELD_MARKERS = (r"first.?name", r"last.?name", r"\bresume\b",
+                       r"cover.?letter")
+
+
+def _is_excluded_form(form_html):
+    """True when the <form> tag's own attributes identify a non-application
+    form (login / register / job-alert / search / newsletter / cookie)."""
+    tag = re.search(r"<form([^>]*)>", form_html, re.I | re.S)
+    attrs = (tag.group(1) if tag else "").lower()
+    return any(re.search(pat, attrs) for pat in NON_APPLY_FORM_MARKERS)
+
+
+def _qualifying_apply_forms(html):
+    """Yield <form> blocks that genuinely look like server-rendered
+    application forms: not an excluded form (login/register/job-alert/
+    search/newsletter) AND carrying apply-field inputs (name/email/resume/
+    cover-letter) inside the form HTML itself — not just elsewhere on the
+    page. The old page-level check ("application" appears anywhere) was the
+    false-positive source."""
+    blocks = re.findall(r"<form[^>]*>.*?</form>", html, re.I | re.S)
+    if not blocks:  # unclosed forms: fall back to bare tags
+        blocks = re.findall(r"<form[^>]*>", html, re.I)
+    for block in blocks:
+        if _is_excluded_form(block):
+            continue
+        low = block.lower()
+        if any(re.search(pat, low) for pat in APPLY_FIELD_MARKERS):
+            yield block
 
 # Legacy exact-match set, kept for backward compatibility; the denylist below
 # (with suffix matching) is the authoritative check in scan_new_ats.
@@ -146,7 +194,7 @@ class RealFetcher(Fetcher):
         time.sleep(self.delay)
         req = urllib.request.Request(url, headers=UA)
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as r:
+            with safe_urlopen(req, timeout=self.timeout) as r:
                 return r.status, r.read().decode("utf-8", "replace")
         except Exception as e:
             raise FetchError(f"{type(e).__name__}: {e}")
@@ -269,7 +317,12 @@ def probe_lever(entry, fetch):
 
 
 def probe_http_render(entry, fetch):
-    """Ashby-style: is the page still un-renderable over plain HTTP?"""
+    """Ashby-style: is the page still un-renderable over plain HTTP?
+
+    A flip to 'unknown' now requires a qualifying application form — a
+    non-excluded form (login/register/job-alert/search/newsletter forms
+    are excluded per _is_excluded_form) that carries apply-field inputs
+    within the form HTML. See NON_APPLY_FORM_MARKERS."""
     for url in entry.get("sample_urls", [])[:MAX_SAMPLES_PER_ENTRY]:
         try:
             status, html = fetch.get(url)
@@ -277,11 +330,8 @@ def probe_http_render(entry, fetch):
             return _inconclusive(f"fetch failed ({e}) — cannot judge")
         if status != 200:
             return _inconclusive(f"HTTP {status} — posting may be dead")
-        low = (html or "").lower()
-        has_form = bool(re.search(r"<form[^>]*>", low))
-        has_apply_fields = bool(re.search(
-            r"(first.?name|last.?name|resume|cover.?letter|email)", low))
-        if has_form and has_apply_fields and "application" in low:
+        qualifying = list(_qualifying_apply_forms(html or ""))
+        if qualifying:
             return {"observed": "unknown", "status": None,
                     "note": "server-rendered application form detected over "
                             "plain HTTP — supervised re-verification required"}
@@ -392,9 +442,34 @@ def evaluate_entry(key, entry, probe_result, log_fn):
                               "supervised verification"
         return result
     # FLIP — the payoff. Log it, update the registry, surface it.
+    note = probe_result.get("note", "")
+    # Supervised-verdict pin (2026-09-22, J-20260922-1859-ats--4856):
+    # an operator-authorized supervised verdict is never auto-overwritten
+    # by the probe heuristic. The icims/successfactors browser_only
+    # verdicts (2026-09-16 supervised re-verification) were flipped to
+    # unknown twice (2026-09-15, 2026-09-20) by the same false-positive
+    # form-detector heuristic (judged in J-20260916-0410-ats--550).
+    # Only a new supervised re-verification may change a pinned verdict.
+    pin = entry.get("supervised_verdict") or {}
+    pinned = pin.get("verdict")
+    if pinned and observed != pinned:
+        entry["last_retested"] = today()
+        entry["evidence"] = (entry.get("evidence") or "") + \
+            f" | PIN-HELD {today()}: probe observed '{observed}' but " \
+            f"supervised verdict '{pinned}' (operator-authorized " \
+            f"{pin.get('date')}) is pinned - no auto-overwrite. {note}"
+        log_fn("gate_encountered", role_id="", company="",
+               ats=entry.get("ats", ""), source="ats-capability-radar",
+               details={"gate": "edge_flip_pin_held", "entry": key,
+                        "observed": observed, "pinned_verdict": pinned,
+                        "evidence": note[:300]})
+        return {"key": key, "ats": entry.get("ats"), "expected": expected,
+                "observed": pinned, "status": "PINNED",
+                "note": f"supervised verdict '{pinned}' pinned "
+                        f"(operator-authorized {pin.get('date')}); probe's "
+                        f"'{observed}' not applied. {note}"}
     old = entry.get("verdict")
     new = observed
-    note = probe_result.get("note", "")
     entry["verdict"] = new
     entry["last_retested"] = today()
     entry["evidence"] = (entry.get("evidence") or "") + \

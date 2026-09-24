@@ -9,8 +9,8 @@ HTTP-only re-verification flaky for that source.
 
 Contract: sweep arms capturing a listing page at discovery time save the raw
 HTML here and attach the returned manifest to the staged entry as
-`discovery_page_capture`. verify_retry (or any later reader) can then treat
-the captured page as liveness evidence instead of re-fetching a flaky host.
+`discovery_page_capture`. verify_retry (or any later reader) can inspect
+the captured page as advisory history. It never proves current posting liveness.
 Fail-closed: fetch failures (Sucuri 307, timeouts, blocks) return
 {"captured": False, "reason": ...} — never raise into the sweep.
 """
@@ -22,6 +22,8 @@ import urllib.request
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from safe_http import urlopen as safe_urlopen
+from safe_io import atomic_bytes, append_jsonl
 from keel_paths import HOME  # noqa: E402
 CAPTURE_DIR = os.path.join(HOME, "hidden_files", "page-captures")
 MANIFEST = os.path.join(CAPTURE_DIR, "manifest.jsonl")
@@ -57,33 +59,37 @@ def capture(url, html=None, timeout=25):
     status = None
     reason = None
     if html is not None:
-        body = html.encode("utf-8") if isinstance(html, str) else bytes(html)
-        status = "provided"
+        if not isinstance(html, (str, bytes, bytearray)):
+            reason = 'provided capture must be text or bytes'
+        elif len(html) > MAX_CAPTURE_BYTES:
+            reason = 'capture exceeds byte limit'
+        else:
+            body = html.encode("utf-8") if isinstance(html, str) else bytes(html)
+            status = "provided"
     else:
         try:
             req = urllib.request.Request(url, headers=UA)
-            with urllib.request.urlopen(req, timeout=timeout) as r:
+            with safe_urlopen(req, timeout=timeout, max_bytes=MAX_CAPTURE_BYTES) as r:
                 status = r.status
                 body = r.read()
         except urllib.error.HTTPError as e:
             reason = f"http_{e.code}"
         except Exception as e:
             reason = f"{type(e).__name__}:{str(e)[:80]}"
+    if body is not None and len(body) > MAX_CAPTURE_BYTES:
+        body, reason = None, "capture exceeds byte limit"
     if body is None:
         return {"captured": False, "url": url, "reason": reason,
-                "captured_at": pdt_stamp()}
+                "captured_at": pdt_stamp(), "usable_for_liveness": False}
     digest = hashlib.sha256(body).hexdigest()
     path = os.path.join(CAPTURE_DIR, f"{digest}.html")
     if not os.path.exists(path):
-        with open(path, "wb") as f:
-            f.write(body)
-        os.chmod(path, 0o600)
-    manifest = {"captured": True, "url": url,
+        atomic_bytes(path, body)
+    manifest = {"captured": True, "usable_for_liveness": False, "url": url,
                 "capture_path": path, "sha256": digest,
                 "bytes": len(body), "http_status": status,
                 "captured_at": pdt_stamp()}
-    with open(MANIFEST, "a") as f:
-        f.write(json.dumps(manifest, sort_keys=True) + "\n")
+    append_jsonl(MANIFEST, manifest)
     return manifest
 
 

@@ -1,0 +1,106 @@
+{
+  "built_at": "2026-09-18T23:32:32.476810+00:00",
+  "decision_request": null,
+  "exact_values": {
+    "target": {
+      "content_length": 40605,
+      "content_sha256": "7803e6ee9794db0830a35187910aa03238da75a5c8329f70abb8d1f8e1034357",
+      "content_type": "text/html; charset=utf-8",
+      "employer": "Amazon",
+      "extraction_method": "regex-title-plus-tag-strip (lossy, no JS)",
+      "http_status": 200,
+      "observation_method": "plain HTTPS GET of publicly visible page (no auth, no JS)",
+      "observed_at": "2026-09-18T23:31:06.645195+00:00",
+      "page_title": "Software Development Engineer I, FinOps FP&amp;A - Job ID: 10432823 | Amazon.jobs",
+      "posting_id": "10432823",
+      "posting_url": "https://www.amazon.jobs/en/jobs/10432823/software-development-engineer-i-finops-fp-a",
+      "text_sample": "Software Development Engineer I, FinOps FP&amp;A - Job ID: 10432823 | Amazon.jobs Skip to main content &times; Home Teams Locations Job categories My career My applications My profile Account security Settings Sign out Resources Accommodations Benefits Inclusive experiences How We Hire Leadership principles Working at Amazon FAQ Software Development Engineer I, FinOps FP&amp;A Job ID: 10432823 | ADCI - Karnataka Apply now Description About the Organization: Amazon is a US-based multinational electronic commerce company headquartered in Seattle, Washington. Amazon.com started as an online bookstore, but soon diversified into many other categories, with a vision to be earth's most customer-centric company & to build a place where people can come to find and discover anything they might want to buy online. About the role: Amazon's Global Finance Services (GFS) team is a fast-paced, team-focused, dynamic environment and delivering great experiences for our customers is top priority. GFS is seeking a Software Development Engineer. As an Amazon SDE, You will design, develop, and deploy reliable distributed solutions at Amazon scale, working with core technologies including Java, Linux,AWS services and GenAI. Collaboration with teams across Amazon will be essential as you help redefine the industry. The ideal candidate excels in ambiguous environments, builds high-risk components first, and maintains focus on architectural goals while delivering incremental launches. You should create scalable, robust, and elegant solutions, valuing simplicity in solving complex problems. Your analytical approach should be data-driven, with a deep understanding of customer needs and a passion for innovating on their behalf. You will participate in setting development team quality standards while maintaining a big-picture perspective. As a team player, you recognize that amazing results come from smart, creative, and empathetic teammates. You actively foster an inclusive team culture, provide constructive feedback, and help grow team members while holding them accountable for smart decisions and results. This role offers continuous learning opportunities, the chance to make a positive impact, and an engaging work atmosphere where you'll tackle novel challenges daily. Key job responsibilities Define, design, and implement multi-tier distributed software applications. Estimate engineering effort, plan implementation, and rollout system changes that meet requirements for functionality, performance, scalability, reliability, and adherence to development goals and principles. Must be able to independently design code and test major features, as well as work jointly with other team members to deliver complex changes. Must be able to effectively collaborate in a fast paced environment with multiple teams in a large organization (software development, QA, Project/Release Management, Build and Release, etc.,). Provide on-call production support for payment platform applications Key job responsibilities Key job responsibilities Define, design, and implement multi-tier distributed software applications. Estimate engineering effort, plan implementation, and rollout system changes that meet requirements for functionality, performance, scalability, reliability, and adherence to development goals and principles. Must be able to independently design code and test major features, as well as work jointly with other team members to deliver complex changes. Must be able to effectively collaborate in a fast paced environment with multiple teams in a large organization (software development, QA, Project/Release Management, Build and Release, etc.,). Provide on-call production support for payment platform applications Basic Qualifications - Experience programming with at least one software programming language - 1+ years of non-internship professional software development experience Preferred Qualifications - Bachelor's degree in computer science or equivalent Our inclusive",
+      "text_sample_truncated": true
+    }
+  },
+  "material_digest": "74917eef73be63b501ef072a4b4df5152507080780ead6bc7cd3de94e2b9505f",
+  "packet_id": "KEEL-CANARY-001",
+  "packet_sha256": "a00888750f0c0178989364e63a98bf08d4dea1a0371fc348965b756f399fd343",
+  "packet_version": "keel-review-packet/1.0.0",
+  "provenance": {
+    "answers": {
+      "observed_at": "2026-09-18T23:31:06.649039+00:00",
+      "provenance": "unknown",
+      "source_ref": "not-observed",
+      "source_version": "unknown"
+    },
+    "attachments": {
+      "observed_at": "2026-09-18T23:31:06.649048+00:00",
+      "provenance": "unknown",
+      "source_ref": "not-observed",
+      "source_version": "unknown"
+    },
+    "form": {
+      "observed_at": "2026-09-18T23:31:06.649024+00:00",
+      "provenance": "unknown",
+      "source_ref": "not-observed",
+      "source_version": "unknown"
+    },
+    "policy": {
+      "observed_at": "2026-09-18T23:31:06.648986+00:00",
+      "provenance": "unknown",
+      "source_ref": "not-observed",
+      "source_version": "unknown"
+    },
+    "route": {
+      "observed_at": "2026-09-18T23:31:06.649058+00:00",
+      "provenance": "unknown",
+      "source_ref": "not-observed",
+      "source_version": "unknown"
+    },
+    "target": {
+      "observed_at": "2026-09-18T23:31:06.645195+00:00",
+      "provenance": "authentic_observation",
+      "source_ref": "https://www.amazon.jobs",
+      "source_version": "7803e6ee9794db08"
+    }
+  },
+  "revisions": {
+    "answers": null,
+    "attachments": null,
+    "form": null,
+    "policy": null,
+    "route": null,
+    "target": "d4dd915ad5864bb0ab2f68ab09ed5fc3d3ad1e27fd4285c35f701f62e061760c"
+  },
+  "schema": "keel.review_packet.v1",
+  "scope": {
+    "action": "observe_public_posting",
+    "application_id": "canary-001-unsubmitted",
+    "role_id": "canary-001-amazon-10432823",
+    "workspace_id": "keel-canary"
+  },
+  "status": "BLOCKED-PENDING-EVIDENCE",
+  "unresolved_warnings": [
+    {
+      "component": "policy",
+      "state": "UNKNOWN",
+      "warning": "no applicant-flow policy record is publicly exposed; a governing policy record only exists inside an authenticated applicant session, which was not attempted"
+    },
+    {
+      "component": "form",
+      "state": "UNKNOWN",
+      "warning": "the application form schema is only served inside an authenticated applicant flow; no form was started and no account was created"
+    },
+    {
+      "component": "answers",
+      "state": "UNKNOWN",
+      "warning": "no answers exist; no form was submitted"
+    },
+    {
+      "component": "attachments",
+      "state": "UNKNOWN",
+      "warning": "no attachments exist; no application materials were uploaded"
+    },
+    {
+      "component": "route",
+      "state": "UNKNOWN",
+      "warning": "no submission route or applicant account exists; nothing was submitted and no account was created"
+    }
+  ]
+}

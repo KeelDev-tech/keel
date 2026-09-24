@@ -1,0 +1,10 @@
+{
+  "reviewers": [
+    {"reviewer_id": "SYNTHETIC-SOURCE", "independence_group": "A", "family": "deterministic-rules", "method": "source-check", "capabilities": ["source-grounding", "claim-matching"], "available": true, "cost_units": 2, "latency_ms": 80},
+    {"reviewer_id": "SYNTHETIC-ADVERSARY", "independence_group": "B", "family": "local-model-placeholder", "method": "counterexample-review", "capabilities": ["contradiction-review"], "available": true, "cost_units": 5, "latency_ms": 5000},
+    {"reviewer_id": "SYNTHETIC-UNAVAILABLE", "independence_group": "C", "family": "another-placeholder", "method": "audit", "capabilities": ["source-grounding", "claim-matching", "contradiction-review"], "available": false, "cost_units": 0, "latency_ms": 1}
+  ],
+  "required_capabilities": ["source-grounding", "claim-matching", "contradiction-review"],
+  "budget_units": 7,
+  "latency_limit_ms": 6000
+}

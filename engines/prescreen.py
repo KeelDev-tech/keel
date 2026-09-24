@@ -98,7 +98,16 @@ NO_AI_ATTEST_RE = [
     re.compile(r"\bno-?ai\b", re.I),
     re.compile(r"unaided", re.I),
     re.compile(r"without.{0,25}ai.{0,25}(assistance|help|aid)", re.I),
+    re.compile(r"\bno[\s-]+(?:ai|artificial intelligence)\b", re.I),
+    re.compile(r"\bwithout\s+(?:any\s+)?(?:automated\s+)?assistance\b", re.I),
+    re.compile(r"\bindependently\b", re.I),
+    re.compile(r"\b(?:did|have|has)\s+not\s+use(?:d)?\b.{0,40}\b(?:ai|artificial intelligence)\b", re.I),
 ]
+
+
+def _no_ai_hard_stop(text):
+    """No-AI/unaided attestations never inherit ordinary truthfulness consent."""
+    return any(pattern.search(str(text or "")) for pattern in NO_AI_ATTEST_RE)
 
 # Pre-authorized attestation scope. These answer-bank keys correspond to
 # STANDARD application-form legal attestations (arbitration agreement,
@@ -510,6 +519,8 @@ def extract_required_text_questions(intel):
 def question_mappable(question, answer_bank):
     """True only if an answer_bank answer key or banded-question rule clearly
     covers the question. `answer_bank` is the loaded answer_bank.json dict."""
+    if _no_ai_hard_stop(question):
+        return False, None
     answers = (answer_bank or {}).get("answers", {})
     banded = (answer_bank or {}).get("banded_questions", {})
     valid_keys = set(answers) | set(banded)
@@ -534,6 +545,13 @@ def screen_packet(packet, answer_bank, employer_patterns=None):
     brief = packet.get("brief", "") or ""
     company = packet.get("company", "") or ""
     intel = extract_form_intel(brief)
+
+    # Inspect each complete question before narrower pre-authorized mappings.
+    # Combined checkbox statements may put the no-AI clause hundreds of
+    # characters beyond the truthfulness clause, outside a match window.
+    for line in intel.splitlines():
+        if re.search(r"\[(?:text|checkbox|radio|dropdown)\]", line, re.I) and _no_ai_hard_stop(line):
+            reasons.append("Required no-AI / unaided-work attestation needs the applicant's explicit word (attest): " + line[:160])
 
     # Posting-text eligibility: hard blockers that live on the posting,
     # invisible to form-intel screening. Screened ONLY on posting_text —

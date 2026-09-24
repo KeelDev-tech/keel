@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "archive_sha256": "1cbe0db81f839f6d30b9a240b365a8780071fbd60a6d0d632fbfced7e27b112e",
+  "manifested_files": 180,
+  "all_manifested_files_still_match": true,
+  "original_runtime_tests": "NOT_RUN",
+  "source_writes": 0
+}

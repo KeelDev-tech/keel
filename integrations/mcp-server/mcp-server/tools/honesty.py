@@ -2,7 +2,7 @@
 
 keel_probe_form wraps Keel's production HTTP form extractor
 (form_intel.probe_url): Greenhouse embed API / Lever postings API, graceful
-empty dict for unknown ATS. Read-only HTTP.
+unavailable observations carry explicit holds. Read-only HTTP.
 
 keel_truthfulness_check wraps resume_tailor.truthfulness_check: given a
 caller-supplied profile and role, it lists hard requirements the profile
@@ -13,17 +13,26 @@ This is the "refuses to lie" guarantee as a tool.
 from __future__ import annotations
 
 import keel_bridge
+from urllib.error import HTTPError, URLError
 
 
 def keel_probe_form(url: str) -> dict:
     """Extract a job application's form questions over HTTP.
 
     Returns {"ats", "questions": [{label, options}], "form_url"}.
-    Unknown ATS degrades gracefully to an empty intel dict.
+    Unavailable observations return an explicit hold with questions=None.
     Args:
         url: the application/posting URL to probe.
     """
-    return keel_bridge.form_intel_mod.probe_url(url)
+    try:
+        return keel_bridge.form_intel_mod.probe_url(url)
+    except (URLError, TimeoutError, ValueError) as exc:
+        limited = ((isinstance(exc, HTTPError) and exc.code == 429)
+                   or type(exc).__name__ == 'HostRateLimited')
+        return {'status': 'RATE_LIMITED' if limited else 'UNAVAILABLE',
+                'questions': None, 'extraction_complete': False,
+                'execution_authorized': False, 'advisory': True,
+                'error_code': type(exc).__name__}
 
 
 def keel_truthfulness_check(profile: dict, role: dict) -> dict:

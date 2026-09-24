@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "source_revision": "synthetic-example-NOT-live-evidence",
+  "complete": true,
+  "observed_at": "2026-09-18T07:10:00+00:00",
+  "ready": 5,
+  "leads": [
+    {
+      "role_id": "SYNTHETIC-COOLDOWN",
+      "status": "PARKED-PENDING-VERIFICATION",
+      "fit_score": 82,
+      "action_band": "APPLY",
+      "holds": [],
+      "structurally_blocked": false,
+      "last_verify_attempt": "2026-09-18T06:10:00+00:00",
+      "cooldown": {
+        "base_hours": 24,
+        "jitter_delta_hours": 1.5,
+        "effective_hours": 25.5,
+        "policy_revision": "synthetic-policy-only",
+        "reported_in_cooldown": true,
+        "reported_eligible_at": "2026-09-19T07:40:00+00:00"
+      }
+    },
+    {
+      "role_id": "SYNTHETIC-STRUCTURAL",
+      "status": "PARKED-PENDING-VERIFICATION",
+      "fit_score": 82,
+      "action_band": "APPLY",
+      "holds": [],
+      "structurally_blocked": true,
+      "last_verify_attempt": "2026-09-18T06:10:00+00:00",
+      "cooldown": {
+        "base_hours": 24,
+        "jitter_delta_hours": 1.5,
+        "effective_hours": 25.5,
+        "policy_revision": "synthetic-policy-only",
+        "reported_in_cooldown": true,
+        "reported_eligible_at": "2026-09-19T07:40:00+00:00"
+      },
+      "structural_rules": [
+        {
+          "rule_id": "synthetic-rule",
+          "field": "gate_note",
+          "evidence_ref": "fixture:historical-note",
+          "contradiction_ref": "fixture:review-needed"
+        }
+      ]
+    },
+    {
+      "role_id": "SYNTHETIC-CONSENT",
+      "status": "PARKED-PENDING-VERIFICATION",
+      "fit_score": 82,
+      "action_band": "APPLY",
+      "holds": [
+        "consent_quarantine"
+      ],
+      "structurally_blocked": false,
+      "last_verify_attempt": "2026-09-18T06:10:00+00:00",
+      "cooldown": {
+        "base_hours": 24,
+        "jitter_delta_hours": 1.5,
+        "effective_hours": 25.5,
+        "policy_revision": "synthetic-policy-only",
+        "reported_in_cooldown": true,
+        "reported_eligible_at": "2026-09-19T07:40:00+00:00"
+      }
+    },
+    {
+      "role_id": "SYNTHETIC-LOW-FIT",
+      "status": "PARKED-PENDING-VERIFICATION",
+      "fit_score": 74,
+      "action_band": "APPLY",
+      "holds": [],
+      "structurally_blocked": false,
+      "last_verify_attempt": "2026-09-18T06:10:00+00:00",
+      "cooldown": {
+        "base_hours": 24,
+        "jitter_delta_hours": 1.5,
+        "effective_hours": 25.5,
+        "policy_revision": "synthetic-policy-only",
+        "reported_in_cooldown": true,
+        "reported_eligible_at": "2026-09-19T07:40:00+00:00"
+      }
+    }
+  ]
+}

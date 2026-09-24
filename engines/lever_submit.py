@@ -36,6 +36,11 @@ import os
 import re
 import sys
 import urllib.request
+
+try:
+    from .safe_http import urlopen as safe_urlopen
+except ImportError:  # Direct script / legacy engines-on-sys.path entry points.
+    from safe_http import urlopen as safe_urlopen
 import urllib.error
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -62,7 +67,7 @@ def fetch_apply_html(org, posting_id, timeout=25):
         "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
                       "(KHTML, like Gecko) Chrome/120.0 Safari/537.36",
     })
-    with urllib.request.urlopen(req, timeout=timeout) as r:
+    with safe_urlopen(req, timeout=timeout) as r:
         return r.read().decode("utf-8", errors="replace")
 
 

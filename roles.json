@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "boundary": "CLI workflow constraints only. Roles do not authenticate a person or sandbox direct Python execution. They are review responsibilities, not claims that independent agents ran.",
+  "roles": {
+    "operator": {
+      "cli_actions": [
+        "init",
+        "doctor",
+        "dashboard",
+        "prepare",
+        "confirm-answer",
+        "validate-packet",
+        "roles",
+        "source-add",
+        "discover",
+        "verify",
+        "supply",
+        "prepare-role",
+        "flush-outbox",
+        "demo"
+      ],
+      "responsibility": "Applicant truth, scope and release decisions; resolve conflicts using evidence."
+    },
+    "discovery": {
+      "cli_actions": [
+        "doctor",
+        "roles",
+        "discover",
+        "verify",
+        "supply"
+      ],
+      "responsibility": "Source identity, freshness, deduplication and permitted public reads; no claims of submission."
+    },
+    "preparation": {
+      "cli_actions": [
+        "doctor",
+        "prepare",
+        "validate-packet",
+        "roles",
+        "prepare-role",
+        "supply"
+      ],
+      "responsibility": "Materials and question coverage; no answer invention or legal commitments."
+    },
+    "evidence": {
+      "cli_actions": [
+        "doctor",
+        "dashboard",
+        "validate-packet",
+        "roles",
+        "supply"
+      ],
+      "responsibility": "Distinguish claims, correlation and verification; require a trusted receipt adapter for verified outcomes."
+    },
+    "qa": {
+      "cli_actions": [
+        "doctor",
+        "validate-packet",
+        "roles",
+        "supply"
+      ],
+      "responsibility": "Adversarial cases, reproducibility, concurrency, recovery and source-bound test evidence."
+    },
+    "security": {
+      "cli_actions": [
+        "doctor",
+        "validate-packet",
+        "roles",
+        "supply"
+      ],
+      "responsibility": "Review network, file, credential and authority boundaries; test bypass attempts."
+    },
+    "ux": {
+      "cli_actions": [
+        "doctor",
+        "dashboard",
+        "roles",
+        "supply"
+      ],
+      "responsibility": "Clear next actions, honest empty/error states, keyboard and small-screen use."
+    },
+    "reliability": {
+      "cli_actions": [
+        "doctor",
+        "dashboard",
+        "validate-packet",
+        "roles",
+        "supply"
+      ],
+      "responsibility": "State invariants, recoverability, bounded work and truthful observability."
+    }
+  }
+}

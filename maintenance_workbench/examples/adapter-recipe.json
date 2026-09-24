@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "name": "adapter-compatibility",
+  "steps": [
+    {
+      "id": "syntax",
+      "operation": "syntax",
+      "needs": [],
+      "args": {}
+    },
+    {
+      "id": "contract",
+      "operation": "adapter_contract",
+      "needs": [
+        "syntax"
+      ],
+      "args": {
+        "schema_path": "contracts/request.json",
+        "mapping_path": "adapter-map.json",
+        "input_path": "fixtures/input.json"
+      }
+    },
+    {
+      "id": "context",
+      "operation": "search",
+      "needs": [],
+      "args": {
+        "paths": [
+          "docs/adapter.md"
+        ],
+        "query": "contract changes"
+      }
+    },
+    {
+      "id": "impact",
+      "operation": "impact",
+      "needs": [],
+      "args": {
+        "paths": [
+          "contracts/request.json"
+        ]
+      }
+    }
+  ],
+  "required_checks": [
+    "syntax",
+    "contract"
+  ]
+}

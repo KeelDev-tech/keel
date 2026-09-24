@@ -93,6 +93,10 @@ GATE_TYPES = {
     "breezy_blocked",  # pulse 34 (2026-09-15): ARM 112 dry-run pre-flight refusal gate
     "packet_shelved",  # pulse 35 (2026-09-15): ARM 118 emits gate_blocked/details.gate=packet_shelved at every unsubmitted _archive_packet point
     "edge_flip", "new_ats_detected", "ashby_spam_flag",
+    # J-20260922-1859-ats--4856 (2026-09-22): the probe heuristic tried to
+    # auto-flip an operator-authorized supervised verdict but the pin held —
+    # verdict unchanged, no auto-overwrite. Emitted by edge_probe.
+    "edge_flip_pin_held",
     "materials_missing", "materials_demoted", "inflight_cap",
     "feeder_empty", "stale_inflight",
     "recording_consent",  # ARM 67 (2026-09-15): required interview-recording consent is the applicant's own decision

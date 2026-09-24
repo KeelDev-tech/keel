@@ -1,0 +1,164 @@
+--- a/queue_io.py
++++ b/queue_io.py
+@@ -67,6 +67,8 @@
+ import os
+ import sys
+ import threading
++import tempfile
++import math
+ import time
+ from datetime import datetime
+ from zoneinfo import ZoneInfo
+@@ -86,7 +88,7 @@
+     never a hardcoded offset.
+ 
+     Returns an aware datetime in America/Los_Angeles. Format for queue
+-    stamps: pdt_now().strftime("%Y-%m-%d %H:%M PDT").
++    stamps: pdt_now().strftime("%Y-%m-%d %H:%M %Z").
+     """
+     return datetime.now(_PDT)
+ 
+@@ -315,7 +317,7 @@
+ 
+ 
+ @contextlib.contextmanager
+-def queue_lock(timeout=None, owner=None):
++def _default_queue_lock(timeout=None, owner=None):
+     """Exclusive, reentrant-in-process lock for queue file writes.
+ 
+     timeout: waiter bound in seconds (default 120). On expiry raises
+@@ -388,30 +390,111 @@
+     return data
+ 
+ 
++@contextlib.contextmanager
++def queue_lock(timeout=None, owner=None, lock_path=None):
++    """A path-local lock without mutating the process-global test configuration."""
++    limit = _LOCK_TIMEOUT_S if timeout is None else timeout
++    if type(limit) not in (int, float) or not math.isfinite(limit) or limit < 0:
++        raise ValueError("timeout must be finite and nonnegative")
++    if lock_path is None or os.path.abspath(lock_path) == os.path.abspath(_LOCK_PATH):
++        with _default_queue_lock(timeout=limit, owner=owner):
++            yield
++        return
++    path = os.path.abspath(lock_path)
++    depths = getattr(_state, "path_depths", None)
++    if depths is None:
++        depths = _state.path_depths = {}
++    if depths.get(path, 0):
++        depths[path] += 1
++        try:
++            yield
++        finally:
++            depths[path] -= 1
++        return
++    os.makedirs(os.path.dirname(path), exist_ok=True)
++    with open(path, "a+") as handle:
++        start = time.monotonic()
++        while True:
++            try:
++                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
++                break
++            except BlockingIOError:
++                elapsed = time.monotonic() - start
++                if elapsed >= limit:
++                    raise QueueLockTimeout(None, "explicit lock: " + path, elapsed, limit)
++                time.sleep(min(_LOCK_POLL_S, max(0, limit - elapsed)))
++        depths[path] = 1
++        try:
++            yield
++        finally:
++            depths.pop(path, None)
++            fcntl.flock(handle, fcntl.LOCK_UN)
++
++
+ def atomic_write_json(path, items):
+-    """Crash-safe write (tmp + os.replace). Caller must hold queue_lock()."""
+-    tmp = path + ".tmp"
+-    with open(tmp, "w") as f:
+-        json.dump(items, f, indent=1)
+-    os.replace(tmp, path)
+-
+-
+-def patch_entry(path, role_id, fields):
+-    """Atomically merge `fields` into the entry with `role_id`.
+-
+-    Returns True when the entry was found and patched.
+-    """
+-    found = False
+-    with queue_lock(owner=f"patch_entry:{role_id}"):
+-        items = load_json(path)
+-        for e in items:
+-            if e.get("role_id") == role_id:
+-                e.update(fields)
+-                found = True
+-                break
+-        if found:
+-            atomic_write_json(path, items)
+-    return found
++    """File + directory fsync; caller holds queue_lock. Not a multi-file txn."""
++    path = os.fspath(path)
++    parent = os.path.dirname(os.path.abspath(path))
++    fd, tmp = tempfile.mkstemp(prefix=".queue-", dir=parent)
++    try:
++        with os.fdopen(fd, "w") as f:
++            json.dump(items, f, indent=1, allow_nan=False)
++            f.flush()
++            os.fsync(f.fileno())
++        os.replace(tmp, path)
++        directory = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
++        try:
++            os.fsync(directory)
++        finally:
++            os.close(directory)
++    finally:
++        if os.path.exists(tmp):
++            os.unlink(tmp)
++
++
++def _document_entries(document):
++    if isinstance(document, list):
++        rows = document
++    elif isinstance(document, dict):
++        keys = [k for k in ("leads", "entries", "items") if k in document]
++        if len(keys) != 1:
++            raise ValueError("ambiguous queue wrapper")
++        rows = document[keys[0]]
++    else:
++        raise ValueError("invalid queue document")
++    if not isinstance(rows, list) or any(not isinstance(x, dict) for x in rows):
++        raise ValueError("invalid queue rows")
++    return rows
++
++
++def patch_entry(path, role_id, fields, lock_path=None):
++    """Merge one existing entry, preserving wrapper metadata and queue shape."""
++    with queue_lock(owner=f"patch_entry:{role_id}", lock_path=lock_path):
++        with open(path) as handle:
++            document = json.load(handle)
++        matches = [e for e in _document_entries(document) if e.get("role_id") == role_id]
++        if len(matches) > 1:
++            raise ValueError("ambiguous role identity; refusing mutation")
++        if not matches:
++            return False
++        matches[0].update(fields)
++        atomic_write_json(path, document)
++        return True
++
++
++def park_entry(path, role_id, blockers, note, lock_path=None):
++    """Park in the current canonical queue; never lose a missing lead silently.
++
++    Cross-queue moves still belong to the live canonical parking transaction.
++    """
++    from parking_schema import assert_park_entry
++    fields = {"status": "NEEDS_INPUT", "unresolved": blockers,
++              "status_reason": note, "queue_notes": [note],
++              "status_updated": pdt_now().isoformat()}
++    assert_park_entry(fields)
++    if not patch_entry(path, role_id, fields, lock_path=lock_path):
++        raise KeyError("cannot park a role absent from its canonical queue")
++    return fields
+ 
+ 
+ if __name__ == "__main__":

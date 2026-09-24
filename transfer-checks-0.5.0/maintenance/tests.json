@@ -1,0 +1,19 @@
+{
+  "error_test_ids": [],
+  "errors": 0,
+  "expected_failures": 0,
+  "failed_test_ids": [],
+  "failures": 0,
+  "network_guard": "host_socket_APIs_blocked; trusted_static_parser_subprocess_only",
+  "os_sandbox_validation": "NOT_RUN",
+  "platform": "Linux",
+  "production_deployed": false,
+  "python": "3.12.3",
+  "schema_version": 1,
+  "scope": "maintenance_workbench_own_tests_not_KEEL_private_executor",
+  "skipped": 0,
+  "sqlite": "3.45.1",
+  "status": "PASS",
+  "tests_run": 131,
+  "unexpected_successes": 0
+}

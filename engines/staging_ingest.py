@@ -373,9 +373,19 @@ def check_stale_staging(staged_dir=STAGED_DIR, settle_seconds=SETTLE_SECONDS):
 
 
 def load_queue_keys(queue_dir=QUEUE_DIR):
-    """(role_ids, normalized (employer, title) keys) across all queues."""
+    """(role_ids, normalized (employer, title) keys) across all queues.
+
+    Underscore-prefixed backup/snapshot files are EXCLUDED: the legacy
+    "*-queue.json" glob matched _backup-* snapshots, so any previously-seen
+    lead was rejected as "duplicate employer+title" from dead backup rows
+    even with nothing live in any queue — making re-admission structurally
+    impossible.
+    """
     ids, keys = set(), set()
     for qf in glob.glob(os.path.join(queue_dir, "*-queue.json")):
+        # Skip backup/snapshot files: only live queue files count.
+        if os.path.basename(qf).startswith("_"):
+            continue
         try:
             entries = json.load(open(qf))
         except Exception:

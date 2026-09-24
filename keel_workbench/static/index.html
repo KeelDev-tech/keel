@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light"><title>Keel · Workbench</title>
+  <link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to workspace</a>
+  <div class="shell">
+    <aside class="sidebar">
+      <a class="brand" href="#overview" aria-label="Keel overview"><span class="brand-mark" aria-hidden="true">k</span><span>keel<span class="brand-sub">WORKBENCH</span></span></a>
+      <div class="workspace-label">YOUR WORKSPACE</div>
+      <nav aria-label="Main navigation" id="navigation">
+        <button data-page="overview" class="active"><span aria-hidden="true">◫</span> Overview</button>
+        <button data-page="pipeline"><span aria-hidden="true">▤</span> Opportunities</button>
+        <button data-page="evidence"><span aria-hidden="true">◇</span> Evidence</button>
+        <button data-page="workflows"><span aria-hidden="true">⇄</span> Workflows</button>
+        <button data-page="twin"><span aria-hidden="true">⌁</span> Twin lab</button>
+        <button data-page="integrations"><span aria-hidden="true">⊞</span> Integrations</button>
+      </nav>
+      <div class="sidebar-note"><span class="status-dot"></span> Local workspace<p>Open source. Your data stays<br>with this local process.</p></div>
+      <div class="sidebar-footer"><span class="avatar">K</span><div>Keel Workbench<small>v0.1.0 · Apache 2.0</small></div></div>
+    </aside>
+    <div class="workspace">
+      <header class="topbar"><div class="breadcrumb">Workspace <span>/</span> <strong id="breadcrumb">Overview</strong></div><div class="topbar-right"><span id="mode-pill" class="pill neutral">Connecting</span><button id="refresh" class="icon-button" aria-label="Refresh workspace" title="Refresh workspace">↻</button></div></header>
+      <div id="notice" class="notice" hidden role="status"></div>
+      <main id="main" tabindex="-1"></main>
+      <footer class="workspace-footer"><span>Keel 0.7 + Workbench 0.1</span><span>Review &amp; simulation · execution stays with the authorized host</span></footer>
+    </div>
+  </div>
+  <dialog id="detail" aria-labelledby="detail-title"><button id="close-detail" class="icon-button close" aria-label="Close details">×</button><div id="detail-content"></div></dialog>
+  <div id="toast" class="toast" hidden role="status"></div>
+</body>
+</html>

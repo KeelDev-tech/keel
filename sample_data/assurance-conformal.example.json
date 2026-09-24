@@ -1,0 +1,15 @@
+{
+  "calibration_records": [
+    {"id": "SYNTHETIC-C1", "probability": 0.9, "outcome": true},
+    {"id": "SYNTHETIC-C2", "probability": 0.2, "outcome": false},
+    {"id": "SYNTHETIC-C3", "probability": 0.7, "outcome": true},
+    {"id": "SYNTHETIC-C4", "probability": 0.3, "outcome": false},
+    {"id": "SYNTHETIC-C5", "probability": 0.8, "outcome": true}
+  ],
+  "training_ids": ["SYNTHETIC-TRAINING-ID-NOT-A-REAL-MODEL"],
+  "test_records": [
+    {"id": "SYNTHETIC-T1", "probability": 0.8, "outcome": null},
+    {"id": "SYNTHETIC-T2", "probability": 0.5, "outcome": null}
+  ],
+  "alpha": 0.1
+}

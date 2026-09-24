@@ -19,7 +19,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from safe_io import ROW_KEYS  # live's canonical row-container contract
+from safe_io import rows, read_json, atomic_bytes
 
 HOME = Path(os.environ.get("KEEL_HOME", str(Path.home() / "keel")))
 LEDGER = HOME / "data" / "application-ledger.json"
@@ -39,13 +39,13 @@ def load_json(path):
     """
     path = Path(path)
     try:
-        raw = path.read_text()
+        if not path.is_file():
+            raise FileNotFoundError(path)
+        return as_items(read_json(path)), None
     except FileNotFoundError:
         return None, f"{path.name} is missing; its counts are unknown"
     except OSError as exc:
         return None, f"{path.name} could not be read ({exc}); its counts are unknown"
-    try:
-        return as_items(json.loads(raw)), None
     except (ValueError, AttributeError, TypeError):
         return None, f"{path.name} is malformed; its counts are unknown"
 
@@ -58,14 +58,7 @@ def as_items(d):
     # healthy zero for data that is present, the exact gap K31 exists to
     # stop. Non-dict/non-list top-level values keep failing closed through
     # load_json's (None, warning) path.
-    if isinstance(d, list):
-        return d
-    if not isinstance(d, dict):
-        raise TypeError("expected a row list or supported object container")
-    for key in ROW_KEYS:
-        if key in d:
-            return d[key]
-    return []
+    return rows(d)
 
 
 def esc(s):
@@ -117,17 +110,23 @@ def collect(home=HOME):
     queues = {}
     queue_dir = home / "data" / "queues"
     queues_known = True
-    if queue_dir.exists():
-        for qf in sorted(queue_dir.glob("*.json")):
+    if queue_dir.is_dir():
+        required = {queue_dir / (name + '-queue.json')
+                    for name in ('standard', 'strategic', 'needs_input')}
+        for qf in sorted(required | set(queue_dir.glob("*.json"))):
             items, w = load_json(qf)
             if w:
                 data["warnings"].append(w)
-            queues[qf.stem] = None if items is None else len(items)
+            label = qf.stem.removesuffix('-queue') if qf in required else qf.name
+            queues[label] = None if items is None else len(items)
+            if items is None:
+                queues_known = False
     else:
         queues_known = False
         data["warnings"].append("queues directory is missing; queue counts are unknown")
     data["queues"] = queues
     data["queues_known"] = queues_known
+    data["queue_total"] = sum(queues.values()) if queues_known else None
 
     # Backlog: extract ranked QUEUED items (optional file)
     backlog_items = []
@@ -158,25 +157,40 @@ def collect(home=HOME):
     gate_blocks = None
     tel_path = home / "data" / "telemetry" / "events.jsonl"
     try:
-        tel_text = tel_path.read_text()
-    except OSError:
+        with tel_path.open('rb') as stream:
+            raw = stream.read(16 * 1024 * 1024 + 1)
+        if len(raw) > 16 * 1024 * 1024:
+            raise ValueError('telemetry size limit exceeded')
+        tel_text = raw.decode('utf-8')
+    except (OSError, ValueError):
         data["warnings"].append(
             "telemetry events.jsonl is missing; gate-block counts are unknown")
     else:
         counts = {}
+        malformed = False
         for line in tel_text.splitlines():
             line = line.strip()
             if not line:
                 continue
             try:
-                ev = json.loads(line)
-            except ValueError:
+                from safe_io import loads
+                ev = loads(line)
+                if not isinstance(ev, dict) or not isinstance(ev.get('details', {}), dict):
+                    raise ValueError('invalid event shape')
+            except (ValueError, TypeError):
+                malformed = True
                 continue
             if (ev.get("event_type") or ev.get("type")) != "gate_blocked":
                 continue
             gate = (ev.get("details") or {}).get("gate") or "unknown"
+            if not isinstance(gate, str):
+                malformed = True
+                continue
             counts[gate] = counts.get(gate, 0) + 1
-        gate_blocks = counts
+        if malformed:
+            data['warnings'].append('telemetry contains malformed events; gate-block counts are unknown')
+        else:
+            gate_blocks = counts
     data["gate_blocks"] = gate_blocks
 
     data["now"] = datetime.now(TZ).strftime("%A, %b %d — %I:%M %p")
@@ -229,7 +243,7 @@ def render(data):
 
     gate_blocks = data.get("gate_blocks")
     if gate_blocks is None:
-        gate_html = "<p class='dim'>Unknown — telemetry log missing.</p>"
+        gate_html = "<p class='dim'>Unknown — telemetry is missing or incomplete.</p>"
     elif not gate_blocks:
         gate_html = "<p class='dim'>No gate blocks recorded.</p>"
     else:
@@ -279,12 +293,12 @@ td:first-child{{color:#8b9bab;white-space:nowrap;width:110px}}
 .prow{{background:#1c1618;border:1px solid #3a2a2e;border-radius:10px;padding:11px 14px;margin-bottom:8px;font-size:13px}}
 footer{{margin:26px 0 10px;color:#5b6b7d;font-size:12px;line-height:1.6}}
 </style></head><body>
-<div class="live">● LIVE — AUTO-REFRESHED</div>
+<div class="live">LOCAL SNAPSHOT</div>
 <h1>Keel</h1>
-<div class="sub">Updated {esc(now)} · evidence-only counts · ledger-verified</div>
+<div class="sub">Updated {esc(now)} · Provider verification is not connected</div>
 {warning_html}
 <div class="score">
-<div class="stat"><div class="n">{submitted_n}</div><div class="l">Applications<br>submitted</div></div>
+<div class="stat"><div class="n">{submitted_n}</div><div class="l">Reported submission claims</div></div>
 <div class="stat"><div class="n">{interviews_n}</div><div class="l">Interview<br>invites</div></div>
 <div class="stat"><div class="n">{queue_total}</div><div class="l">Roles in<br>queues</div></div>
 </div>
@@ -292,7 +306,7 @@ footer{{margin:26px 0 10px;color:#5b6b7d;font-size:12px;line-height:1.6}}
 <h2>Interview pipeline — needs you</h2>
 {interview_html}
 
-<h2>Recent submissions</h2>
+<h2>Recent submission claims</h2>
 <div class="card"><table>{recent_rows}</table></div>
 
 <h2>Queues</h2>
@@ -308,7 +322,7 @@ footer{{margin:26px 0 10px;color:#5b6b7d;font-size:12px;line-height:1.6}}
 {gate_html}
 
 <footer>
-Standing rules: clean leads needing nothing from you are auto-submitted. No outreach, no payments, no fabricated credentials. Items needing your input are parked, never prompted repeatedly. Counts increment only on explicit confirmation pages.
+This is an offline view of local records. Status labels are claims, not provider confirmations. Preparing a packet does not submit an application or authorize an executor.
 </footer>
 </body></html>"""
     return html_doc
@@ -320,7 +334,7 @@ def build(home=HOME, out=None):
     out = Path(out) if out is not None else home / "dashboard" / "dashboard.html"
     html_doc = render(collect(home))
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(html_doc)
+    atomic_bytes(out, html_doc.encode('utf-8'))
     return out, html_doc
 
 

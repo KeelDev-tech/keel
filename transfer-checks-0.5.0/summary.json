@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "status": "PASS",
+  "runs": [
+    {
+      "suite": "main",
+      "exit_code": 0
+    },
+    {
+      "suite": "maintenance",
+      "exit_code": 0
+    }
+  ],
+  "suites": [
+    {
+      "suite": "main_flow_and_trust",
+      "tests": 642,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "maintenance",
+      "tests": 131,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "status": "PASS"
+    }
+  ],
+  "tests_run": 773,
+  "production_deployed": false,
+  "scope": "supplied source plus integration regressions; private guardian/adapters not present"
+}

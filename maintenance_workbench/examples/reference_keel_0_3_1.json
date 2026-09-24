@@ -1,0 +1,532 @@
+{
+  "schema_version": 1,
+  "workspace": "keel-0.3.1-review",
+  "files": [
+    {
+      "path": "engines/api_direct_detect.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/apply_loop.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/ashby_lever_json_enumerate.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/ats.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/ats_discovery/__init__.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/ats_discovery/bamboohr.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/ats_discovery/breezy.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/ats_discovery/fetcher.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/ats_discovery/normalize.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/ats_discovery/personio.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/ats_discovery/pinpoint.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/ats_discovery/recruitee.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/ats_discovery/rippling.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/ats_discovery/smartrecruiters.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/ats_discovery/sweep.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/ats_discovery/workable.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/batch_staged_launches.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/breezy_preflight.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/browser_lifecycle_poll.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/build_dashboard.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/clean_board_watch.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/cost_model.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/cost_tracker.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/dedupe_gate.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/edge_probe.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/employer_patterns.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/feeder_watchdog.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/field_question_protocol.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/form_intel.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/genuine_pat.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/greenhouse_board_classify.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/greenhouse_json_enumerate.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/html_form.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/http_cache.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/inbox_listener.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/input_broker.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/input_resolution/__init__.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/input_resolution/apply.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/input_resolution/blocker.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/input_resolution/dedup.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/input_resolution/dry_run.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/input_resolution/metrics.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/input_resolution/preferences.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/input_resolution/recover_watermark.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/interlaunch_metrics.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/keel_paths.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/lane_watchdog.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/launch_lock.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/lever_submit.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/live_cache.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/log_event.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/outcome_analytics.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/outcome_tracking/__init__.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/outcome_tracking/downtime_analytics.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/outcome_tracking/evidence_gate.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/outcome_tracking/invite_surface.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/outcome_tracking/learning_join.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/outcome_tracking/learning_leak_audit.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/outcome_tracking/offer_surface.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/outcome_tracking/proof_points.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/packet_contract.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/packet_watchdog.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/page_capture.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/parked_task_sweep.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/prescreen.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/queue_intake.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/queue_io.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/rate_limits.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/record_outcome.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/resume_tailor.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/safe_http.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/safe_io.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/score_roles.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/staged-launch-preflight.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/staging_ingest.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/title_triage.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/verify_cron.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/verify_retry.py",
+      "kind": "python"
+    },
+    {
+      "path": "engines/verify_retry_async.py",
+      "kind": "python"
+    },
+    {
+      "path": "keel.py",
+      "kind": "python"
+    },
+    {
+      "path": "keel_local/__init__.py",
+      "kind": "python"
+    },
+    {
+      "path": "keel_local/__main__.py",
+      "kind": "python"
+    },
+    {
+      "path": "keel_local/answers.py",
+      "kind": "python"
+    },
+    {
+      "path": "keel_local/contracts.py",
+      "kind": "python"
+    },
+    {
+      "path": "keel_local/measurement.py",
+      "kind": "python"
+    },
+    {
+      "path": "keel_local/operations.py",
+      "kind": "python"
+    },
+    {
+      "path": "keel_local/readiness.py",
+      "kind": "python"
+    },
+    {
+      "path": "monitors/blackboard.py",
+      "kind": "python"
+    },
+    {
+      "path": "monitors/fanout_gate.py",
+      "kind": "python"
+    },
+    {
+      "path": "monitors/pulse_dashboard.py",
+      "kind": "python"
+    },
+    {
+      "path": "monitors/pulse_snapshot.py",
+      "kind": "python"
+    },
+    {
+      "path": "tests/test_blackboard.py",
+      "kind": "python"
+    },
+    {
+      "path": "tests/test_cost_model.py",
+      "kind": "python"
+    },
+    {
+      "path": "tests/test_cost_tracker.py",
+      "kind": "python"
+    },
+    {
+      "path": "tests/test_employer_patterns.py",
+      "kind": "python"
+    },
+    {
+      "path": "tests/test_evidence_gate.py",
+      "kind": "python"
+    },
+    {
+      "path": "tests/test_extended_regressions.py",
+      "kind": "python"
+    },
+    {
+      "path": "tests/test_fanout_gate.py",
+      "kind": "python"
+    },
+    {
+      "path": "tests/test_ingest_envelope.py",
+      "kind": "python"
+    },
+    {
+      "path": "tests/test_input_resolution_port.py",
+      "kind": "python"
+    },
+    {
+      "path": "tests/test_launch_lock_x20.py",
+      "kind": "python"
+    },
+    {
+      "path": "tests/test_loop_watchdog.py",
+      "kind": "python"
+    },
+    {
+      "path": "tests/test_mine_learnings.py",
+      "kind": "python"
+    },
+    {
+      "path": "tests/test_operator_workflow.py",
+      "kind": "python"
+    },
+    {
+      "path": "tests/test_preferences.py",
+      "kind": "python"
+    },
+    {
+      "path": "tests/test_prescreen.py",
+      "kind": "python"
+    },
+    {
+      "path": "tests/test_security_boundaries.py",
+      "kind": "python"
+    },
+    {
+      "path": "tests/test_shadow_contracts_answers.py",
+      "kind": "python"
+    },
+    {
+      "path": "tests/test_shadow_measurement.py",
+      "kind": "python"
+    },
+    {
+      "path": "tests/test_shadow_readiness_operations.py",
+      "kind": "python"
+    },
+    {
+      "path": "tests/test_shared_http.py",
+      "kind": "python"
+    },
+    {
+      "path": "tools/benchmark.py",
+      "kind": "python"
+    },
+    {
+      "path": "tools/make_demo.py",
+      "kind": "python"
+    },
+    {
+      "path": "tools/package.py",
+      "kind": "python"
+    },
+    {
+      "path": "tools/run_tests.py",
+      "kind": "python"
+    },
+    {
+      "path": "tools/source_inventory.py",
+      "kind": "python"
+    },
+    {
+      "path": "tools/test_guard/sitecustomize.py",
+      "kind": "python"
+    },
+    {
+      "path": "tools/text_bundle.py",
+      "kind": "python"
+    },
+    {
+      "path": "worker-charter/assemble_charter.py",
+      "kind": "python"
+    },
+    {
+      "path": "worker-charter/ingest_envelope.py",
+      "kind": "python"
+    },
+    {
+      "path": "worker-charter/loop_watchdog.py",
+      "kind": "python"
+    },
+    {
+      "path": "worker-charter/mine_learnings.py",
+      "kind": "python"
+    },
+    {
+      "path": "README.md",
+      "kind": "text"
+    },
+    {
+      "path": "MUSE_HANDOFF.md",
+      "kind": "text"
+    },
+    {
+      "path": "VERSION",
+      "kind": "text"
+    },
+    {
+      "path": "docs/ARCHITECTURE.md",
+      "kind": "text"
+    },
+    {
+      "path": "docs/ASSURANCE.md",
+      "kind": "text"
+    },
+    {
+      "path": "docs/HTTP_ADMISSION.md",
+      "kind": "text"
+    },
+    {
+      "path": "docs/MIGRATION.md",
+      "kind": "text"
+    },
+    {
+      "path": "docs/VALIDATION.md",
+      "kind": "text"
+    }
+  ],
+  "protected_paths": [
+    "tests/",
+    "tools/",
+    "keel_local/contracts.py"
+  ],
+  "dependencies": []
+}

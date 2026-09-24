@@ -19,15 +19,13 @@ for _name in ("smartrecruiters", "pinpoint", "rippling", "workable",
               "recruitee", "breezy", "bamboohr", "personio"):
     try:
         ADAPTERS[_name] = importlib.import_module(
-            f"ats_discovery.{_name}")
+            f".{_name}", __name__)
     except Exception:
         continue
 del _name
 
 # Expose loaded modules as attributes for `ats_discovery.smartrecruiters` style.
-for _k, _m in ADAPTERS.items():
-    globals()[_k] = _m
-del _k, _m
+globals().update(ADAPTERS)
 
 # Wiring order (validation-ranked). Marginal platforms stay last and guarded.
 WIRING_ORDER = [

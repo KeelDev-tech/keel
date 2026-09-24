@@ -1,0 +1,10 @@
+{
+  "state": "SUPPLY_LIMITED",
+  "target": 5,
+  "prepare": 0,
+  "checks": 0,
+  "unfunded_promotions": 5,
+  "runway_seconds": 0.0,
+  "bounded_diagnostic_checks": 5,
+  "replenishment_eta_seconds": null
+}

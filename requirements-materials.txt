@@ -1,0 +1,2 @@
+# Optional, free PDF rendering library. Not required when supplying existing materials.
+reportlab==4.4.9

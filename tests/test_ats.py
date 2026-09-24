@@ -64,5 +64,22 @@ class TestDetectATS(unittest.TestCase):
                 self.assertEqual(ats.detect_ats(url), expected)
 
 
+    def test_parse_workday_url_forms(self):
+        cases = [
+            ("https://examplecorp.wd5.myworkdayjobs.com/en-US/examplecareers/job/Senior-Analyst_12345",
+             ("examplecorp.wd5.myworkdayjobs.com", "examplecorp", "examplecareers", "Senior-Analyst_12345")),
+            ("https://examplecorp.wd1.myworkdayjobs.com/external/job/Cashier_67890/apply",
+             ("examplecorp.wd1.myworkdayjobs.com", "examplecorp", "external", "Cashier_67890")),
+            ("https://EXAMPLECORP.WD3.myworkdayjobs.com/en-US/board/job/Role_1",
+             ("examplecorp.wd3.myworkdayjobs.com", "examplecorp", "board", "Role_1")),
+        ]
+        for url, expected in cases:
+            with self.subTest(url=url):
+                self.assertEqual(ats.parse_workday(url), expected)
+        self.assertEqual(ats.parse_workday("https://example.com/jobs/1"),
+                         (None, None, None, None))
+        self.assertEqual(ats.parse_workday(""), (None, None, None, None))
+
+
 if __name__ == "__main__":
     unittest.main()

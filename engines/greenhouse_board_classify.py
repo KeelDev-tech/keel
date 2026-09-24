@@ -34,6 +34,8 @@ from datetime import datetime, timezone
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE)
+from safe_http import urlopen as safe_urlopen
+from safe_io import atomic_json, file_lock, read_json
 import api_direct_detect as add  # noqa: E402  (shared Enterprise heuristic)
 
 from keel_paths import HOME, DATA  # noqa: E402
@@ -79,7 +81,7 @@ def harvest_boards():
 
 def fetch_html(url):
     req = urllib.request.Request(url, headers=add.UA)
-    with urllib.request.urlopen(req, timeout=20) as r:
+    with safe_urlopen(req, timeout=20) as r:
         return r.read().decode("utf-8", "replace")
 
 
@@ -137,10 +139,16 @@ def main(argv):
         done += 1
         if done < len(names):
             time.sleep(DELAY)
-    tmp = REGISTRY + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(reg, f, indent=1, sort_keys=True)
-    os.replace(tmp, REGISTRY)  # atomic; merge, never clobber
+    with file_lock(REGISTRY + ".lock"):
+        current = read_json(REGISTRY, missing={})
+        if not isinstance(current, dict):
+            raise ValueError("malformed board registry")
+        # Only boards actually inspected in this pass may replace current data.
+        for board in names:
+            if board in reg and reg[board].get("checked_ts", "") >= current.get(board, {}).get("checked_ts", ""):
+                current[board] = reg[board]
+        atomic_json(REGISTRY, current)
+        reg = current
     dt = time.time() - t0
     print(f"boards={done} enterprise={ent} clean={clean} skipped={skip} "
           f"registry={len(reg)} elapsed={dt:.1f}s -> {REGISTRY}")
