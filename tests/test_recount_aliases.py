@@ -14,10 +14,21 @@ import json
 import os
 import sys
 import tempfile
+import types
 import unittest
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO, "geo-pipeline"))
+
+# recount.py imports canon_ledger_status from the private pipeline's
+# outcome-tracking dir at module level (sys.path derived from
+# ~/workspace/job-pipeline). That path does not exist on a fresh clone /
+# CI runner, so importing recount there would explode before any test runs.
+# count_gates() — the contract under test here — never touches
+# canon_ledger_status, so stub the unrelated import deterministically.
+_stub = types.ModuleType("ledger_append")
+_stub.canon_ledger_status = lambda s: s
+sys.modules["ledger_append"] = _stub
 
 import recount
 
