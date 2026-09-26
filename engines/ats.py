@@ -14,6 +14,11 @@ the task's own tooling). Nothing here pretends to run code in the page.
 import json
 import re
 import urllib.request
+
+try:
+    from .safe_http import urlopen as safe_urlopen, NetworkPolicyError
+except ImportError:  # Direct script / legacy engines-on-sys.path entry points.
+    from safe_http import urlopen as safe_urlopen, NetworkPolicyError
 from urllib.parse import urlparse
 
 # Parsed-identity matching rules. Whole-URL substring matching is retired: a
@@ -93,7 +98,7 @@ def resolve_final_url(url: str, timeout: int = 15) -> str:
     """
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with safe_urlopen(req, timeout=timeout) as resp:
             return resp.geturl()
     except Exception:
         return url
@@ -217,7 +222,7 @@ def board_ref_from_url(url: str):
 
 def _get_json(url: str, timeout: int = 20):
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    with safe_urlopen(req, timeout=timeout) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
 
@@ -320,6 +325,53 @@ def ashby_board_jobs(board: str) -> list:
         for j in d.get("jobs", [])
         if j.get("isListed")
     ]
+
+
+# ---------------------------------------------------------------------------
+# Workday — public candidate-experience board JSON (CXS)
+# 2026-09-23: every probed tenant exposes POST {host}/wday/cxs/{tenant}/{board}/jobs
+# -> HTTP 200 JSON with jobPostings/total/externalPath/bulletFields/locationsText
+# markers. Read-only enumeration endpoint. Never raises on its own behalf —
+# callers fail closed.
+# ---------------------------------------------------------------------------
+WORKDAY_CXS_JOBS = "https://{host}/wday/cxs/{tenant}/{board}/jobs"
+
+_WD_URL_RX = re.compile(
+    r"https?://([a-z0-9-]+)\.(wd\d+)\.myworkdayjobs\.com"
+    r"(?:/[a-z]{2}-[A-Z]{2})?/([^/]+)/job/", re.I)
+
+_WORKDAY_UA = {"User-Agent": "Mozilla/5.0"}
+
+
+def parse_workday(url: str):
+    """Extract (host, tenant, board, job_slug) from a Workday posting URL.
+
+    Handles the locale prefix form (.../en-US/<board>/job/...) and the
+    trailing /apply form (.../job/.../apply).
+    Returns (None, None, None, None) when the URL is not a Workday posting URL.
+    """
+    m = _WD_URL_RX.search(url or "")
+    if not m:
+        return None, None, None, None
+    tenant, wdnum, board = m.group(1), m.group(2), m.group(3)
+    host = f"{tenant}.{wdnum}.myworkdayjobs.com".lower()
+    slug = (url or "").rstrip("/").split("/")[-1]
+    if slug.lower() == "apply":
+        slug = (url or "").rstrip("/").rsplit("/", 2)[-2]
+    return host, tenant.lower(), board, slug
+
+
+def workday_board_search(host: str, tenant: str, board: str,
+                         search_text: str, limit: int = 20,
+                         timeout: int = 20) -> dict:
+    """Refuse Workday CXS enumeration until a scoped POST adapter is reviewed.
+
+    CXS uses POST even for search. The shared transport deliberately supports
+    only public GET/HEAD; this function must not bypass that boundary.
+    """
+    raise NetworkPolicyError(
+        "Workday CXS search is unavailable: its POST endpoint needs a separately "
+        "reviewed read-only adapter; the shared transport supports GET/HEAD only")
 
 
 def preflight(url: str) -> dict:

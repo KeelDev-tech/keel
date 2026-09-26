@@ -98,7 +98,16 @@ NO_AI_ATTEST_RE = [
     re.compile(r"\bno-?ai\b", re.I),
     re.compile(r"unaided", re.I),
     re.compile(r"without.{0,25}ai.{0,25}(assistance|help|aid)", re.I),
+    re.compile(r"\bno[\s-]+(?:ai|artificial intelligence)\b", re.I),
+    re.compile(r"\bwithout\s+(?:any\s+)?(?:automated\s+)?assistance\b", re.I),
+    re.compile(r"\bindependently\b", re.I),
+    re.compile(r"\b(?:did|have|has)\s+not\s+use(?:d)?\b.{0,40}\b(?:ai|artificial intelligence)\b", re.I),
 ]
+
+
+def _no_ai_hard_stop(text):
+    """No-AI/unaided attestations never inherit ordinary truthfulness consent."""
+    return any(pattern.search(str(text or "")) for pattern in NO_AI_ATTEST_RE)
 
 # Pre-authorized attestation scope. These answer-bank keys correspond to
 # STANDARD application-form legal attestations (arbitration agreement,
@@ -441,10 +450,12 @@ def screen_entry_prepromotion(entry, url=None, answer_bank=None):
     against an HTTP form-intel probe of the posting, so blocked leads route
     straight to needs_input without ever promoting or burning a packet build.
 
-    Returns {"verdict": "CLEAN"|"PARK", "reasons": [...]}.
-    Fail-OPEN by design: no URL, probe failure, or an ATS with no HTTP
-    extraction returns CLEAN — the post-build prescreen still guards those
-    exactly as before this change. Never raises.
+    Returns {"verdict": "CLEAN"|"PARK"|"UNKNOWN", "reasons": [...]}.
+    Fail-OPEN by design for leads with no URL to screen: returns CLEAN.
+    A form-intel probe that FAILS returns UNKNOWN -- the screen could not
+    run, so the lead remains verification work and must NOT be treated as
+    clean (fail-closed on screen failure; the promotion path raises
+    VerificationUnavailable on UNKNOWN). Never raises.
     """
     try:
         e = entry or {}
@@ -457,8 +468,11 @@ def screen_entry_prepromotion(entry, url=None, answer_bank=None):
             return {"verdict": "CLEAN", "reasons": []}
         try:
             intel = _fi.probe_url(probe_url)
-        except Exception:
-            return {"verdict": "CLEAN", "reasons": []}
+        except Exception as ex:
+            # Fail-closed: the screen failed, so the verdict is UNKNOWN --
+            # the lead remains verification work. Never CLEAN.
+            return {"verdict": "UNKNOWN",
+                    "reasons": [f"form-intel probe failed: {ex}"]}
         if not isinstance(intel, dict):
             return {"verdict": "CLEAN", "reasons": []}
         # NOTE: empty questions do NOT early-return CLEAN. An ATS with no
@@ -510,6 +524,8 @@ def extract_required_text_questions(intel):
 def question_mappable(question, answer_bank):
     """True only if an answer_bank answer key or banded-question rule clearly
     covers the question. `answer_bank` is the loaded answer_bank.json dict."""
+    if _no_ai_hard_stop(question):
+        return False, None
     answers = (answer_bank or {}).get("answers", {})
     banded = (answer_bank or {}).get("banded_questions", {})
     valid_keys = set(answers) | set(banded)
@@ -534,6 +550,13 @@ def screen_packet(packet, answer_bank, employer_patterns=None):
     brief = packet.get("brief", "") or ""
     company = packet.get("company", "") or ""
     intel = extract_form_intel(brief)
+
+    # Inspect each complete question before narrower pre-authorized mappings.
+    # Combined checkbox statements may put the no-AI clause hundreds of
+    # characters beyond the truthfulness clause, outside a match window.
+    for line in intel.splitlines():
+        if re.search(r"\[(?:text|checkbox|radio|dropdown)\]", line, re.I) and _no_ai_hard_stop(line):
+            reasons.append("Required no-AI / unaided-work attestation needs the applicant's explicit word (attest): " + line[:160])
 
     # Posting-text eligibility: hard blockers that live on the posting,
     # invisible to form-intel screening. Screened ONLY on posting_text —
@@ -696,12 +719,20 @@ def _primary_gate(reasons):
     return "needs_input"
 
 
-def park_lead(role_id, reasons, queue_dir=None, backup=True):
+def park_lead(role_id, reasons, queue_dir=None, backup=True,
+             never_auto_submit_keys=None):
     """Move a lead from its owning queue (standard OR strategic) to
     needs_input-queue.json using ONLY the conventional fields the
     classifier reads. Overwrites any stale status_reason. Backs up the
     touched queue files first. One-lead-one-queue is preserved: the lead
     is removed from exactly the queue file that held it.
+
+    never_auto_submit_keys: optional iterable of answer-bank keys whose
+      attestations the bank abstains on. When nonempty (after cleaning),
+      the lead is stamped with never_auto_submit_attestation =
+      sorted(unique(nonempty keys)) — a sticky marker the verify_retry
+      promotion gate honors. The field is omitted entirely when no keys
+      are given.
 
     Returns {"ok": True, ...} or {"ok": False, "error": ...}.
     """
@@ -759,6 +790,10 @@ def park_lead(role_id, reasons, queue_dir=None, backup=True):
            f"prescreen {ts}: parked awaiting applicant input")
     )
     lead["status_updated"] = ts_short
+    if never_auto_submit_keys:
+        cleaned = sorted({k for k in never_auto_submit_keys if k})
+        if cleaned:
+            lead["never_auto_submit_attestation"] = cleaned
 
     owner_leads = [l for l in owner_leads if l.get("role_id") != role_id]
     ni_leads.append(lead)

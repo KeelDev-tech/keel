@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "base": "Recovered Keel_Gap_Build_2026-09-17.zip review snapshot; not live",
+  "production_deployed": false,
+  "files": [
+    {
+      "file": "parking_schema.py",
+      "base_sha256": "f7133fb705a414c97c7b46b0715347a554f04a5a935afeb101237ca09e0815e9",
+      "patched_sha256": "c5a18f67860ad9eb7748d4037ff1bdf5894c6f91813f0f0f569e01ddf7ea48d8",
+      "patch": "parking_schema.py.patch"
+    },
+    {
+      "file": "queue_io.py",
+      "base_sha256": "7fc6ff6f789f04171eefe28332c06551b1223625c15eed7f17ec2fac7ac57f5f",
+      "patched_sha256": "c1990240f1655c16b337df36fd1196bf2bde9fa30afd612d8f15623de5fcb92e",
+      "patch": "queue_io.py.patch"
+    },
+    {
+      "file": "launch_lock.py",
+      "base_sha256": "6644a3d9b556df2a6dd8a0217697a883e12d836e49da47233c190fa65387f173",
+      "patched_sha256": "d82d4c29638dfed0b8429114e1347bafc1866f960586e4ab17c031aa32ce5270",
+      "patch": "launch_lock.py.patch"
+    },
+    {
+      "file": "api_fastlane.py",
+      "base_sha256": "db5d12eb6f0a0d175e68e4d1f0507cd2a03d00ff19f660534f26e13109942955",
+      "patched_sha256": "6f4c17ae7ac611bbd3db29693fd1208c6465aecd97ee5235d6932298fa727144",
+      "patch": "api_fastlane.py.patch"
+    },
+    {
+      "file": "api_direct_loop.py",
+      "base_sha256": "b774248a9561350a449c16e09bd6369596bfff60e4ef46bde4b81a67511ce2c7",
+      "patched_sha256": "57cb83e576f4a24d3c81a0b2b90723320c2ce4061c582322b6fd40701806ff66",
+      "patch": "api_direct_loop.py.patch"
+    }
+  ]
+}

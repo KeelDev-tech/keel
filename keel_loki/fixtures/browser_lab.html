@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Keel local browser lab</title><link rel="icon" href="data:,"></head>
+<body data-nonce="__NONCE__"><h1>Synthetic browser qualification</h1>
+<p>No personal information, credentials, consent, or submission.</p>
+<form id="lab" action="#">
+<label id="name-wrapper">Synthetic name <input name="name" type="text" autocomplete="off"></label>
+<label id="resume-wrapper">Synthetic attachment <input name="resume" type="file"></label>
+</form>
+<script>
+window.labSubmissions=0;window.labSequence=0;
+document.getElementById('lab').addEventListener('submit',e=>{e.preventDefault();window.labSubmissions++;});
+__LAYOUT__
+</script></body></html>

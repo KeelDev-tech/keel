@@ -101,6 +101,12 @@ from zoneinfo import ZoneInfo
 BASE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE)
 from keel_paths import HOME, DATA, TELEMETRY  # noqa: E402 — repo path convention
+from safe_io import read_json  # noqa: E402 — bounded JSON reads
+import safe_http  # noqa: E402 — policy-checked transport
+try:
+    import launch_lock  # noqa: E402 — atomic per-role lock + prelaunch guard
+except ImportError:  # noqa: E402 — guard falls back to CLI / fail-open below
+    launch_lock = None
 
 import form_intel
 import log_event  # noqa: E402 — telemetry: additive event logging only
@@ -136,6 +142,33 @@ BUFFER_LOCK_FILE = os.path.join(STATE_DIR, "packet-buffer.lock")
 
 
 # ---------------------------------------------------------------------------
+# Never-auto-submit attestation marker
+# ---------------------------------------------------------------------------
+
+def _never_auto_submit_keys(guard_result):
+    """Extract never-auto-submit attestation keys from a guard result.
+
+    Returns the sorted, deduplicated, nonempty keys of mismatches where
+    category == "attestation" and kind == "out_of_scope" — an attestation
+    the answer bank abstains on that leaked into the packet. Such a lead
+    would need a false attestation to submit, so it must never auto-submit.
+    Safe for None, {}, or "mismatches": None.
+    """
+    if not isinstance(guard_result, dict):
+        return []
+    mismatches = guard_result.get("mismatches") or []
+    keys = set()
+    for m in mismatches:
+        if not isinstance(m, dict):
+            continue
+        if m.get("category") == "attestation" and m.get("kind") == "out_of_scope":
+            key = m.get("key")
+            if key:
+                keys.add(key)
+    return sorted(keys)
+
+
+# ---------------------------------------------------------------------------
 # Queue IO
 # ---------------------------------------------------------------------------
 
@@ -150,6 +183,13 @@ def load_answer_bank():
         if os.path.exists(p):
             return json.load(open(p))
     return {"answers": {}, "banded_questions": {}, "gates": {}}
+
+
+def load_policy():
+    # Keel Advance port (2026-09-26): pipeline_service.prepare_role calls
+    # apply_loop.load_policy() — the live tree never had it, so prepare_role
+    # raised AttributeError on any invocation (pre-existing on live main).
+    return read_json(os.path.join(HOME, "data", "policy.json"))
 
 
 def load_queue():
@@ -329,7 +369,7 @@ def live(url):
     import urllib.error
     try:
         req = urllib.request.Request(url, headers=UA)
-        with urllib.request.urlopen(req, timeout=20) as r:
+        with safe_http.urlopen(req, timeout=20) as r:
             return r.status == 200
     except urllib.error.HTTPError as e:
         return False if e.code in (404, 410) else None
@@ -549,18 +589,26 @@ def _launch_guard(role_id, company, title):
     """
     task_id = "apply_loop-%d-%s" % (
         os.getpid(), datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S"))
-    try:
-        import launch_lock as _ll  # noqa — atomic per-role lock + --guard
+    _ll = launch_lock  # module-level import; patchable as apply_loop.launch_lock
+    if _ll is not None:
         try:
             if hasattr(_ll, "prelaunch_guard"):
                 # Returns (ok: bool, info: dict) with info["verdict"] one of
                 # GO / REFUSE / STAND_DOWN — parse it explicitly; a bare
                 # truthiness check on the tuple would read every refusal
                 # (a non-empty tuple) as GO.
-                ok, info = _ll.prelaunch_guard(
-                    role_id, task_id,
-                    company=company or "", title=title or "",
-                    owner="apply_loop")
+                try:
+                    ok, info = _ll.prelaunch_guard(
+                        role_id, task_id,
+                        company=company or "", title=title or "",
+                        owner="apply_loop")
+                except ValueError:
+                    raise
+                except Exception as ex:
+                    # Guard blew up: fail CLOSED. A guard that cannot render
+                    # a verdict cannot authorize a launch.
+                    return False, task_id, (
+                        f"prelaunch guard failed ({ex}); cannot proceed")
                 info = info or {}
                 verdict = str(info.get("verdict", "")).upper()
                 status = info.get("status", "")
@@ -581,8 +629,6 @@ def _launch_guard(role_id, company, title):
             raise
         except Exception as ex:
             return True, task_id, f"guard tooling failed ({ex}); proceeding"
-    except ImportError:
-        pass
     # CLI fallback: the sibling launch_lock.py module may exist without being
     # imported (or vice versa).
     if os.path.isfile(LAUNCH_LOCK_SCRIPT):
@@ -1143,6 +1189,10 @@ def build_packet(entry, origin="standard", dest_dir=None, task_id=""):
     }
     if task_id:
         packet["launch_task_id"] = task_id
+    # Pre-publication prescreen: the packet is fully built in memory first;
+    # the screen runs BEFORE any file is written. If the screen raises, the
+    # error propagates and zero packet files are published (fail-closed).
+    prescreen.screen_packet(packet, bank)
     dest = dest_dir or PACKETS
     os.makedirs(dest, exist_ok=True)
     path = os.path.join(dest, f"{role_id}.json")

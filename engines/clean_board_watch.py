@@ -110,6 +110,7 @@ from zoneinfo import ZoneInfo
 BASE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE)
 import api_direct_detect as add  # noqa: E402 (shared UA)
+import safe_http  # noqa: E402 — policy-checked transport
 from ats_discovery import normalize as N  # noqa: E402
 import dedupe_gate  # noqa: E402
 import queue_intake  # noqa: E402
@@ -173,7 +174,7 @@ def load_registry_clean():
 
 def fetch_html(url):
     req = urllib.request.Request(url, headers=add.UA)
-    with urllib.request.urlopen(req, timeout=20) as r:
+    with safe_http.urlopen(req, timeout=20) as r:
         return r.read().decode("utf-8", "replace")
 
 

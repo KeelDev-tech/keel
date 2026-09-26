@@ -1,0 +1,55 @@
+{
+  "mode": "SHADOW_ONLY",
+  "nominal_ready": 4,
+  "executable_ready": 1,
+  "nominal_to_actual_loss": 3,
+  "states": {
+    "EXECUTABLE": 1,
+    "INTERNAL_FAILURE": 2,
+    "AWAITING_DECISION": 1
+  },
+  "blocked_reasons": {
+    "launch_lock_held_or_unknown": 1,
+    "attempt_hold": 1,
+    "answers_unresolved": 1
+  },
+  "executable_by_route": {
+    "browser": 1
+  },
+  "rows": [
+    {
+      "executable": true,
+      "state": "EXECUTABLE",
+      "reasons": [],
+      "route": "browser",
+      "dependency_hash": "0294dd5619f3c719a9620ee8ad5c2b4e28c1e16d1ecbd95315fd34803cbcc036"
+    },
+    {
+      "executable": false,
+      "state": "INTERNAL_FAILURE",
+      "reasons": [
+        "launch_lock_held_or_unknown"
+      ],
+      "route": "browser",
+      "dependency_hash": "0294dd5619f3c719a9620ee8ad5c2b4e28c1e16d1ecbd95315fd34803cbcc036"
+    },
+    {
+      "executable": false,
+      "state": "INTERNAL_FAILURE",
+      "reasons": [
+        "attempt_hold"
+      ],
+      "route": "browser",
+      "dependency_hash": "0294dd5619f3c719a9620ee8ad5c2b4e28c1e16d1ecbd95315fd34803cbcc036"
+    },
+    {
+      "executable": false,
+      "state": "AWAITING_DECISION",
+      "reasons": [
+        "answers_unresolved"
+      ],
+      "route": "browser",
+      "dependency_hash": "0294dd5619f3c719a9620ee8ad5c2b4e28c1e16d1ecbd95315fd34803cbcc036"
+    }
+  ]
+}

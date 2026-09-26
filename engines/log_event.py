@@ -20,7 +20,8 @@ Event types (keep this list stable; the analyzer depends on it):
     gate_cleared      a gate was passed (gate name in details; never the secret value)
     gate_blocked      a gate could not be passed -> lead parked / discarded
     account_created   a job-application account was created (name only, never creds)
-    submitted         application submitted with explicit confirmation
+    submitted         legacy input alias for submission_claimed
+    submission_claimed reported submission; unverified unless explicitly labeled
     employer_response any employer reply: rejection, interview invite, message, assessment
     error             unexpected failure (tool crash, malformed data, ...)
 
@@ -75,6 +76,10 @@ EVENT_TYPES = {
     # halted run, emitted via emit_429_halt() below. Registered additively;
     # spellings are verbatim the producer emissions.
     "http_429_halt",
+    # Public observation vocabulary. Claim names do not prove execution
+    # or independent verification; legacy submitted input is normalized.
+    "flow_attempt", "packet_prepared", "submission_claimed",
+    "verification_attempt", "source_sync", "pipeline_recovery",
 }
 
 # Stable gate vocabulary for details["gate"] on gate_encountered/gate_blocked.
@@ -93,6 +98,10 @@ GATE_TYPES = {
     "breezy_blocked",  # pulse 34 (2026-09-15): ARM 112 dry-run pre-flight refusal gate
     "packet_shelved",  # pulse 35 (2026-09-15): ARM 118 emits gate_blocked/details.gate=packet_shelved at every unsubmitted _archive_packet point
     "edge_flip", "new_ats_detected", "ashby_spam_flag",
+    # J-20260922-1859-ats--4856 (2026-09-22): the probe heuristic tried to
+    # auto-flip an operator-authorized supervised verdict but the pin held —
+    # verdict unchanged, no auto-overwrite. Emitted by edge_probe.
+    "edge_flip_pin_held",
     "materials_missing", "materials_demoted", "inflight_cap",
     "feeder_empty", "stale_inflight",
     "recording_consent",  # ARM 67 (2026-09-15): required interview-recording consent is the applicant's own decision
@@ -281,12 +290,40 @@ def _event_lock():
             fcntl.flock(lockf.fileno(), fcntl.LOCK_UN)
 
 
-def log(event_type: str, role_id: str = "", company: str = "", ats: str = "",
+def _sync_event_directory():
+    """Persist the event name and any first-use directory names before receipt.
+
+    A prior failed append may have created ancestors without syncing them, so
+    replay also syncs the chain; existence alone is not a persistence receipt.
+    """
+    directory = os.path.abspath(os.path.dirname(EVENTS) or '.')
+    while True:
+        fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        parent = os.path.dirname(directory)
+        if parent == directory:
+            break
+        directory = parent
+
+
+def _prepare_event(event_type: str, role_id: str = "", company: str = "", ats: str = "",
         source: str = "", details: dict = None, event_id: str = None) -> dict:
     if event_type not in EVENT_TYPES:
         raise ValueError(f"unknown event_type '{event_type}'. "
                          f"valid: {sorted(EVENT_TYPES)}")
-    details = scrub(details or {})
+    if details is not None and not isinstance(details, dict):
+        raise ValueError("telemetry details must be an object")
+    details = scrub({} if details is None else details)
+    if event_type == "submitted":
+        event_type = "submission_claimed"
+    if event_type == "submission_claimed":
+        # This logger records observations, not provider verification.
+        # Preserve an explicit caller label without inferring one from
+        # free text, a confirmation quote, or an unrelated verified flag.
+        details.setdefault("verification_status", "UNVERIFIED")
     # 2026-09-18 (Keel 0.5.0 trust port): optional caller-supplied event id.
     # keel_trust's grant-consumption receipt requires the logger to echo a
     # caller-supplied event_id back in the returned receipt. Additive only:
@@ -313,6 +350,14 @@ def log(event_type: str, role_id: str = "", company: str = "", ats: str = "",
         "source": source or "",
         "details": details,
     }
+    return event, caller_supplied_event_id
+
+
+def log(event_type: str, role_id: str = "", company: str = "", ats: str = "",
+        source: str = "", details: dict = None, event_id: str = None) -> dict:
+    event, caller_supplied_event_id = _prepare_event(event_type, role_id, company, ats,
+                                                    source, details, event_id)
+    event_id = event['event_id']
     # 2026-09-18 (Keel 0.6.0 trust port): minimal event-id replay semantics.
     # When the caller supplies an event_id, the check-and-append is atomic:
     # an identical earlier payload is returned as-is (idempotent replay, no
@@ -333,12 +378,92 @@ def log(event_type: str, role_id: str = "", company: str = "", ats: str = "",
                         if previous.get("event_id") == event_id:
                             if {k: v for k, v in previous.items() if k != "ts"} != comparison:
                                 raise ValueError("event_id reused with a different payload")
+                            # A previous append may have reached the page cache
+                            # before its fsync failed. Replay must establish
+                            # durability before returning the existing receipt.
+                            os.fsync(f.fileno())
+                            _sync_event_directory()
                             return previous
             except FileNotFoundError:
                 pass
         with open(EVENTS, "a") as f:
             f.write(json.dumps(event) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        _sync_event_directory()
     return event
+
+
+MAX_BATCH_EVENTS = 128
+MAX_BATCH_BYTES = 2 * 1024 * 1024
+
+
+def _append_batch(events):
+    # A process crash can leave a prefix. No caller receives receipts until
+    # every append and the persistence barriers finish; replay checks IDs.
+    with open(EVENTS, 'a', encoding='utf-8') as stream:
+        for event in events:
+            stream.write(json.dumps(event, allow_nan=False) + '\n')
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
+def log_batch(requests):
+    """Bounded, replay-safe group commit; one history scan and sync per batch.
+
+    Request keys match ``log``. Explicit unique event IDs are mandatory.
+    Validation/conflicts append nothing. I/O failure may leave a prefix and
+    returns no receipts; exact replay recovers complete records. Malformed
+    history (including a torn line) is held, never silently truncated.
+    """
+    if type(requests) is not list or not 1 <= len(requests) <= MAX_BATCH_EVENTS:
+        raise ValueError('event batch size invalid')
+    events, comparisons, total = [], {}, 0
+    fields = {'event_type', 'event_id', 'role_id', 'company', 'ats', 'source', 'details'}
+    for request in requests:
+        if (type(request) is not dict or not {'event_type', 'event_id'} <= set(request)
+                or set(request) - fields or not isinstance(request['event_id'], str)):
+            raise ValueError('event batch request invalid')
+        if any(request.get(key) is not None and type(request[key]) is not str
+               for key in ('role_id', 'company', 'ats', 'source') if key in request):
+            raise ValueError('event batch text invalid')
+        event, _ = _prepare_event(**request)
+        key = event['event_id']
+        if key in comparisons:
+            raise ValueError('duplicate event_id in batch')
+        encoded = json.dumps(event, allow_nan=False).encode('utf-8')
+        total += len(encoded) + 1
+        if total > MAX_BATCH_BYTES:
+            raise ValueError('event batch byte limit exceeded')
+        comparisons[key] = {k: v for k, v in event.items() if k != 'ts'}
+        events.append(event)
+    previous = {}
+    os.makedirs(os.path.dirname(EVENTS), exist_ok=True)
+    with _event_lock():
+        try:
+            with open(EVENTS, 'r', encoding='utf-8') as stream:
+                while True:
+                    line = stream.readline(MAX_BATCH_BYTES + 1)
+                    if not line:
+                        break
+                    if len(line.encode('utf-8')) > MAX_BATCH_BYTES or not line.endswith('\n'):
+                        raise ValueError('event history record incomplete or oversized')
+                    if not line.strip():
+                        continue
+                    record = json.loads(line)
+                    if type(record) is not dict:
+                        raise ValueError('event history record invalid')
+                    key = record.get('event_id')
+                    if not isinstance(key, str) or key not in comparisons:
+                        continue
+                    if key in previous or {k: v for k, v in record.items() if k != 'ts'} != comparisons[key]:
+                        raise ValueError('event history identity conflict')
+                    previous[key] = record
+        except FileNotFoundError:
+            pass
+        _append_batch([e for e in events if e['event_id'] not in previous])
+        _sync_event_directory()
+    return [previous.get(event['event_id'], event) for event in events]
 
 
 def emit_429_halt(scope, details=None, source=None):

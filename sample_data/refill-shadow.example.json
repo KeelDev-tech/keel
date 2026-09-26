@@ -1,0 +1,12 @@
+{
+  "active": true,
+  "permitted_slots": 4,
+  "capacity_per_hour": 12,
+  "p95_prepare_seconds": 180,
+  "burst": 2,
+  "executable": 0,
+  "preparation_wip": 1,
+  "verified_supply": 3,
+  "yield_rate": 0.5,
+  "max_checks": 20
+}

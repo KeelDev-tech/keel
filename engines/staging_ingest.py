@@ -13,7 +13,7 @@ Settlement rule: a staging file is only ingested when its mtime is older than
 SETTLE_SECONDS (default 300, one pulse interval) — files belonging to an
 active sweep (still being written) are left alone and reported as deferred.
 
-One-lead-one-queue: dedupe by role_id AND normalized employer+title against
+One-lead-one-queue: dedupe by role_id and exact posting identity against
 every *-queue.json and the application ledger (Shadeform lesson).
 
 STAGING DIRECTORY SEPARATION (2026-09-15 cleanup-4, ARM 113 shape fallback):
@@ -372,19 +372,27 @@ def check_stale_staging(staged_dir=STAGED_DIR, settle_seconds=SETTLE_SECONDS):
     return out
 
 
-def load_queue_keys(queue_dir=QUEUE_DIR):
-    """(role_ids, normalized (employer, title) keys) across all queues."""
+def load_queue_keys(queue_dir=QUEUE_DIR, *, paths=None, errors=None):
+    """Role IDs plus advisory names from explicitly selected queues only.
+
+    Without an explicit source list only the target standard queue participates.
+    A filename matching a glob is not operator approval. Missing/malformed
+    sources are reported to the optional errors list rather than declared empty.
+    """
+    from dedupe_gate import _load_strict
     ids, keys = set(), set()
-    for qf in glob.glob(os.path.join(queue_dir, "*-queue.json")):
+    selected = paths if paths is not None else [os.path.join(queue_dir, "standard-queue.json")]
+    for qf in dict.fromkeys(selected):
         try:
-            entries = json.load(open(qf))
-        except Exception:
+            entries = _load_strict(qf)
+        except (OSError, ValueError, TypeError) as exc:
+            if errors is not None:
+                errors.append({"path": str(qf), "reason": type(exc).__name__})
             continue
         for e in entries:
-            if e.get("role_id"):
+            if isinstance(e.get("role_id"), str) and e["role_id"]:
                 ids.add(e["role_id"])
-            keys.add((norm(e.get("company") or e.get("employer")),
-                      norm(e.get("title"))))
+            keys.add((norm(e.get("company") or e.get("employer")), norm(e.get("title"))))
     return ids, keys
 
 
@@ -461,9 +469,9 @@ def triage(rows, queue_ids, queue_keys, ledger_keys, index=None):
     candidates are rejected with an explicit duplicate reason even when
     their fields would also fail validation. The check covers canonical
     posting URLs (both key forms, incl. /confirmation suffix variants),
-    employer containment + title equality vs ledger SUBMITTED rows and
-    all live queues, intra-batch URL / employer+title collisions, and the
-    conservative description-similarity fallback. Holds/suspects are
+    exact posting identities vs ledger SUBMITTED rows and explicitly configured
+    queues, plus intra-batch posting identity collisions. Company/title
+    similarity remains advisory and never suppresses distinct postings. Holds/suspects are
     never rejected here (reviewer judgment stays in the loop).
     Without an index the legacy inline checks apply unchanged.
     """
@@ -471,6 +479,7 @@ def triage(rows, queue_ids, queue_keys, ledger_keys, index=None):
     batch_url_keys, batch_emp_titles = set(), set()
     for e in rows:
         rid = e.get("role_id")
+        _uk = []
         if index is not None:
             verdict, evidence, _uk, _ek = stage_verdict(
                 e, index, batch_url_keys, batch_emp_titles)
@@ -485,10 +494,6 @@ def triage(rows, queue_ids, queue_keys, ledger_keys, index=None):
             reason = "duplicate role_id in queue"
         elif rid in seen:
             reason = "duplicate role_id in batch"
-        elif (norm(e.get("company")), norm(e.get("title"))) in queue_keys:
-            reason = "duplicate employer+title in queue"
-        elif (norm(e.get("company")), norm(e.get("title"))) in ledger_keys:
-            reason = "duplicate employer+title in ledger"
         elif blocklisted(e.get("company")):
             reason = "employer blocklist"
         if reason:
@@ -519,9 +524,11 @@ def triage(rows, queue_ids, queue_keys, ledger_keys, index=None):
                 rejected.append((rid, f"title-gate: {treason}"))
             else:
                 ingested.append(e)
+                batch_url_keys.update(_uk)
                 seen.add(rid)
         else:
             ingested.append(e)
+            batch_url_keys.update(_uk)
             seen.add(rid)
     return ingested, rejected
 
@@ -814,7 +821,8 @@ def emission_precheck(entries):
          rules). Warnings pass — this is validation moved earlier, not a
          policy change.
       2. in-batch role_id dedupe: first occurrence wins.
-      3. in-batch (employer, title) dedupe: first occurrence wins.
+      3. in-batch exact posting identity dedupe: first occurrence wins.
+         Name/title similarity never suppresses another posting.
 
     Fail-closed: withheld entries are DROPPED from the emitted batch with
     their reasons carried in the report — never rewritten, never silently
@@ -831,7 +839,7 @@ def emission_precheck(entries):
     Returns (fresh, withheld, report) where withheld is [(role_id, reason)].
     """
     fresh, withheld = [], []
-    seen_ids, seen_emp_titles = set(), set()
+    seen_ids, seen_postings = set(), set()
     for e in entries:
         if not isinstance(e, dict):
             withheld.append((None, "precheck: entry is not a dict"))
@@ -842,16 +850,18 @@ def emission_precheck(entries):
                 (e.get("role_id"), "precheck: validation: " + "; ".join(errs)))
             continue
         rid = e.get("role_id")
-        key = (norm(e.get("company") or e.get("employer")), norm(e.get("title")))
+        from dedupe_index import keys_for_urls
+        posting_keys, identity_conflict = keys_for_urls(e)
         if rid in seen_ids:
             withheld.append((rid, "precheck: duplicate role_id in batch"))
             continue
-        if key in seen_emp_titles:
+        if not identity_conflict and posting_keys & seen_postings:
             withheld.append(
-                (rid, "precheck: duplicate employer+title in batch"))
+                (rid, "precheck: duplicate posting identity in batch"))
             continue
         seen_ids.add(rid)
-        seen_emp_titles.add(key)
+        if not identity_conflict:
+            seen_postings.update(posting_keys)
         fresh.append(e)
     report = {"precheck": "staging_ingest.emission_precheck",
               "fresh": len(fresh), "withheld": len(withheld),
@@ -919,16 +929,21 @@ def run_ingest(files, batch, dry_run=True, pipe=PIPE):
     # event so a legitimate re-stage delta is never silently dropped).
     staged_by_id = {e.get("role_id"): e for e in rows if e.get("role_id")}
 
-    queue_ids, queue_keys = load_queue_keys(queue_dir)
-    ledger_keys = load_ledger_keys(os.path.join(pipe, "data", "application-ledger.json"))
-    # Persistent dedupe index: built once per ingest run, auto-refreshes
-    # when any source file changed. Fail-soft: legacy inline checks apply.
+    ledger_path = os.path.join(pipe, "data", "application-ledger.json")
+    ledger_keys = set()  # Name/title keys are never hard duplicate proof.
     index = None
+    identity_error = None
     if get_index is not None:
         try:
-            index = get_index(pipe)
-        except Exception:
-            index = None
+            index = get_index(pipe, ledger_path=ledger_path, queue_path=queue_path)
+        except Exception as exc:
+            identity_error = type(exc).__name__
+    # Keep target-queue role-ID idempotence even if optional index setup fails.
+    # Other queues participate only when named by the operator source registry.
+    selected_queues = [queue_path] + ([src.path for src in index.sources if src.kind == "queue"] if index is not None else [])
+    queue_source_errors = []
+    queue_ids, queue_keys = load_queue_keys(queue_dir, paths=selected_queues, errors=queue_source_errors)
+    identity_coverage = index.status() if index is not None else {"complete": False, "reason": "index_unavailable", "error": identity_error}
     ingested, rejected = triage(rows, queue_ids, queue_keys, ledger_keys,
                                 index=index)
     # P2-4 (2026-09-16): title-triage deferral count — deferred leads are
@@ -986,6 +1001,8 @@ def run_ingest(files, batch, dry_run=True, pipe=PIPE):
         "file_rejections": file_rejections,
         "rejected_reasons": [{"role_id": r, "reason": x} for r, x in rejected],
         "flood_gate": flood,
+        "identity_coverage": identity_coverage,
+        "queue_identity_source_errors": queue_source_errors,
     }
 
     if dry_run:
@@ -1045,8 +1062,9 @@ def run_ingest(files, batch, dry_run=True, pipe=PIPE):
         backup_dir = os.path.join(queue_dir, f"_backup-{date}-staged-ingest")
         os.makedirs(backup_dir, exist_ok=True)
         shutil.copy2(queue_path, os.path.join(backup_dir, "standard-queue.json"))
-        assert sha256(queue_path) == sha256(
-            os.path.join(backup_dir, "standard-queue.json")), "backup hash mismatch"
+        if sha256(queue_path) != sha256(
+                os.path.join(backup_dir, "standard-queue.json")):
+            raise RuntimeError("backup hash mismatch")
         audit["backup_dir"] = backup_dir
 
         queue = json.load(open(queue_path))

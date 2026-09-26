@@ -163,7 +163,12 @@ RESOLVED_STATE_PAT = re.compile(
     #       The (?<!no ) lookbehinds in GENUINE_PAT only cover the singular
     #       "no <blocker>"; the slash-enumeration shape needs its own arm.
     #       A genuine blocker never arrives as "no <list> gates".
-    r"|\bno\s+[\w/]+\s+gates?\b", re.I)
+    #       FP-3 (k) "flags" variant (2026-09-19): fit-scorer notes use
+    #       "flags" for the same absence-of-blockers enumeration
+    #       ("No degree/travel flags.") — the identical FP shape with
+    #       "gates" swapped for "flags". A genuine blocker never arrives
+    #       as "no <list> flags" either.
+    r"|\bno\s+[\w/]+\s+(?:gates?|flags?)\b", re.I)
 GENUINE_PAT = re.compile(
     r"essay|wording|(?<!zero )attest|reference|captcha|login"
     r"|(?<!no )(?:travel|degree|onsite|relocation)"

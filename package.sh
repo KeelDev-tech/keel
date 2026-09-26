@@ -10,6 +10,8 @@
 # (G1 sign-off) binding its exact digest; otherwise it stays local.
 set -euo pipefail
 umask 022
+# ZIP stores wall-clock timestamps; pin its timezone as well as source mtimes.
+export TZ=UTC
 cd "$(dirname "$0")"
 KEEL_ROOT="$PWD"
 
@@ -29,41 +31,101 @@ done
 # verify() — duplicate/unsafe paths, size limits, manifest set + hash check.
 verify_archive() {
   python3 - "$1" <<'PYEOF'
-import hashlib, json, sys, zipfile
+import hashlib, json, re, stat, sys, unicodedata, zipfile
 from pathlib import PurePosixPath
-path = sys.argv[1]
-MAX_FILE = 8 * 1024 * 1024
-MAX_TOTAL = 100 * 1024 * 1024
-try:
-    with zipfile.ZipFile(path) as archive:
-        names = archive.namelist()
-        if len(names) != len(set(names)):
-            raise ValueError('duplicate archive paths')
-        for n in names:
-            p = PurePosixPath(n)
-            if p.is_absolute() or '..' in p.parts:
-                raise ValueError('unsafe archive path: ' + n)
-        infos = archive.infolist()
-        if any(i.file_size > MAX_FILE for i in infos):
-            raise ValueError('archive file exceeds 8 MiB')
-        if sum(i.file_size for i in infos) > MAX_TOTAL:
-            raise ValueError('archive exceeds 100 MiB total')
-        try:
-            manifest = json.loads(archive.read('MANIFEST.json'))
-        except KeyError:
+MAX_FILE_BYTES = 8 * 1024 * 1024
+MAX_BUNDLE_BYTES = 100 * 1024 * 1024
+MAX_RELEASE_FILES = 10000
+def strict_json(raw):
+    """Reject duplicate keys and non-standard constants at every object depth."""
+    def pairs(items):
+        result = {}
+        for key, value in items:
+            if key in result:
+                raise ValueError("duplicate JSON key: " + key)
+            result[key] = value
+        return result
+
+    def constant(value):
+        raise ValueError("invalid JSON constant: " + value)
+
+    return json.loads(raw, object_pairs_hook=pairs, parse_constant=constant)
+
+def validate_paths(names):
+    """Require canonical, portable file paths and unambiguous directory topology."""
+    folded = set()
+    directory_spelling = {}
+    reserved = {"CON", "PRN", "AUX", "NUL", *("COM" + str(n) for n in range(1, 10)),
+                *("LPT" + str(n) for n in range(1, 10))}
+    for name in names:
+        if type(name) is not str:
+            raise ValueError("invalid source path")
+        path = PurePosixPath(name)
+        if (not path.parts or path.is_absolute() or ".." in path.parts
+                or any(c in name for c in '\\:<>"|?*') or str(path) != name
+                or any(ord(c) < 32 or ord(c) == 127 for c in name)
+                or unicodedata.normalize("NFC", name) != name
+                or any(part.endswith((".", " ")) or part.split(".")[0].upper() in reserved
+                       for part in path.parts)):
+            raise ValueError("unsafe source path")
+        key = name.casefold()
+        if key in folded:
+            raise ValueError("duplicate or case-conflicting source path")
+        folded.add(key)
+        for parent in path.parents:
+            spelling = str(parent)
+            parent_key = spelling.casefold()
+            if parent_key in directory_spelling and directory_spelling[parent_key] != spelling:
+                raise ValueError("case-conflicting directory path")
+            directory_spelling[parent_key] = spelling
+    for name in names:
+        if any(str(parent).casefold() in folded for parent in PurePosixPath(name).parents):
+            raise ValueError("file/directory path conflict")
+
+def verify(archive_path):
+    with zipfile.ZipFile(archive_path) as archive:
+        entries = archive.infolist()
+        names = [info.filename for info in entries]
+        if not 1 <= len(entries) <= MAX_RELEASE_FILES + 1:
+            raise ValueError('invalid archive file count')
+        validate_paths(names)
+        for info in entries:
+            mode = info.external_attr >> 16
+            if (info.orig_filename != info.filename or info.is_dir() or info.flag_bits & 1 or info.external_attr & 0x10
+                    or stat.S_IFMT(mode) not in (0, stat.S_IFREG)):
+                raise ValueError('archive contains a non-regular, encrypted or ambiguous member')
+            if info.file_size > MAX_FILE_BYTES:
+                raise ValueError('archive exceeds limits')
+        if sum(info.file_size for info in entries) > MAX_BUNDLE_BYTES:
+            raise ValueError('archive exceeds limits')
+        if 'MANIFEST.json' not in names:
             raise ValueError('MANIFEST.json missing')
-        if set(names) != set(manifest['files']) | {'MANIFEST.json'}:
+        manifest = strict_json(archive.read('MANIFEST.json'))
+        if (not isinstance(manifest, dict) or type(manifest.get('schema_version')) is not int
+                or manifest['schema_version'] != 1 or not isinstance(manifest.get('version'), str)
+                or not isinstance(manifest.get('files'), dict)):
+            raise ValueError('invalid archive manifest')
+        if set(names) != set(manifest['files']) | {'MANIFEST.json'} or 'MANIFEST.json' in manifest['files']:
             raise ValueError('manifest file set mismatch')
         for name, record in manifest['files'].items():
-            body = archive.read(name)
-            if len(body) != record['bytes'] or \
-               hashlib.sha256(body).hexdigest() != record['sha256']:
+            if (not isinstance(record, dict) or type(record.get('bytes')) is not int
+                    or not 0 <= record['bytes'] <= MAX_FILE_BYTES
+                    or type(record.get('sha256')) is not str
+                    or not re.fullmatch(r'[0-9a-f]{64}', record['sha256'])):
+                raise ValueError('invalid manifest file record: ' + name)
+            with archive.open(name) as stream:
+                body = stream.read(MAX_FILE_BYTES + 1)
+            if len(body) != record['bytes'] or hashlib.sha256(body).hexdigest() != record['sha256']:
                 raise ValueError('manifest mismatch: ' + name)
-except (ValueError, KeyError, json.JSONDecodeError, zipfile.BadZipFile) as e:
-    print(json.dumps({'verified_integrity': False, 'error': str(e)}))
+    return {'verified_integrity': True, 'files': len(names),
+            'authenticity': 'not signed; compare a trusted archive digest'}
+
+try:
+    result = verify(sys.argv[1])
+except (ValueError, TypeError, KeyError, OSError, RuntimeError, NotImplementedError, zipfile.BadZipFile) as exc:
+    print(json.dumps({'verified_integrity': False, 'error': str(exc)}))
     sys.exit(1)
-print(json.dumps({'verified_integrity': True, 'files': len(names),
-                  'authenticity': 'not signed; compare a trusted archive digest'}))
+print(json.dumps(result))
 PYEOF
 }
 

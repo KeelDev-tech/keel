@@ -1,0 +1,91 @@
+--- a/launch_lock.py
++++ b/launch_lock.py
+@@ -38,6 +38,9 @@
+ gate, those remain the pre-build gates.
+ """
+ import argparse
++import contextlib
++import fcntl
++import functools
+ import json
+ import os
+ import re
+@@ -56,6 +59,24 @@
+     return os.path.join(LOCK_DIR, safe + ".json")
+ 
+ 
++def _serialized(function):
++    """Serialize acquire/release/takeover around a persistent per-path flock.
++
++    Every participating process must run this version; never unlink the .mutex.
++    Launch leases are not submission holds and must not be used to clear them.
++    """
++    @functools.wraps(function)
++    def wrapped(role_id, *args, **kwargs):
++        os.makedirs(LOCK_DIR, exist_ok=True)
++        with open(_lock_path(role_id) + ".mutex", "a+") as handle:
++            fcntl.flock(handle, fcntl.LOCK_EX)
++            try:
++                return function(role_id, *args, **kwargs)
++            finally:
++                fcntl.flock(handle, fcntl.LOCK_UN)
++    return wrapped
++
++
+ def _now():
+     return datetime.now(timezone.utc)
+ 
+@@ -74,9 +95,11 @@
+         return False
+     try:
+         acquired = datetime.fromisoformat(lock["acquired_at"])
++        if acquired.utcoffset() is None:
++            return True  # corrupt/naive time never permits automatic takeover
++        return _now() - acquired < timedelta(hours=LOCK_TTL_H)
+     except (ValueError, TypeError):
+-        return False
+-    return _now() - acquired < timedelta(hours=LOCK_TTL_H)
++        return True
+ 
+ 
+ def check(role_id):
+@@ -103,7 +126,14 @@
+                 prefix=".lock-", suffix=".tmp", delete=False) as f:
+             tmp = f.name
+             json.dump(lock, f, indent=1)
++            f.flush()
++            os.fsync(f.fileno())
+         os.link(tmp, path)
++        directory = os.open(os.path.dirname(path), os.O_RDONLY | os.O_DIRECTORY)
++        try:
++            os.fsync(directory)
++        finally:
++            os.close(directory)
+         return True
+     except FileExistsError:
+         return False
+@@ -115,6 +145,7 @@
+                 pass
+ 
+ 
++@_serialized
+ def acquire(role_id, task_id, owner=""):
+     """Acquire the lock ATOMICALLY. Returns (ok: bool, info: dict).
+ 
+@@ -135,6 +166,8 @@
+         return True, {"status": "ACQUIRED", "lock": lock}
+     # Someone holds a file here — inspect it.
+     existing = _read_lock(role_id)
++    if not isinstance(existing, dict) and os.path.exists(path):
++        return False, {"status": "HELD", "reason": "corrupt_lock_requires_inspection"}
+     if existing and existing.get("task_id") == task_id:
+         # Idempotent re-acquire: refresh via atomic replace.
+         if _is_fresh(existing):
+@@ -164,6 +197,7 @@
+     return False, {"status": "HELD", "lock": existing}
+ 
+ 
++@_serialized
+ def release(role_id, task_id):
+     """Release the lock if owned by task_id. Returns (ok: bool, info)."""
+     existing = _read_lock(role_id)

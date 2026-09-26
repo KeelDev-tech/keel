@@ -1,0 +1,62 @@
+{
+  "scope": "LOCAL_REVIEW_ONLY",
+  "python_files_parsed": 364,
+  "suites": [
+    {
+      "suite": "keel-trust-and-integration",
+      "returncode": 0,
+      "tests": 61,
+      "log": "keel-trust-and-integration.log",
+      "warnings_present": false,
+      "skips_present": false
+    },
+    {
+      "suite": "prior-audit-regressions",
+      "returncode": 0,
+      "tests": 51,
+      "log": "prior-audit-regressions.log",
+      "warnings_present": false,
+      "skips_present": false
+    },
+    {
+      "suite": "prior-muse",
+      "returncode": 0,
+      "tests": 114,
+      "log": "prior-muse.log",
+      "warnings_present": true,
+      "skips_present": false
+    },
+    {
+      "suite": "prior-input-resolution",
+      "returncode": 0,
+      "tests": 85,
+      "log": "prior-input-resolution.log",
+      "warnings_present": false,
+      "skips_present": false
+    },
+    {
+      "suite": "prior-ready-promotion",
+      "returncode": 0,
+      "tests": 25,
+      "log": "prior-ready-promotion.log",
+      "warnings_present": false,
+      "skips_present": false
+    },
+    {
+      "suite": "existing-brief",
+      "returncode": 0,
+      "tests": 8,
+      "log": "existing-brief.log",
+      "warnings_present": true,
+      "skips_present": false
+    }
+  ],
+  "tests_run": 344,
+  "all_suites_passed": true,
+  "production_deployed": false,
+  "live_provider_tests": "UNTESTED",
+  "hosted_isolation": "UNTESTED",
+  "power_loss_recovery": "UNTESTED",
+  "competitor_benchmark": "UNTESTED",
+  "usability_pilot": "UNTESTED"
+}

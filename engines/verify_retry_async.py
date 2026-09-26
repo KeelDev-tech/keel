@@ -35,7 +35,9 @@ import os
 import random
 import re
 import sys
+import urllib.error
 import urllib.parse
+import urllib.request
 
 try:
     import aiohttp
@@ -49,6 +51,7 @@ import verify_retry as vr  # noqa: E402
 import ats  # noqa: E402
 import host_cooldowns  # noqa: E402
 import http_policy  # noqa: E402
+import safe_http  # noqa: E402
 import time  # noqa: E402
 
 
@@ -140,19 +143,30 @@ async def _read_body_capped(resp, limit=http_policy.MAX_BODY_BYTES):
     return b"".join(chunks)
 
 
+def safe_urlopen(req, **kw):
+    """Checked-transport seam for every async read.
+
+    Production path: safe_http.urlopen — public-HTTPS-only, DNS-pinned,
+    redirect-checked, no proxies/cookies/credentials/bodies. Takes a
+    urllib Request (or URL) plus keyword args (timeout, max_bytes).
+    Tests patch this symbol to stub the network; _get always calls it,
+    never a raw opener.
+    """
+    return safe_http.urlopen(req, **kw)
+
+
 async def _get(session, url, timeout, read_body=True,
                limit=http_policy.MAX_BODY_BYTES):
 
     """One polite GET. Returns (status, body_bytes, final_url).
 
-    Raises aiohttp.ClientResponseError on non-2xx (mirrors urllib's
-    HTTPError); aiohttp.ClientError subclasses on network failures.
-    Raises host_cooldowns.HostCoolingDown when the host has an active
-    429 cooldown (callers treat as defer/ambiguous, never an error).
-    Raises http_policy.NetworkPolicyError on URL/DNS policy violations
-    or when the body exceeds `limit` (default 4 MiB; board-API
-    callers pass http_policy.ASHBY_BOARD_LIMIT — callers treat as
-    ambiguous).
+    The transport is the module-level safe_urlopen (the checked
+    transport); pre-request admission, the durable 429 cooldown, the
+    per-host semaphore and jitter are preserved around it. Raises
+    urllib.error.HTTPError on non-2xx (4xx/5xx counted like the old
+    aiohttp path); host_cooldowns.HostCoolingDown when the host has an
+    active 429 cooldown; http_policy.NetworkPolicyError on URL/DNS
+    policy violations or when the body exceeds `limit`.
     """
     deadline = time.monotonic() + timeout
     # K41: pre-request admission (URL policy + bounded DNS check refusing
@@ -173,52 +187,32 @@ async def _get(session, url, timeout, read_body=True,
     acquired = await _acquire_all(
         (gsem, sem), host_cooldowns.deadline_remaining(deadline))
     try:
-        # K41/K43: redirects are followed manually (allow_redirects=False)
-        # so every hop is independently re-admitted and the hop count is
-        # capped at http_policy.MAX_REDIRECTS (3).
-        seen = {target}
-        hops = 0
-        while True:
-            remaining = host_cooldowns.deadline_remaining(deadline)
-            try:
-                async with session.get(
-                    target, headers=UA,
-                    timeout=aiohttp.ClientTimeout(total=remaining),
-                    allow_redirects=False,
-                ) as resp:
-                    STATS["requests"] += 1
-                    if resp.status == 429:
-                        STATS["r429"] += 1
-                        host_cooldowns.record_429(
-                            host, resp.headers.get("Retry-After"))
-                    elif 500 <= resp.status < 600:
-                        STATS["r5xx"] += 1
-                    if resp.status in http_policy.REDIRECT_STATUSES:
-                        loc = resp.headers.get("Location")
-                        hops += 1
-                        if not loc or hops > http_policy.MAX_REDIRECTS:
-                            raise http_policy.NetworkPolicyError(
-                                "redirect limit or missing destination")
-                        nxt = urllib.parse.urljoin(target, loc)
-                        if nxt in seen:
-                            raise http_policy.NetworkPolicyError(
-                                "redirect loop")
-                        seen.add(nxt)
-                        # Each hop is re-admitted (K41); the cooldown is
-                        # re-checked in case the hop moved hosts.
-                        target = await asyncio.to_thread(
-                            http_policy.admit, nxt)
-                        host = http_policy.hostname_of(target)
-                        host_cooldowns.check_host(host)
-                        continue
-                    body = (await _read_body_capped(resp, limit=limit)
-                            if read_body else b"")
-                    final = str(resp.url)
-                    resp.raise_for_status()  # mirrors urllib raising HTTPError
-                    return resp.status, body, final
-            except asyncio.TimeoutError:
-                STATS["timeouts"] += 1
-                raise
+        # The checked transport follows redirects itself (each hop is
+        # independently validated and DNS-pinned by safe_http.urlopen,
+        # hop count capped at its MAX_REDIRECTS). The pre-request
+        # admission + cooldown + semaphore gating above is preserved.
+        req = urllib.request.Request(target, headers=UA)
+        remaining = host_cooldowns.deadline_remaining(deadline)
+        try:
+            resp = await asyncio.to_thread(
+                safe_urlopen, req, timeout=remaining, max_bytes=limit)
+        except urllib.error.HTTPError as he:
+            if he.code == 429:
+                STATS["r429"] += 1
+                retry_after = None
+                try:
+                    retry_after = he.headers.get("Retry-After")
+                except Exception:
+                    pass
+                host_cooldowns.record_429(host, retry_after)
+            elif 500 <= he.code < 600:
+                STATS["r5xx"] += 1
+            raise
+        STATS["requests"] += 1
+        body = resp.read() if read_body else b""
+        if len(body) > limit:
+            raise http_policy.NetworkPolicyError("response exceeds size limit")
+        return resp.status, body, resp.geturl()
     finally:
         for s in acquired:
             s.release()
@@ -648,11 +642,16 @@ async def scan_window_async(entries, enrich_events=None,
     (verdict, detail, enriched_url_or_None); unscanned_rids lists rids
     from `entries` that got no verdict because the outer budget expired.
 
-    One shared ClientSession (trust_env=True for the egress proxy);
-    per-host semaphore + jitter pace requests. Entry dicts are mutated
-    in place exactly like the sync scan (stamps, ats_url/queue_notes);
-    enrich telemetry tuples append to `enrich_events` when given.
-    No queue writes, no log_event emission — verdict computation only.
+    Transport is the checked safe_urlopen (public-HTTPS-only,
+    DNS-pinned); per-host semaphore + jitter pace requests. Entry dicts
+    are mutated in place exactly like the sync scan (stamps,
+    ats_url/queue_notes); enrich telemetry tuples append to
+    `enrich_events` when given. No queue writes, no log_event emission —
+    verdict computation only.
+
+    Guards: duplicate role_ids raise ValueError (a silent overwrite
+    would lose a lead's verdict); batches larger than 1000 raise
+    ValueError (bounded work per wave).
 
     Outer budget (budget_s, default 600s): on expiry the gather is
     cancelled, completed verdicts are kept as partial results, and the
@@ -664,9 +663,18 @@ async def scan_window_async(entries, enrich_events=None,
     semantics.
 
     """
-    if aiohttp is None:
-        raise RuntimeError("verify_retry_async requires aiohttp "
-                           "(not installed in this environment)")
+    entries = list(entries or [])
+    if len(entries) > 1000:
+        raise ValueError(
+            f"scan_window_async batch too large: {len(entries)} > 1000")
+    seen_ids = set()
+    for _qname, entry in entries:
+        rid = (entry or {}).get("role_id")
+        if rid in seen_ids:
+            raise ValueError(
+                f"scan_window_async duplicate role_id: {rid!r} — refusing "
+                "to silently overwrite a lead's verdict")
+        seen_ids.add(rid)
     if enrich_events is None:
         enrich_events = []
     reset_stats()
@@ -674,39 +682,36 @@ async def scan_window_async(entries, enrich_events=None,
     global _global_sem
     _global_sem = None  # fresh semaphore per event loop
     results = {}
-    connector = aiohttp.TCPConnector(limit=0)  # per-host pacing is explicit
-    # trust_env=True: honor HTTP(S)_PROXY (urllib honors it by default,
-    # aiohttp does not).
-    async with aiohttp.ClientSession(connector=connector,
-                                     trust_env=True) as session:
-        async def one(qname, entry):
-            out = await scan_one_async(session, qname, entry, enrich_events)
-            results[out[0]] = (out[1], out[2], out[3])
-        tasks = [asyncio.ensure_future(one(q, e)) for q, e in entries]
-        scan_deadline = time.monotonic() + budget_s
-        try:
-            timeout = host_cooldowns.deadline_remaining(scan_deadline)
-        except TimeoutError:
-            timeout = 0.0  # budget already exhausted: nothing gets scanned
-        try:
-            # wait_for with timeout<=0 fires immediately — the settle path
-            # below then marks everything unscanned.
-            await asyncio.wait_for(asyncio.gather(*tasks),
-                                   timeout=max(timeout, 0.0))
-        except (asyncio.TimeoutError, TimeoutError):
-            if time.monotonic() < scan_deadline:
-                # A child raised TimeoutError before the budget expired —
-                # not budget exhaustion; keep the crash semantics.
-                raise
-            # Budget exhausted: fall through to cancel + settle.
-        # Settle: cancel anything still pending so semaphores release
-        # promptly (_get's finally releases them); completed verdicts stay
-        # as partial results.
-        pending = [t for t in tasks if not t.done()]
-        for t in pending:
-            t.cancel()
-        if pending:
-            await asyncio.gather(*pending, return_exceptions=True)
+    # The transport (_get -> safe_urlopen) no longer needs an aiohttp
+    # session; None is threaded through the scan_one_async signature.
+    async def one(qname, entry):
+        out = await scan_one_async(None, qname, entry, enrich_events)
+        results[out[0]] = (out[1], out[2], out[3])
+    tasks = [asyncio.ensure_future(one(q, e)) for q, e in entries]
+    scan_deadline = time.monotonic() + budget_s
+    try:
+        timeout = host_cooldowns.deadline_remaining(scan_deadline)
+    except TimeoutError:
+        timeout = 0.0  # budget already exhausted: nothing gets scanned
+    try:
+        # wait_for with timeout<=0 fires immediately — the settle path
+        # below then marks everything unscanned.
+        await asyncio.wait_for(asyncio.gather(*tasks),
+                               timeout=max(timeout, 0.0))
+    except (asyncio.TimeoutError, TimeoutError):
+        if time.monotonic() < scan_deadline:
+            # A child raised TimeoutError before the budget expired —
+            # not budget exhaustion; keep the crash semantics.
+            raise
+        # Budget exhausted: fall through to cancel + settle.
+    # Settle: cancel anything still pending so semaphores release
+    # promptly (_get's finally releases them); completed verdicts stay
+    # as partial results.
+    pending = [t for t in tasks if not t.done()]
+    for t in pending:
+        t.cancel()
+    if pending:
+        await asyncio.gather(*pending, return_exceptions=True)
     scanned = set(results.keys())
     unscanned_rids = [e.get("role_id") for _, e in entries
                       if e.get("role_id") not in scanned]

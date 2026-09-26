@@ -41,6 +41,7 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE)
 import api_direct_detect
 import ats
+import safe_http  # noqa: E402 — policy-checked transport
 import log_event
 
 # Classification logic lives in genuine_pat.py (2026-09-16 restructure:
@@ -52,6 +53,7 @@ from genuine_pat import (  # noqa: E402
 )
 
 from keel_paths import HOME as PIPE, DATA  # noqa: E402
+import answer_resolver  # noqa: E402
 STD_Q = os.path.join(PIPE, "data", "queues", "standard-queue.json")
 NI_Q = os.path.join(PIPE, "data", "queues", "needs_input-queue.json")
 REJ_Q = os.path.join(PIPE, "data", "queues", "rejected-queue.json")
@@ -322,7 +324,7 @@ def check_live(url, title_hint=""):
             return "ambiguous", "listing/board page — not the individual posting"
         req = urllib.request.Request(final_url,
                                      headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with safe_http.urlopen(req, timeout=15) as resp:
             if resp.status in (404, 410):
                 return "dead", f"HTTP {resp.status} on posting page"
             html = resp.read().decode("utf-8", "replace")[:200000].lower()
@@ -350,7 +352,7 @@ def check_live(url, title_hint=""):
 
 def _html_to_text(html):
     """Crude HTML -> text for the eligibility screen."""
-    t = re.sub(r"(?s)<script.*?</script>|<style.*?</style>", " ", html or "")
+    t = re.sub(r"(?si)<script.*?</script[^>]*>|<style.*?</style[^>]*>", " ", html or "")
     t = re.sub(r"<[^>]+>", " ", t)
     return re.sub(r"\s+", " ", t).strip()[:50000]
 
@@ -410,7 +412,7 @@ def fetch_posting_text(url):
             return ""
         req = urllib.request.Request(final_url,
                                      headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with safe_http.urlopen(req, timeout=15) as resp:
             if resp.status in (404, 410):
                 return ""
             html = resp.read().decode("utf-8", "replace")[:200000]
@@ -448,9 +450,15 @@ def screen_promotion_form(entry, url):
     promotion, so blocked leads route straight to needs_input (the tray)
     without ever promoting or burning a packet build.
 
-    Returns [reasons] (empty = clean). Fail-open: import/probe/parse
-    trouble -> []. A hit parks the lead to needs_input
-    (gate=needs_input, screen=prepromotion) instead of promoting."""
+    Returns [reasons] (empty = clean). A hit parks the lead to needs_input
+    (gate=needs_input, screen=prepromotion) instead of promoting.
+
+    Fail-closed on screen failure: when the form-intel probe fails the
+    screen verdict is UNKNOWN (not CLEAN) and this raises
+    VerificationUnavailable -- the lead remains verification work and must
+    never promote on an unrun screen. Import trouble still fails open
+    (returns []) per the pre-existing contract.
+    """
     try:
         from prescreen import screen_entry_prepromotion
     except Exception:
@@ -461,9 +469,21 @@ def screen_promotion_form(entry, url):
         return []
     if not isinstance(res, dict):
         return []
+    if res.get("verdict") == "UNKNOWN":
+        raise VerificationUnavailable(
+            "pre-promotion form screen could not run: %s"
+            % "; ".join(res.get("reasons") or ["form-intel probe failed"]))
     if res.get("verdict") == "PARK":
         return res.get("reasons") or ["pre-promotion form screen parked (no reason text)"]
     return []
+
+
+class VerificationUnavailable(Exception):
+    """The pre-promotion form screen could not run (probe/network failure).
+
+    Fail-closed: a lead whose form screen is UNKNOWN remains verification
+    work and must never promote to READY on an unrun screen.
+    """
 
 
 # ---------------------------------------------------------------------------
@@ -1215,6 +1235,93 @@ def assemble_attempt_record(entry, queue_name, wave_id, verdict, detail,
                                 next_eligible_at=next_eligible)
 
 
+# ---------------------------------------------------------------------------
+# Never-auto-submit promotion gate
+# ---------------------------------------------------------------------------
+# A lead parked with never_auto_submit_attestation keys carries attestations
+# the answer bank abstains on. Promoting it would need a false attestation
+# to submit, so the marker blocks promotion until every key resolves to a
+# banked answer. The marker is sticky while blocked and lifts only when all
+# keys resolve. Bank/resolver failure fails closed (withheld).
+
+ATTN_MARKER_FIELD = "never_auto_submit_attestation"
+HOLD_STATUS = "PARKED-AWAITING-MATERIALS"
+
+
+def materials_ready(entry):
+    """(ok, reason): whether the entry carries what a promotion decision
+    needs. Minimal gate — the caller decides promotability; this only
+    checks the entry is well-formed enough to act on."""
+    if not isinstance(entry, dict) or not entry.get("role_id"):
+        return False, "missing role_id"
+    return True, ""
+
+
+def _answer_bank_path():
+    candidates = (
+        os.path.join(DATA, "answer_bank.json"),
+        os.path.join(BASE, "answer_bank.json"),
+    )
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+    return candidates[0]
+
+
+def apply_live_entry(entry, was_held=False, promotable=False):
+    """Apply the verify outcome for one live entry.
+
+    Returns (action, note) where action is one of "noop", "stay", "promote":
+      - "stay": the lead is held; promotion withheld, marker (if any) kept.
+      - "noop": not promotable, or blocked by the never-auto-submit marker,
+        or the marker check failed closed.
+      - "promote": promotable, materials ready, and no blocking marker.
+
+    The never-auto-submit marker is checked before any promotion: each
+    marked key is resolved against the answer bank; abstained keys block
+    with "never-auto-submit" wording, the marker stays sticky, and a held
+    lead reports "stay". When every key resolves, the marker is removed
+    and promotion proceeds. An unreadable bank or resolver failure fails
+    closed with a "withheld" note.
+    """
+    marked = list((entry or {}).get(ATTN_MARKER_FIELD) or [])
+    if marked:
+        try:
+            bank = answer_resolver.load_bank(_answer_bank_path())
+        except Exception as exc:
+            return "noop", (
+                "never-auto-submit marker withheld: answer bank unreadable "
+                f"({exc}); promotion withheld")
+        still_blocked = []
+        try:
+            for key in marked:
+                res = answer_resolver.resolve(key, entry)
+                if res.status == answer_resolver.STATUS_ABSTAIN:
+                    still_blocked.append(key)
+        except Exception as exc:
+            return "noop", (
+                "never-auto-submit marker withheld: resolver failed "
+                f"({exc}); promotion withheld")
+        if still_blocked:
+            keys = ", ".join(still_blocked)
+            if was_held or entry.get("status") == HOLD_STATUS:
+                return "stay", (
+                    f"held; never-auto-submit keys still abstained: {keys}")
+            return "noop", (
+                f"never-auto-submit marker: {keys} still abstained; "
+                "promotion withheld")
+        # Every marked key resolved — lift the sticky marker.
+        entry.pop(ATTN_MARKER_FIELD, None)
+    if was_held or (entry or {}).get("status") == HOLD_STATUS:
+        return "stay", "held"
+    if not promotable:
+        return "noop", "not promotable"
+    ok, reason = materials_ready(entry)
+    if not ok:
+        return "noop", reason or "materials not ready"
+    return "promote", "promoted"
+
+
 def main():
     live = "--live" in sys.argv
     limit = None
@@ -1393,8 +1500,20 @@ def _scan_and_apply(live, limit, wave_id=None):
                       "stale-park guard (park-family event newer than "
                       "status_updated).").strip(" |")
                 continue
-            reasons = screen_promotion_posting(e, url) + \
-                screen_promotion_form(e, url)
+            try:
+                reasons = screen_promotion_posting(e, url) + \
+                    screen_promotion_form(e, url)
+            except VerificationUnavailable as vu:
+                # Fail-closed: the form screen could not run (probe/network
+                # trouble) -- the lead remains verification work, never
+                # promotes. Hold it parked and continue the batch.
+                held += 1
+                parked_reasons[rid] = "verification unavailable: %s" % vu
+                e["queue_notes"] = (
+                    (e.get("queue_notes") or "")
+                    + " | verify-retry: promotion withheld -- form screen "
+                      "unavailable (%s); remains verification work." % vu).strip(" |")
+                continue
             if reasons:
                 # Blocked at the form/posting level: park to needs_input
                 # (the tray), never promote.

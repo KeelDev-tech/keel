@@ -1,0 +1,29 @@
+--- a/parking_schema.py
++++ b/parking_schema.py
+@@ -30,6 +30,13 @@
+     return isinstance(v, str) and bool(v.strip())
+ 
+ 
++def _nonempty_note(value):
++    # A historical queue_notes list is a supported representation.
++    return (_nonempty_str(value) or
++            (isinstance(value, list) and bool(value) and
++             all(_nonempty_str(item) for item in value)))
++
++
+ def validate_park_entry(entry):
+     """Return the list of schema violations for a parked entry dict.
+ 
+@@ -53,10 +60,10 @@
+             "rule=status_reason_required: 'status_reason' must be a "
+             "non-empty string (stale verify text resurrects parked leads)")
+     if not (_nonempty_str(entry.get("gate_note"))
+-            or _nonempty_str(entry.get("queue_notes"))):
++            or _nonempty_note(entry.get("queue_notes"))):
+         violations.append(
+             "rule=note_required: at least one of 'gate_note'/'queue_notes' "
+-            "must be a non-empty string")
++            "must be a non-empty string or a non-empty list of non-empty strings")
+     return violations
+ 
+ 

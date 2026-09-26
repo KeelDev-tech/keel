@@ -201,11 +201,22 @@ def adapter_revision():
 
 
 def build_identity(entry):
-    """application_identity from verified posting metadata; None if unbuildable."""
+    """application_identity from verified posting metadata; None if unbuildable.
+
+    Queue schema carries the posting URL under several field names
+    (application_url / posting_url / ats_url / official_url). All four are
+    honored in preference order; a lead with no URL in any field stays
+    unbuildable (fail closed). 2026-09-24: the SWP16 Anduril READY lead
+    carried its URL only in ats_url/official_url and was dropped from the
+    board's lead inventory as identity_unbuildable, raising a
+    READY_COUNT_CONFLICT against the pool guardian's ready=1
+    (J-20260924-0725-feed-5624).
+    """
     provider = (entry.get("ats") or entry.get("discovery_platform")
                 or entry.get("route") or "browser")
     employer = entry.get("company") or entry.get("employer")
-    posting = entry.get("application_url") or entry.get("posting_url")
+    posting = (entry.get("application_url") or entry.get("posting_url")
+               or entry.get("ats_url") or entry.get("official_url"))
     if not (provider and employer and posting):
         return None
     try:
@@ -213,6 +224,20 @@ def build_identity(entry):
         return application_identity(CANDIDATE_ID, provider, employer, posting), posting
     except Exception:
         return None
+
+
+def active_outside_sleep_window(la):
+    """True when an America/Los_Angeles datetime is outside the 01:30-10:00
+    PT sleep window. The window is half-open: inactive exactly for
+    01:30 <= local time < 10:00.
+
+    2026-09-24 (J-20260924-0725-feed-5624): the old inline predicate
+    (la.hour < 10 ...) wrongly marked 00:00-01:29 inactive too, stealing 90
+    live min/day from forecasting (keel_flow/forecast.py: not active ->
+    SCHEDULED_PAUSE). Those 90 minutes are genuine operating time: the sleep
+    window per job-pipeline/hidden_files/max-mode.json is 01:30-10:00 only.
+    """
+    return not ((la.hour == 1 and la.minute >= 30) or 1 < la.hour < 10)
 
 
 def lead_row(entry, observed_at, evidence=None):
@@ -555,9 +580,51 @@ LAUNCH_LOCK_DIR = os.path.join(PIPELINE, "hidden_files", "launch-locks")
 # discriminator: the brief header names the candidate by construction, but
 # the email answer line renders only when the brief builder actually emitted
 # the identity answers (the defective Sept-19 builder withheld them).
-# Example identifiers only: the published history embeds no real personal
-# identifier; configure the real markers in the private host, not here.
-PACKET_IDENTITY_MARKERS = ("alex.applicant1@example.invalid", "Alex Applicant Doe")
+#
+# Runtime override precedence (first hit wins; 2026-09-22 ARM02 pulse-806):
+#   1. env KEEL_PACKET_IDENTITY_MARKERS_JSON -- JSON array of marker
+#      strings, e.g. '["email@example.invalid","Name Example"]'
+#   2. the restricted file hidden_files/packet-identity-markers.json
+#      (mode 0600; JSON {"markers": [...]}); the pulse runner injects the
+#      real markers there at runtime before the export runs.
+#   3. the example-value default below: public CI / committed-history
+#      behavior is unchanged (no real personal identifier in the tree).
+_IDENTITY_MARKERS_ENV = "KEEL_PACKET_IDENTITY_MARKERS_JSON"
+_IDENTITY_MARKERS_FILE = os.path.join(KEEL_DIR, "hidden_files",
+                                      "packet-identity-markers.json")
+_EXAMPLE_IDENTITY_MARKERS = ("alex.applicant1@example.invalid",
+                             "Alex Applicant Doe")
+
+
+def _load_identity_markers():
+    """Resolve the packet identity-coverage markers per the precedence above.
+
+    Every path fails closed to the example-value default on any malformed
+    or unreadable input, so the gauge's identity_covered check is honest:
+    it only passes when the markers genuinely appear in the brief.
+    """
+    raw = os.environ.get(_IDENTITY_MARKERS_ENV)
+    if raw:
+        try:
+            markers = json.loads(raw)
+            if (isinstance(markers, list) and markers
+                    and all(isinstance(m, str) and m for m in markers)):
+                return tuple(markers)
+        except (ValueError, TypeError):
+            pass
+    try:
+        with open(_IDENTITY_MARKERS_FILE) as f:
+            doc = json.load(f)
+        markers = doc.get("markers") if isinstance(doc, dict) else None
+        if (isinstance(markers, list) and markers
+                and all(isinstance(m, str) and m for m in markers)):
+            return tuple(markers)
+    except (OSError, ValueError, TypeError):
+        pass
+    return _EXAMPLE_IDENTITY_MARKERS
+
+
+PACKET_IDENTITY_MARKERS = _load_identity_markers()
 # Export convention bounding the staging-approval claim (see
 # approval_evidence): the lane purges stale staged entries, so a staging
 # authorization is a single-batch claim, never open-ended.
@@ -978,11 +1045,27 @@ def linkedin_sweep_measurement(rows, window_start):
 
 
 def build_linkedin_source(rows, window_start):
-    """Discovery source with measured minutes, or the honest unmeasured form."""
+    """Discovery source with measured minutes, or the honest unmeasured form.
+
+    RETIRED-POLICY (2026-09-22): permitted is False in all branches per the
+    G-5 suspension approved by Trent 2026-09-21 and the 2026-09-19 standing
+    LinkedIn hard boundary ("just stop using it"). Measurement fields are
+    retained for historical evidence only; the allocator must always exclude
+    this row as SOURCE_NOT_PERMITTED even with a fresh measurement. Revival
+    path: Trent's ban-scope word, then a fresh measurement — never the stale
+    4.77-min figure (blackboard J-20260922-0840-sour-4640).
+    """
+    retired_note = (
+        "RETIRED-POLICY 2026-09-22: G-5 suspension approved by Trent "
+        "2026-09-21 (permitted:false; suspended_reason="
+        "linkedin-ban-scope-pending-trent); 2026-09-19 standing LinkedIn hard "
+        "boundary ('just stop using it'). Allocator must exclude as "
+        "SOURCE_NOT_PERMITTED even with fresh measurement; revival only on "
+        "Trent's ban-scope word with a fresh measurement.")
     base = {
         "source_id": "linkedin-discovery-sweep",
         "employer_group": "linkedin",
-        "permitted": True,
+        "permitted": False,
         "fit_floor": 75,
         "rate_limited": False,
     }
@@ -992,7 +1075,9 @@ def build_linkedin_source(rows, window_start):
                 "measurement_complete": False,  # card counts exist, minutes not measured
                 "checks": 0, "qualified_unique_live": 0, "verification_minutes": 0.0,
                 "measurement_started_at": None, "measurement_completed_at": None,
-                "evidence_ref": "adapter-note: verification minutes not measured; see sweep state"}
+                "evidence_ref": (
+                    retired_note + " Adapter-note: verification minutes not "
+                    "measured; see sweep state.")}
     return {**base,
             "measurement_complete": True,
             "checks": m["cards"],
@@ -1007,7 +1092,8 @@ def build_linkedin_source(rows, window_start):
             "measurement_completed_at": m["completed_at"],
             "observed_at": m["completed_at"],
             "evidence_ref": (
-                f"telemetry/events.jsonl: latest live linkedin-discovery sweep, "
+                retired_note +
+                f" telemetry/events.jsonl: latest live linkedin-discovery sweep, "
                 f"{m['events']} scan_summary events, wall-clock "
                 f"{m['minutes']:.2f} min for {m['cards']} cards / {m['new']} new; "
                 f"queue-level dedupe recorded 64 net-new on 2026-09-18")}
@@ -1056,10 +1142,15 @@ def measure_supplied_capacity(ledger_rows, attempt_events, window_start, now, so
             no_parseable_ts += 1
             continue
         unique_completions.append((ts, r))
+    # Attempt events arrive FLAT: attempt_events_from_rows() unwraps
+    # row["details"] via keel_flow.journal.events_from_log(), so "state"
+    # and "observed_at" sit at the event's top level. Every other consumer
+    # (attempts.reconcile, attempt_state_by_application) reads them flat;
+    # the nested e.get("details") read here starved capacity forever.
     dispatched = sorted(
         ts for e in (attempt_events or [])
-        for ts in [parse_ts((e.get("details") or {}).get("observed_at"))]
-        if str((e.get("details") or {}).get("state") or "").upper() == "DISPATCHED"
+        for ts in [parse_ts(e.get("observed_at"))]
+        if str(e.get("state") or "").upper() == "DISPATCHED"
         and ts is not None and ts >= window_start)
     evidence = {
         "window_start": window_start_iso,
@@ -1393,8 +1484,7 @@ def main():
 
     # --- active: outside the 01:30-10:00 PT sleep window -------------------------
     la = now.astimezone(ZoneInfo("America/Los_Angeles"))
-    active = not (la.hour < 10 or (la.hour == 1 and la.minute >= 30)
-                  or (la.hour == 0))
+    active = active_outside_sleep_window(la)
 
     snapshot = {
         "schema_version": 1,

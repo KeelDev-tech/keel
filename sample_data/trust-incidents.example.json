@@ -1,0 +1,3256 @@
+[
+  {
+    "as_of": "2026-09-18T12:00:00+00:00",
+    "case_id": "nominal-ready-five-executable-one",
+    "expected": {
+      "estimate_current": true,
+      "executable_ready": 1,
+      "forecast_state": "STARVATION_RISK",
+      "held_applications": 1
+    },
+    "flow_export": {
+      "active": true,
+      "applications": [
+        {
+          "adapter_revision": "synthetic-adapter-1",
+          "application_id": "app-1",
+          "fit_score": 84,
+          "followup_observed_through": "2026-09-18T12:00:00+00:00",
+          "interview_at": "2026-09-08T12:00:00+00:00",
+          "interview_evidence_ref": "synthetic-interview-1",
+          "source_id": "source-a",
+          "submission_confirmed_by_adapter": true,
+          "submission_ref": "synthetic-receipt-app-1",
+          "submitted_at": "2026-08-29T12:00:00+00:00"
+        },
+        {
+          "adapter_revision": "synthetic-adapter-1",
+          "application_id": "app-2",
+          "fit_score": 84,
+          "followup_observed_through": "2026-09-18T12:00:00+00:00",
+          "source_id": "source-a",
+          "submission_confirmed_by_adapter": true,
+          "submission_ref": "synthetic-receipt-app-2",
+          "submitted_at": "2026-08-29T12:00:00+00:00"
+        },
+        {
+          "adapter_revision": "synthetic-adapter-1",
+          "application_id": "app-new",
+          "fit_score": 84,
+          "followup_observed_through": "2026-09-18T12:00:00+00:00",
+          "source_id": "source-a",
+          "submission_confirmed_by_adapter": true,
+          "submission_ref": "synthetic-receipt-app-new",
+          "submitted_at": "2026-09-16T12:00:00+00:00"
+        },
+        {
+          "adapter_revision": "synthetic-adapter-1",
+          "application_id": "app-unconfirmed",
+          "fit_score": 84,
+          "followup_observed_through": "2026-09-18T12:00:00+00:00",
+          "source_id": "source-a",
+          "submission_confirmed_by_adapter": false,
+          "submission_ref": "synthetic-receipt-app-unconfirmed",
+          "submitted_at": "2026-08-29T12:00:00+00:00"
+        }
+      ],
+      "attempt_events": [
+        {
+          "application_id": "8b52adf317819fbe6e00923eaae871920e97f1a26dd471b5eef1aae6ad2b8395",
+          "attempt_id": "82cff136dede57cb845206650711bf053207490c13894e1b3069a1b0512b6b69",
+          "content_hash": "b547b78f58b1bd82645878704eb90c55a113ccb577e87474163c313bdbaba7d1",
+          "event_id": "flow-b859bf0be2ee147dbaf4f6c49037be18e564f4eaf6fd469f443bdbe3034ffbea",
+          "execution_authorized": false,
+          "observed_at": "2026-09-18T11:50:00+00:00",
+          "schema_version": 1,
+          "sequence": 0,
+          "source_ref": "constructed-intent",
+          "state": "INTENT"
+        },
+        {
+          "application_id": "8b52adf317819fbe6e00923eaae871920e97f1a26dd471b5eef1aae6ad2b8395",
+          "attempt_id": "82cff136dede57cb845206650711bf053207490c13894e1b3069a1b0512b6b69",
+          "content_hash": "b547b78f58b1bd82645878704eb90c55a113ccb577e87474163c313bdbaba7d1",
+          "event_id": "synthetic-dispatch-1",
+          "execution_authorized": false,
+          "observed_at": "2026-09-18T11:51:00+00:00",
+          "schema_version": 1,
+          "sequence": 1,
+          "source_ref": "synthetic-dispatch-export",
+          "state": "DISPATCHED"
+        },
+        {
+          "application_id": "8b52adf317819fbe6e00923eaae871920e97f1a26dd471b5eef1aae6ad2b8395",
+          "attempt_id": "82cff136dede57cb845206650711bf053207490c13894e1b3069a1b0512b6b69",
+          "content_hash": "b547b78f58b1bd82645878704eb90c55a113ccb577e87474163c313bdbaba7d1",
+          "event_id": "synthetic-unknown-1",
+          "execution_authorized": false,
+          "observed_at": "2026-09-18T11:52:00+00:00",
+          "schema_version": 1,
+          "sequence": 2,
+          "source_ref": "synthetic-timeout-export",
+          "state": "UNKNOWN"
+        }
+      ],
+      "attempt_history_complete": true,
+      "capacity": {
+        "evidence_ref": "synthetic-capacity-1",
+        "horizon_seconds": 3600,
+        "measured_while_supplied": true,
+        "observed_at": "2026-09-18T12:00:00+00:00",
+        "source_revision": "synthetic-supplied-window",
+        "unit": "applications/hour",
+        "value": 12
+      },
+      "complete": true,
+      "discovery": {
+        "budget_minutes": 30,
+        "sources": [
+          {
+            "checks": 100,
+            "employer_group": "source-a",
+            "evidence_ref": "synthetic-source-window-1",
+            "fit_floor": 75,
+            "measurement_complete": true,
+            "observed_at": "2026-09-18T12:00:00+00:00",
+            "permitted": true,
+            "qualified_unique_live": 20,
+            "rate_limited": false,
+            "source_id": "source-a",
+            "verification_minutes": 60
+          },
+          {
+            "checks": 100,
+            "employer_group": "source-b",
+            "evidence_ref": "synthetic-source-window-1",
+            "fit_floor": 75,
+            "measurement_complete": true,
+            "observed_at": "2026-09-18T12:00:00+00:00",
+            "permitted": true,
+            "qualified_unique_live": 5,
+            "rate_limited": false,
+            "source_id": "source-b",
+            "verification_minutes": 60
+          },
+          {
+            "checks": 0,
+            "employer_group": "source-c",
+            "evidence_ref": "synthetic-source-window-1",
+            "fit_floor": 75,
+            "measurement_complete": true,
+            "observed_at": "2026-09-18T12:00:00+00:00",
+            "permitted": true,
+            "qualified_unique_live": 0,
+            "rate_limited": false,
+            "source_id": "source-c",
+            "verification_minutes": 0
+          }
+        ]
+      },
+      "hold_decisions": [],
+      "holds": [
+        {
+          "evidence_revision": "synthetic-evidence-1",
+          "family": "dedupe",
+          "hold_id": "hold-1",
+          "occurrences": 4,
+          "opened_at": "2026-09-16T12:00:00+00:00",
+          "owner": "canonical-reviewer",
+          "release_condition": "Canonical reviewer reconciles exact posting identity against submission history",
+          "review_after": "2026-09-18T10:00:00+00:00",
+          "role_id": "role-2"
+        },
+        {
+          "evidence_revision": "synthetic-evidence-1",
+          "family": "consent",
+          "hold_id": "hold-consent",
+          "occurrences": 4,
+          "opened_at": "2026-09-16T12:00:00+00:00",
+          "owner": "applicant",
+          "release_condition": "Applicant explicitly answers the exact consent question",
+          "review_after": "2026-09-18T10:00:00+00:00",
+          "role_id": "role-5"
+        }
+      ],
+      "leads": [
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "9e33bfaed10adca53ece8f4ef9cd11b1fe0b9f50a976f9650f99624773fe57ad",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": true,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/role-1",
+          "posting_verified": true,
+          "role_id": "role-1",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "READY"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "0f206b5c606cb807428cf6c45ccdc4ed57f2b49a0b753688037b33e4360b7094",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": true,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/role-2",
+          "posting_verified": true,
+          "role_id": "role-2",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "READY"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "8b52adf317819fbe6e00923eaae871920e97f1a26dd471b5eef1aae6ad2b8395",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": true,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/role-3",
+          "posting_verified": true,
+          "role_id": "role-3",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "READY"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": false,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "8e7220abc59d4eb4690258dd4483a4c323f10ff5d0b77446ac196f8c21922106",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": true,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/role-4",
+          "posting_verified": true,
+          "role_id": "role-4",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "READY"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": false,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "57585159809ae6d3ba8e18f27f999efce628b6c5bdd50dc7a04642d74e602bbc",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": true,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/role-5",
+          "posting_verified": true,
+          "role_id": "role-5",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "READY"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "dca84de1dd69baa74deeb98b137188d78262625deaa1ad736bcb82862e822b6f",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": false,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/synthetic-backlog:0",
+          "posting_verified": false,
+          "role_id": "synthetic-backlog:0",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "PARKED-PENDING-VERIFICATION"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "f6ab3fd87797c4da8f5e337a9c191edbf10a1f62d6977b8391c9f62031b8fb60",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": false,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/synthetic-backlog:1",
+          "posting_verified": false,
+          "role_id": "synthetic-backlog:1",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "PARKED-PENDING-VERIFICATION"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "93c29f7a03c3a94bf8d768d5ccd8879677d8b06ae079af2e20f2f3ade5d6b0d5",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": false,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/synthetic-backlog:2",
+          "posting_verified": false,
+          "role_id": "synthetic-backlog:2",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "PARKED-PENDING-VERIFICATION"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "654449a5a97ccaaf1d3b5c4b178ff716d1a5228d317e4e2ee1257e07f9c0fcba",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": false,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/synthetic-backlog:3",
+          "posting_verified": false,
+          "role_id": "synthetic-backlog:3",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "PARKED-PENDING-VERIFICATION"
+        }
+      ],
+      "observed_at": "2026-09-18T12:00:00+00:00",
+      "pool": {
+        "actionable": 0,
+        "observed_at": "2026-09-18T12:00:00+00:00",
+        "ready": 5,
+        "schema_version": 1
+      },
+      "question_dependencies": [
+        {
+          "action_band": "APPLY",
+          "deadline": "2026-09-18T18:00:00+00:00",
+          "fit_score": 84,
+          "open_question_ids": [
+            "travel"
+          ],
+          "other_gates_clear": true,
+          "role_id": "role-4"
+        },
+        {
+          "action_band": "APPLY",
+          "deadline": null,
+          "fit_score": 84,
+          "open_question_ids": [
+            "travel",
+            "consent"
+          ],
+          "other_gates_clear": true,
+          "role_id": "role-5"
+        }
+      ],
+      "releases": [
+        {
+          "available_at": "2026-09-18T12:10:00+00:00",
+          "conversion_evidence_ref": "synthetic-conversion-window",
+          "count": 4,
+          "estimated_conversion": 0.5,
+          "evidence_ref": "synthetic-backlog-1",
+          "p95_prepare_seconds": 300,
+          "p95_verify_seconds": 300,
+          "release_id": "synthetic-backlog",
+          "role_ids": [
+            "synthetic-backlog:0",
+            "synthetic-backlog:1",
+            "synthetic-backlog:2",
+            "synthetic-backlog:3"
+          ],
+          "stage": "VERIFICATION_ELIGIBLE"
+        }
+      ],
+      "schema_version": 1,
+      "source_revision": "SYNTHETIC-DEMO-NOT-LIVE",
+      "tray": {
+        "questions": [
+          {
+            "employer": "Example",
+            "field_type": "select",
+            "id": "travel",
+            "options": [
+              "Yes",
+              "No"
+            ],
+            "policy_scope": "synthetic-role-scope",
+            "required": true,
+            "text": "Are you willing to travel?"
+          },
+          {
+            "employer": "Stripe",
+            "field_type": "select",
+            "id": "consent",
+            "options": [
+              "Yes",
+              "No"
+            ],
+            "policy_scope": "synthetic-role-scope",
+            "required": true,
+            "text": "WhatsApp consent?"
+          }
+        ],
+        "schema_version": 1
+      }
+    },
+    "incident_ref": "fixture://nominal-ready-five-executable-one",
+    "schema_version": 1
+  },
+  {
+    "as_of": "2026-09-18T12:00:00+00:00",
+    "case_id": "stale-export",
+    "expected": {
+      "discovery_minutes": 0,
+      "estimate_current": false,
+      "forecast_state": "UNKNOWN"
+    },
+    "flow_export": {
+      "active": true,
+      "applications": [
+        {
+          "adapter_revision": "synthetic-adapter-1",
+          "application_id": "app-1",
+          "fit_score": 84,
+          "followup_observed_through": "2026-09-18T12:00:00+00:00",
+          "interview_at": "2026-09-08T12:00:00+00:00",
+          "interview_evidence_ref": "synthetic-interview-1",
+          "source_id": "source-a",
+          "submission_confirmed_by_adapter": true,
+          "submission_ref": "synthetic-receipt-app-1",
+          "submitted_at": "2026-08-29T12:00:00+00:00"
+        },
+        {
+          "adapter_revision": "synthetic-adapter-1",
+          "application_id": "app-2",
+          "fit_score": 84,
+          "followup_observed_through": "2026-09-18T12:00:00+00:00",
+          "source_id": "source-a",
+          "submission_confirmed_by_adapter": true,
+          "submission_ref": "synthetic-receipt-app-2",
+          "submitted_at": "2026-08-29T12:00:00+00:00"
+        },
+        {
+          "adapter_revision": "synthetic-adapter-1",
+          "application_id": "app-new",
+          "fit_score": 84,
+          "followup_observed_through": "2026-09-18T12:00:00+00:00",
+          "source_id": "source-a",
+          "submission_confirmed_by_adapter": true,
+          "submission_ref": "synthetic-receipt-app-new",
+          "submitted_at": "2026-09-16T12:00:00+00:00"
+        },
+        {
+          "adapter_revision": "synthetic-adapter-1",
+          "application_id": "app-unconfirmed",
+          "fit_score": 84,
+          "followup_observed_through": "2026-09-18T12:00:00+00:00",
+          "source_id": "source-a",
+          "submission_confirmed_by_adapter": false,
+          "submission_ref": "synthetic-receipt-app-unconfirmed",
+          "submitted_at": "2026-08-29T12:00:00+00:00"
+        }
+      ],
+      "attempt_events": [
+        {
+          "application_id": "8b52adf317819fbe6e00923eaae871920e97f1a26dd471b5eef1aae6ad2b8395",
+          "attempt_id": "82cff136dede57cb845206650711bf053207490c13894e1b3069a1b0512b6b69",
+          "content_hash": "b547b78f58b1bd82645878704eb90c55a113ccb577e87474163c313bdbaba7d1",
+          "event_id": "flow-b859bf0be2ee147dbaf4f6c49037be18e564f4eaf6fd469f443bdbe3034ffbea",
+          "execution_authorized": false,
+          "observed_at": "2026-09-18T11:50:00+00:00",
+          "schema_version": 1,
+          "sequence": 0,
+          "source_ref": "constructed-intent",
+          "state": "INTENT"
+        },
+        {
+          "application_id": "8b52adf317819fbe6e00923eaae871920e97f1a26dd471b5eef1aae6ad2b8395",
+          "attempt_id": "82cff136dede57cb845206650711bf053207490c13894e1b3069a1b0512b6b69",
+          "content_hash": "b547b78f58b1bd82645878704eb90c55a113ccb577e87474163c313bdbaba7d1",
+          "event_id": "synthetic-dispatch-1",
+          "execution_authorized": false,
+          "observed_at": "2026-09-18T11:51:00+00:00",
+          "schema_version": 1,
+          "sequence": 1,
+          "source_ref": "synthetic-dispatch-export",
+          "state": "DISPATCHED"
+        },
+        {
+          "application_id": "8b52adf317819fbe6e00923eaae871920e97f1a26dd471b5eef1aae6ad2b8395",
+          "attempt_id": "82cff136dede57cb845206650711bf053207490c13894e1b3069a1b0512b6b69",
+          "content_hash": "b547b78f58b1bd82645878704eb90c55a113ccb577e87474163c313bdbaba7d1",
+          "event_id": "synthetic-unknown-1",
+          "execution_authorized": false,
+          "observed_at": "2026-09-18T11:52:00+00:00",
+          "schema_version": 1,
+          "sequence": 2,
+          "source_ref": "synthetic-timeout-export",
+          "state": "UNKNOWN"
+        }
+      ],
+      "attempt_history_complete": true,
+      "capacity": {
+        "evidence_ref": "synthetic-capacity-1",
+        "horizon_seconds": 3600,
+        "measured_while_supplied": true,
+        "observed_at": "2026-09-18T12:00:00+00:00",
+        "source_revision": "synthetic-supplied-window",
+        "unit": "applications/hour",
+        "value": 12
+      },
+      "complete": true,
+      "discovery": {
+        "budget_minutes": 30,
+        "sources": [
+          {
+            "checks": 100,
+            "employer_group": "source-a",
+            "evidence_ref": "synthetic-source-window-1",
+            "fit_floor": 75,
+            "measurement_complete": true,
+            "observed_at": "2026-09-18T12:00:00+00:00",
+            "permitted": true,
+            "qualified_unique_live": 20,
+            "rate_limited": false,
+            "source_id": "source-a",
+            "verification_minutes": 60
+          },
+          {
+            "checks": 100,
+            "employer_group": "source-b",
+            "evidence_ref": "synthetic-source-window-1",
+            "fit_floor": 75,
+            "measurement_complete": true,
+            "observed_at": "2026-09-18T12:00:00+00:00",
+            "permitted": true,
+            "qualified_unique_live": 5,
+            "rate_limited": false,
+            "source_id": "source-b",
+            "verification_minutes": 60
+          },
+          {
+            "checks": 0,
+            "employer_group": "source-c",
+            "evidence_ref": "synthetic-source-window-1",
+            "fit_floor": 75,
+            "measurement_complete": true,
+            "observed_at": "2026-09-18T12:00:00+00:00",
+            "permitted": true,
+            "qualified_unique_live": 0,
+            "rate_limited": false,
+            "source_id": "source-c",
+            "verification_minutes": 0
+          }
+        ]
+      },
+      "hold_decisions": [],
+      "holds": [
+        {
+          "evidence_revision": "synthetic-evidence-1",
+          "family": "dedupe",
+          "hold_id": "hold-1",
+          "occurrences": 4,
+          "opened_at": "2026-09-16T12:00:00+00:00",
+          "owner": "canonical-reviewer",
+          "release_condition": "Canonical reviewer reconciles exact posting identity against submission history",
+          "review_after": "2026-09-18T10:00:00+00:00",
+          "role_id": "role-2"
+        },
+        {
+          "evidence_revision": "synthetic-evidence-1",
+          "family": "consent",
+          "hold_id": "hold-consent",
+          "occurrences": 4,
+          "opened_at": "2026-09-16T12:00:00+00:00",
+          "owner": "applicant",
+          "release_condition": "Applicant explicitly answers the exact consent question",
+          "review_after": "2026-09-18T10:00:00+00:00",
+          "role_id": "role-5"
+        }
+      ],
+      "leads": [
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "9e33bfaed10adca53ece8f4ef9cd11b1fe0b9f50a976f9650f99624773fe57ad",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": true,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/role-1",
+          "posting_verified": true,
+          "role_id": "role-1",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "READY"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "0f206b5c606cb807428cf6c45ccdc4ed57f2b49a0b753688037b33e4360b7094",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": true,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/role-2",
+          "posting_verified": true,
+          "role_id": "role-2",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "READY"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "8b52adf317819fbe6e00923eaae871920e97f1a26dd471b5eef1aae6ad2b8395",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": true,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/role-3",
+          "posting_verified": true,
+          "role_id": "role-3",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "READY"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": false,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "8e7220abc59d4eb4690258dd4483a4c323f10ff5d0b77446ac196f8c21922106",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": true,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/role-4",
+          "posting_verified": true,
+          "role_id": "role-4",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "READY"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": false,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "57585159809ae6d3ba8e18f27f999efce628b6c5bdd50dc7a04642d74e602bbc",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": true,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/role-5",
+          "posting_verified": true,
+          "role_id": "role-5",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "READY"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "dca84de1dd69baa74deeb98b137188d78262625deaa1ad736bcb82862e822b6f",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": false,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/synthetic-backlog:0",
+          "posting_verified": false,
+          "role_id": "synthetic-backlog:0",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "PARKED-PENDING-VERIFICATION"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "f6ab3fd87797c4da8f5e337a9c191edbf10a1f62d6977b8391c9f62031b8fb60",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": false,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/synthetic-backlog:1",
+          "posting_verified": false,
+          "role_id": "synthetic-backlog:1",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "PARKED-PENDING-VERIFICATION"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "93c29f7a03c3a94bf8d768d5ccd8879677d8b06ae079af2e20f2f3ade5d6b0d5",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": false,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/synthetic-backlog:2",
+          "posting_verified": false,
+          "role_id": "synthetic-backlog:2",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "PARKED-PENDING-VERIFICATION"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "654449a5a97ccaaf1d3b5c4b178ff716d1a5228d317e4e2ee1257e07f9c0fcba",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": false,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/synthetic-backlog:3",
+          "posting_verified": false,
+          "role_id": "synthetic-backlog:3",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "PARKED-PENDING-VERIFICATION"
+        }
+      ],
+      "observed_at": "2026-09-18T11:58:29+00:00",
+      "pool": {
+        "actionable": 0,
+        "observed_at": "2026-09-18T12:00:00+00:00",
+        "ready": 5,
+        "schema_version": 1
+      },
+      "question_dependencies": [
+        {
+          "action_band": "APPLY",
+          "deadline": "2026-09-18T18:00:00+00:00",
+          "fit_score": 84,
+          "open_question_ids": [
+            "travel"
+          ],
+          "other_gates_clear": true,
+          "role_id": "role-4"
+        },
+        {
+          "action_band": "APPLY",
+          "deadline": null,
+          "fit_score": 84,
+          "open_question_ids": [
+            "travel",
+            "consent"
+          ],
+          "other_gates_clear": true,
+          "role_id": "role-5"
+        }
+      ],
+      "releases": [
+        {
+          "available_at": "2026-09-18T12:10:00+00:00",
+          "conversion_evidence_ref": "synthetic-conversion-window",
+          "count": 4,
+          "estimated_conversion": 0.5,
+          "evidence_ref": "synthetic-backlog-1",
+          "p95_prepare_seconds": 300,
+          "p95_verify_seconds": 300,
+          "release_id": "synthetic-backlog",
+          "role_ids": [
+            "synthetic-backlog:0",
+            "synthetic-backlog:1",
+            "synthetic-backlog:2",
+            "synthetic-backlog:3"
+          ],
+          "stage": "VERIFICATION_ELIGIBLE"
+        }
+      ],
+      "schema_version": 1,
+      "source_revision": "SYNTHETIC-DEMO-NOT-LIVE",
+      "tray": {
+        "questions": [
+          {
+            "employer": "Example",
+            "field_type": "select",
+            "id": "travel",
+            "options": [
+              "Yes",
+              "No"
+            ],
+            "policy_scope": "synthetic-role-scope",
+            "required": true,
+            "text": "Are you willing to travel?"
+          },
+          {
+            "employer": "Stripe",
+            "field_type": "select",
+            "id": "consent",
+            "options": [
+              "Yes",
+              "No"
+            ],
+            "policy_scope": "synthetic-role-scope",
+            "required": true,
+            "text": "WhatsApp consent?"
+          }
+        ],
+        "schema_version": 1
+      }
+    },
+    "incident_ref": "fixture://stale-export",
+    "schema_version": 1
+  },
+  {
+    "as_of": "2026-09-18T12:00:00+00:00",
+    "case_id": "changed-packet",
+    "expected": {
+      "executable_ready": 0,
+      "held_applications": 1
+    },
+    "flow_export": {
+      "active": true,
+      "applications": [
+        {
+          "adapter_revision": "synthetic-adapter-1",
+          "application_id": "app-1",
+          "fit_score": 84,
+          "followup_observed_through": "2026-09-18T12:00:00+00:00",
+          "interview_at": "2026-09-08T12:00:00+00:00",
+          "interview_evidence_ref": "synthetic-interview-1",
+          "source_id": "source-a",
+          "submission_confirmed_by_adapter": true,
+          "submission_ref": "synthetic-receipt-app-1",
+          "submitted_at": "2026-08-29T12:00:00+00:00"
+        },
+        {
+          "adapter_revision": "synthetic-adapter-1",
+          "application_id": "app-2",
+          "fit_score": 84,
+          "followup_observed_through": "2026-09-18T12:00:00+00:00",
+          "source_id": "source-a",
+          "submission_confirmed_by_adapter": true,
+          "submission_ref": "synthetic-receipt-app-2",
+          "submitted_at": "2026-08-29T12:00:00+00:00"
+        },
+        {
+          "adapter_revision": "synthetic-adapter-1",
+          "application_id": "app-new",
+          "fit_score": 84,
+          "followup_observed_through": "2026-09-18T12:00:00+00:00",
+          "source_id": "source-a",
+          "submission_confirmed_by_adapter": true,
+          "submission_ref": "synthetic-receipt-app-new",
+          "submitted_at": "2026-09-16T12:00:00+00:00"
+        },
+        {
+          "adapter_revision": "synthetic-adapter-1",
+          "application_id": "app-unconfirmed",
+          "fit_score": 84,
+          "followup_observed_through": "2026-09-18T12:00:00+00:00",
+          "source_id": "source-a",
+          "submission_confirmed_by_adapter": false,
+          "submission_ref": "synthetic-receipt-app-unconfirmed",
+          "submitted_at": "2026-08-29T12:00:00+00:00"
+        }
+      ],
+      "attempt_events": [
+        {
+          "application_id": "8b52adf317819fbe6e00923eaae871920e97f1a26dd471b5eef1aae6ad2b8395",
+          "attempt_id": "82cff136dede57cb845206650711bf053207490c13894e1b3069a1b0512b6b69",
+          "content_hash": "b547b78f58b1bd82645878704eb90c55a113ccb577e87474163c313bdbaba7d1",
+          "event_id": "flow-b859bf0be2ee147dbaf4f6c49037be18e564f4eaf6fd469f443bdbe3034ffbea",
+          "execution_authorized": false,
+          "observed_at": "2026-09-18T11:50:00+00:00",
+          "schema_version": 1,
+          "sequence": 0,
+          "source_ref": "constructed-intent",
+          "state": "INTENT"
+        },
+        {
+          "application_id": "8b52adf317819fbe6e00923eaae871920e97f1a26dd471b5eef1aae6ad2b8395",
+          "attempt_id": "82cff136dede57cb845206650711bf053207490c13894e1b3069a1b0512b6b69",
+          "content_hash": "b547b78f58b1bd82645878704eb90c55a113ccb577e87474163c313bdbaba7d1",
+          "event_id": "synthetic-dispatch-1",
+          "execution_authorized": false,
+          "observed_at": "2026-09-18T11:51:00+00:00",
+          "schema_version": 1,
+          "sequence": 1,
+          "source_ref": "synthetic-dispatch-export",
+          "state": "DISPATCHED"
+        },
+        {
+          "application_id": "8b52adf317819fbe6e00923eaae871920e97f1a26dd471b5eef1aae6ad2b8395",
+          "attempt_id": "82cff136dede57cb845206650711bf053207490c13894e1b3069a1b0512b6b69",
+          "content_hash": "b547b78f58b1bd82645878704eb90c55a113ccb577e87474163c313bdbaba7d1",
+          "event_id": "synthetic-unknown-1",
+          "execution_authorized": false,
+          "observed_at": "2026-09-18T11:52:00+00:00",
+          "schema_version": 1,
+          "sequence": 2,
+          "source_ref": "synthetic-timeout-export",
+          "state": "UNKNOWN"
+        }
+      ],
+      "attempt_history_complete": true,
+      "capacity": {
+        "evidence_ref": "synthetic-capacity-1",
+        "horizon_seconds": 3600,
+        "measured_while_supplied": true,
+        "observed_at": "2026-09-18T12:00:00+00:00",
+        "source_revision": "synthetic-supplied-window",
+        "unit": "applications/hour",
+        "value": 12
+      },
+      "complete": true,
+      "discovery": {
+        "budget_minutes": 30,
+        "sources": [
+          {
+            "checks": 100,
+            "employer_group": "source-a",
+            "evidence_ref": "synthetic-source-window-1",
+            "fit_floor": 75,
+            "measurement_complete": true,
+            "observed_at": "2026-09-18T12:00:00+00:00",
+            "permitted": true,
+            "qualified_unique_live": 20,
+            "rate_limited": false,
+            "source_id": "source-a",
+            "verification_minutes": 60
+          },
+          {
+            "checks": 100,
+            "employer_group": "source-b",
+            "evidence_ref": "synthetic-source-window-1",
+            "fit_floor": 75,
+            "measurement_complete": true,
+            "observed_at": "2026-09-18T12:00:00+00:00",
+            "permitted": true,
+            "qualified_unique_live": 5,
+            "rate_limited": false,
+            "source_id": "source-b",
+            "verification_minutes": 60
+          },
+          {
+            "checks": 0,
+            "employer_group": "source-c",
+            "evidence_ref": "synthetic-source-window-1",
+            "fit_floor": 75,
+            "measurement_complete": true,
+            "observed_at": "2026-09-18T12:00:00+00:00",
+            "permitted": true,
+            "qualified_unique_live": 0,
+            "rate_limited": false,
+            "source_id": "source-c",
+            "verification_minutes": 0
+          }
+        ]
+      },
+      "hold_decisions": [],
+      "holds": [
+        {
+          "evidence_revision": "synthetic-evidence-1",
+          "family": "dedupe",
+          "hold_id": "hold-1",
+          "occurrences": 4,
+          "opened_at": "2026-09-16T12:00:00+00:00",
+          "owner": "canonical-reviewer",
+          "release_condition": "Canonical reviewer reconciles exact posting identity against submission history",
+          "review_after": "2026-09-18T10:00:00+00:00",
+          "role_id": "role-2"
+        },
+        {
+          "evidence_revision": "synthetic-evidence-1",
+          "family": "consent",
+          "hold_id": "hold-consent",
+          "occurrences": 4,
+          "opened_at": "2026-09-16T12:00:00+00:00",
+          "owner": "applicant",
+          "release_condition": "Applicant explicitly answers the exact consent question",
+          "review_after": "2026-09-18T10:00:00+00:00",
+          "role_id": "role-5"
+        }
+      ],
+      "leads": [
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "changed",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "9e33bfaed10adca53ece8f4ef9cd11b1fe0b9f50a976f9650f99624773fe57ad",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": true,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/role-1",
+          "posting_verified": true,
+          "role_id": "role-1",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "READY"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "0f206b5c606cb807428cf6c45ccdc4ed57f2b49a0b753688037b33e4360b7094",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": true,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/role-2",
+          "posting_verified": true,
+          "role_id": "role-2",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "READY"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "8b52adf317819fbe6e00923eaae871920e97f1a26dd471b5eef1aae6ad2b8395",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": true,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/role-3",
+          "posting_verified": true,
+          "role_id": "role-3",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "READY"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": false,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "8e7220abc59d4eb4690258dd4483a4c323f10ff5d0b77446ac196f8c21922106",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": true,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/role-4",
+          "posting_verified": true,
+          "role_id": "role-4",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "READY"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": false,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "57585159809ae6d3ba8e18f27f999efce628b6c5bdd50dc7a04642d74e602bbc",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": true,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/role-5",
+          "posting_verified": true,
+          "role_id": "role-5",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "READY"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "dca84de1dd69baa74deeb98b137188d78262625deaa1ad736bcb82862e822b6f",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": false,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/synthetic-backlog:0",
+          "posting_verified": false,
+          "role_id": "synthetic-backlog:0",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "PARKED-PENDING-VERIFICATION"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "f6ab3fd87797c4da8f5e337a9c191edbf10a1f62d6977b8391c9f62031b8fb60",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": false,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/synthetic-backlog:1",
+          "posting_verified": false,
+          "role_id": "synthetic-backlog:1",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "PARKED-PENDING-VERIFICATION"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "93c29f7a03c3a94bf8d768d5ccd8879677d8b06ae079af2e20f2f3ade5d6b0d5",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": false,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/synthetic-backlog:2",
+          "posting_verified": false,
+          "role_id": "synthetic-backlog:2",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "PARKED-PENDING-VERIFICATION"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "654449a5a97ccaaf1d3b5c4b178ff716d1a5228d317e4e2ee1257e07f9c0fcba",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": false,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/synthetic-backlog:3",
+          "posting_verified": false,
+          "role_id": "synthetic-backlog:3",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "PARKED-PENDING-VERIFICATION"
+        }
+      ],
+      "observed_at": "2026-09-18T12:00:00+00:00",
+      "pool": {
+        "actionable": 0,
+        "observed_at": "2026-09-18T12:00:00+00:00",
+        "ready": 5,
+        "schema_version": 1
+      },
+      "question_dependencies": [
+        {
+          "action_band": "APPLY",
+          "deadline": "2026-09-18T18:00:00+00:00",
+          "fit_score": 84,
+          "open_question_ids": [
+            "travel"
+          ],
+          "other_gates_clear": true,
+          "role_id": "role-4"
+        },
+        {
+          "action_band": "APPLY",
+          "deadline": null,
+          "fit_score": 84,
+          "open_question_ids": [
+            "travel",
+            "consent"
+          ],
+          "other_gates_clear": true,
+          "role_id": "role-5"
+        }
+      ],
+      "releases": [
+        {
+          "available_at": "2026-09-18T12:10:00+00:00",
+          "conversion_evidence_ref": "synthetic-conversion-window",
+          "count": 4,
+          "estimated_conversion": 0.5,
+          "evidence_ref": "synthetic-backlog-1",
+          "p95_prepare_seconds": 300,
+          "p95_verify_seconds": 300,
+          "release_id": "synthetic-backlog",
+          "role_ids": [
+            "synthetic-backlog:0",
+            "synthetic-backlog:1",
+            "synthetic-backlog:2",
+            "synthetic-backlog:3"
+          ],
+          "stage": "VERIFICATION_ELIGIBLE"
+        }
+      ],
+      "schema_version": 1,
+      "source_revision": "SYNTHETIC-DEMO-NOT-LIVE",
+      "tray": {
+        "questions": [
+          {
+            "employer": "Example",
+            "field_type": "select",
+            "id": "travel",
+            "options": [
+              "Yes",
+              "No"
+            ],
+            "policy_scope": "synthetic-role-scope",
+            "required": true,
+            "text": "Are you willing to travel?"
+          },
+          {
+            "employer": "Stripe",
+            "field_type": "select",
+            "id": "consent",
+            "options": [
+              "Yes",
+              "No"
+            ],
+            "policy_scope": "synthetic-role-scope",
+            "required": true,
+            "text": "WhatsApp consent?"
+          }
+        ],
+        "schema_version": 1
+      }
+    },
+    "incident_ref": "fixture://changed-packet",
+    "schema_version": 1
+  },
+  {
+    "as_of": "2026-09-18T12:00:00+00:00",
+    "case_id": "http429-stop",
+    "expected": {
+      "discovery_minutes": 0
+    },
+    "flow_export": {
+      "active": true,
+      "applications": [
+        {
+          "adapter_revision": "synthetic-adapter-1",
+          "application_id": "app-1",
+          "fit_score": 84,
+          "followup_observed_through": "2026-09-18T12:00:00+00:00",
+          "interview_at": "2026-09-08T12:00:00+00:00",
+          "interview_evidence_ref": "synthetic-interview-1",
+          "source_id": "source-a",
+          "submission_confirmed_by_adapter": true,
+          "submission_ref": "synthetic-receipt-app-1",
+          "submitted_at": "2026-08-29T12:00:00+00:00"
+        },
+        {
+          "adapter_revision": "synthetic-adapter-1",
+          "application_id": "app-2",
+          "fit_score": 84,
+          "followup_observed_through": "2026-09-18T12:00:00+00:00",
+          "source_id": "source-a",
+          "submission_confirmed_by_adapter": true,
+          "submission_ref": "synthetic-receipt-app-2",
+          "submitted_at": "2026-08-29T12:00:00+00:00"
+        },
+        {
+          "adapter_revision": "synthetic-adapter-1",
+          "application_id": "app-new",
+          "fit_score": 84,
+          "followup_observed_through": "2026-09-18T12:00:00+00:00",
+          "source_id": "source-a",
+          "submission_confirmed_by_adapter": true,
+          "submission_ref": "synthetic-receipt-app-new",
+          "submitted_at": "2026-09-16T12:00:00+00:00"
+        },
+        {
+          "adapter_revision": "synthetic-adapter-1",
+          "application_id": "app-unconfirmed",
+          "fit_score": 84,
+          "followup_observed_through": "2026-09-18T12:00:00+00:00",
+          "source_id": "source-a",
+          "submission_confirmed_by_adapter": false,
+          "submission_ref": "synthetic-receipt-app-unconfirmed",
+          "submitted_at": "2026-08-29T12:00:00+00:00"
+        }
+      ],
+      "attempt_events": [
+        {
+          "application_id": "8b52adf317819fbe6e00923eaae871920e97f1a26dd471b5eef1aae6ad2b8395",
+          "attempt_id": "82cff136dede57cb845206650711bf053207490c13894e1b3069a1b0512b6b69",
+          "content_hash": "b547b78f58b1bd82645878704eb90c55a113ccb577e87474163c313bdbaba7d1",
+          "event_id": "flow-b859bf0be2ee147dbaf4f6c49037be18e564f4eaf6fd469f443bdbe3034ffbea",
+          "execution_authorized": false,
+          "observed_at": "2026-09-18T11:50:00+00:00",
+          "schema_version": 1,
+          "sequence": 0,
+          "source_ref": "constructed-intent",
+          "state": "INTENT"
+        },
+        {
+          "application_id": "8b52adf317819fbe6e00923eaae871920e97f1a26dd471b5eef1aae6ad2b8395",
+          "attempt_id": "82cff136dede57cb845206650711bf053207490c13894e1b3069a1b0512b6b69",
+          "content_hash": "b547b78f58b1bd82645878704eb90c55a113ccb577e87474163c313bdbaba7d1",
+          "event_id": "synthetic-dispatch-1",
+          "execution_authorized": false,
+          "observed_at": "2026-09-18T11:51:00+00:00",
+          "schema_version": 1,
+          "sequence": 1,
+          "source_ref": "synthetic-dispatch-export",
+          "state": "DISPATCHED"
+        },
+        {
+          "application_id": "8b52adf317819fbe6e00923eaae871920e97f1a26dd471b5eef1aae6ad2b8395",
+          "attempt_id": "82cff136dede57cb845206650711bf053207490c13894e1b3069a1b0512b6b69",
+          "content_hash": "b547b78f58b1bd82645878704eb90c55a113ccb577e87474163c313bdbaba7d1",
+          "event_id": "synthetic-unknown-1",
+          "execution_authorized": false,
+          "observed_at": "2026-09-18T11:52:00+00:00",
+          "schema_version": 1,
+          "sequence": 2,
+          "source_ref": "synthetic-timeout-export",
+          "state": "UNKNOWN"
+        }
+      ],
+      "attempt_history_complete": true,
+      "capacity": {
+        "evidence_ref": "synthetic-capacity-1",
+        "horizon_seconds": 3600,
+        "measured_while_supplied": true,
+        "observed_at": "2026-09-18T12:00:00+00:00",
+        "source_revision": "synthetic-supplied-window",
+        "unit": "applications/hour",
+        "value": 12
+      },
+      "complete": true,
+      "discovery": {
+        "budget_minutes": 30,
+        "sources": [
+          {
+            "checks": 100,
+            "employer_group": "source-a",
+            "evidence_ref": "synthetic-source-window-1",
+            "fit_floor": 75,
+            "measurement_complete": true,
+            "observed_at": "2026-09-18T12:00:00+00:00",
+            "permitted": true,
+            "qualified_unique_live": 20,
+            "rate_limited": true,
+            "source_id": "source-a",
+            "verification_minutes": 60
+          },
+          {
+            "checks": 100,
+            "employer_group": "source-b",
+            "evidence_ref": "synthetic-source-window-1",
+            "fit_floor": 75,
+            "measurement_complete": true,
+            "observed_at": "2026-09-18T12:00:00+00:00",
+            "permitted": true,
+            "qualified_unique_live": 5,
+            "rate_limited": false,
+            "source_id": "source-b",
+            "verification_minutes": 60
+          },
+          {
+            "checks": 0,
+            "employer_group": "source-c",
+            "evidence_ref": "synthetic-source-window-1",
+            "fit_floor": 75,
+            "measurement_complete": true,
+            "observed_at": "2026-09-18T12:00:00+00:00",
+            "permitted": true,
+            "qualified_unique_live": 0,
+            "rate_limited": false,
+            "source_id": "source-c",
+            "verification_minutes": 0
+          }
+        ]
+      },
+      "hold_decisions": [],
+      "holds": [
+        {
+          "evidence_revision": "synthetic-evidence-1",
+          "family": "dedupe",
+          "hold_id": "hold-1",
+          "occurrences": 4,
+          "opened_at": "2026-09-16T12:00:00+00:00",
+          "owner": "canonical-reviewer",
+          "release_condition": "Canonical reviewer reconciles exact posting identity against submission history",
+          "review_after": "2026-09-18T10:00:00+00:00",
+          "role_id": "role-2"
+        },
+        {
+          "evidence_revision": "synthetic-evidence-1",
+          "family": "consent",
+          "hold_id": "hold-consent",
+          "occurrences": 4,
+          "opened_at": "2026-09-16T12:00:00+00:00",
+          "owner": "applicant",
+          "release_condition": "Applicant explicitly answers the exact consent question",
+          "review_after": "2026-09-18T10:00:00+00:00",
+          "role_id": "role-5"
+        }
+      ],
+      "leads": [
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "9e33bfaed10adca53ece8f4ef9cd11b1fe0b9f50a976f9650f99624773fe57ad",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": true,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/role-1",
+          "posting_verified": true,
+          "role_id": "role-1",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "READY"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "0f206b5c606cb807428cf6c45ccdc4ed57f2b49a0b753688037b33e4360b7094",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": true,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/role-2",
+          "posting_verified": true,
+          "role_id": "role-2",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "READY"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "8b52adf317819fbe6e00923eaae871920e97f1a26dd471b5eef1aae6ad2b8395",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": true,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/role-3",
+          "posting_verified": true,
+          "role_id": "role-3",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "READY"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": false,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "8e7220abc59d4eb4690258dd4483a4c323f10ff5d0b77446ac196f8c21922106",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": true,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/role-4",
+          "posting_verified": true,
+          "role_id": "role-4",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "READY"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": false,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "57585159809ae6d3ba8e18f27f999efce628b6c5bdd50dc7a04642d74e602bbc",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": true,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/role-5",
+          "posting_verified": true,
+          "role_id": "role-5",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "READY"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "dca84de1dd69baa74deeb98b137188d78262625deaa1ad736bcb82862e822b6f",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": false,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/synthetic-backlog:0",
+          "posting_verified": false,
+          "role_id": "synthetic-backlog:0",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "PARKED-PENDING-VERIFICATION"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "f6ab3fd87797c4da8f5e337a9c191edbf10a1f62d6977b8391c9f62031b8fb60",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": false,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/synthetic-backlog:1",
+          "posting_verified": false,
+          "role_id": "synthetic-backlog:1",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "PARKED-PENDING-VERIFICATION"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "93c29f7a03c3a94bf8d768d5ccd8879677d8b06ae079af2e20f2f3ade5d6b0d5",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": false,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/synthetic-backlog:2",
+          "posting_verified": false,
+          "role_id": "synthetic-backlog:2",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "PARKED-PENDING-VERIFICATION"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "654449a5a97ccaaf1d3b5c4b178ff716d1a5228d317e4e2ee1257e07f9c0fcba",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": false,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/synthetic-backlog:3",
+          "posting_verified": false,
+          "role_id": "synthetic-backlog:3",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "PARKED-PENDING-VERIFICATION"
+        }
+      ],
+      "observed_at": "2026-09-18T12:00:00+00:00",
+      "pool": {
+        "actionable": 0,
+        "observed_at": "2026-09-18T12:00:00+00:00",
+        "ready": 5,
+        "schema_version": 1
+      },
+      "question_dependencies": [
+        {
+          "action_band": "APPLY",
+          "deadline": "2026-09-18T18:00:00+00:00",
+          "fit_score": 84,
+          "open_question_ids": [
+            "travel"
+          ],
+          "other_gates_clear": true,
+          "role_id": "role-4"
+        },
+        {
+          "action_band": "APPLY",
+          "deadline": null,
+          "fit_score": 84,
+          "open_question_ids": [
+            "travel",
+            "consent"
+          ],
+          "other_gates_clear": true,
+          "role_id": "role-5"
+        }
+      ],
+      "releases": [
+        {
+          "available_at": "2026-09-18T12:10:00+00:00",
+          "conversion_evidence_ref": "synthetic-conversion-window",
+          "count": 4,
+          "estimated_conversion": 0.5,
+          "evidence_ref": "synthetic-backlog-1",
+          "p95_prepare_seconds": 300,
+          "p95_verify_seconds": 300,
+          "release_id": "synthetic-backlog",
+          "role_ids": [
+            "synthetic-backlog:0",
+            "synthetic-backlog:1",
+            "synthetic-backlog:2",
+            "synthetic-backlog:3"
+          ],
+          "stage": "VERIFICATION_ELIGIBLE"
+        }
+      ],
+      "schema_version": 1,
+      "source_revision": "SYNTHETIC-DEMO-NOT-LIVE",
+      "tray": {
+        "questions": [
+          {
+            "employer": "Example",
+            "field_type": "select",
+            "id": "travel",
+            "options": [
+              "Yes",
+              "No"
+            ],
+            "policy_scope": "synthetic-role-scope",
+            "required": true,
+            "text": "Are you willing to travel?"
+          },
+          {
+            "employer": "Stripe",
+            "field_type": "select",
+            "id": "consent",
+            "options": [
+              "Yes",
+              "No"
+            ],
+            "policy_scope": "synthetic-role-scope",
+            "required": true,
+            "text": "WhatsApp consent?"
+          }
+        ],
+        "schema_version": 1
+      }
+    },
+    "incident_ref": "fixture://http429-stop",
+    "schema_version": 1
+  },
+  {
+    "as_of": "2026-09-18T12:00:00+00:00",
+    "case_id": "changed-evidence-invalidates-all-materials",
+    "expected": {
+      "executable_ready": 0,
+      "first_refill_seconds": null
+    },
+    "flow_export": {
+      "active": true,
+      "applications": [
+        {
+          "adapter_revision": "synthetic-adapter-1",
+          "application_id": "app-1",
+          "fit_score": 84,
+          "followup_observed_through": "2026-09-18T12:00:00+00:00",
+          "interview_at": "2026-09-08T12:00:00+00:00",
+          "interview_evidence_ref": "synthetic-interview-1",
+          "source_id": "source-a",
+          "submission_confirmed_by_adapter": true,
+          "submission_ref": "synthetic-receipt-app-1",
+          "submitted_at": "2026-08-29T12:00:00+00:00"
+        },
+        {
+          "adapter_revision": "synthetic-adapter-1",
+          "application_id": "app-2",
+          "fit_score": 84,
+          "followup_observed_through": "2026-09-18T12:00:00+00:00",
+          "source_id": "source-a",
+          "submission_confirmed_by_adapter": true,
+          "submission_ref": "synthetic-receipt-app-2",
+          "submitted_at": "2026-08-29T12:00:00+00:00"
+        },
+        {
+          "adapter_revision": "synthetic-adapter-1",
+          "application_id": "app-new",
+          "fit_score": 84,
+          "followup_observed_through": "2026-09-18T12:00:00+00:00",
+          "source_id": "source-a",
+          "submission_confirmed_by_adapter": true,
+          "submission_ref": "synthetic-receipt-app-new",
+          "submitted_at": "2026-09-16T12:00:00+00:00"
+        },
+        {
+          "adapter_revision": "synthetic-adapter-1",
+          "application_id": "app-unconfirmed",
+          "fit_score": 84,
+          "followup_observed_through": "2026-09-18T12:00:00+00:00",
+          "source_id": "source-a",
+          "submission_confirmed_by_adapter": false,
+          "submission_ref": "synthetic-receipt-app-unconfirmed",
+          "submitted_at": "2026-08-29T12:00:00+00:00"
+        }
+      ],
+      "attempt_events": [
+        {
+          "application_id": "8b52adf317819fbe6e00923eaae871920e97f1a26dd471b5eef1aae6ad2b8395",
+          "attempt_id": "82cff136dede57cb845206650711bf053207490c13894e1b3069a1b0512b6b69",
+          "content_hash": "b547b78f58b1bd82645878704eb90c55a113ccb577e87474163c313bdbaba7d1",
+          "event_id": "flow-b859bf0be2ee147dbaf4f6c49037be18e564f4eaf6fd469f443bdbe3034ffbea",
+          "execution_authorized": false,
+          "observed_at": "2026-09-18T11:50:00+00:00",
+          "schema_version": 1,
+          "sequence": 0,
+          "source_ref": "constructed-intent",
+          "state": "INTENT"
+        },
+        {
+          "application_id": "8b52adf317819fbe6e00923eaae871920e97f1a26dd471b5eef1aae6ad2b8395",
+          "attempt_id": "82cff136dede57cb845206650711bf053207490c13894e1b3069a1b0512b6b69",
+          "content_hash": "b547b78f58b1bd82645878704eb90c55a113ccb577e87474163c313bdbaba7d1",
+          "event_id": "synthetic-dispatch-1",
+          "execution_authorized": false,
+          "observed_at": "2026-09-18T11:51:00+00:00",
+          "schema_version": 1,
+          "sequence": 1,
+          "source_ref": "synthetic-dispatch-export",
+          "state": "DISPATCHED"
+        },
+        {
+          "application_id": "8b52adf317819fbe6e00923eaae871920e97f1a26dd471b5eef1aae6ad2b8395",
+          "attempt_id": "82cff136dede57cb845206650711bf053207490c13894e1b3069a1b0512b6b69",
+          "content_hash": "b547b78f58b1bd82645878704eb90c55a113ccb577e87474163c313bdbaba7d1",
+          "event_id": "synthetic-unknown-1",
+          "execution_authorized": false,
+          "observed_at": "2026-09-18T11:52:00+00:00",
+          "schema_version": 1,
+          "sequence": 2,
+          "source_ref": "synthetic-timeout-export",
+          "state": "UNKNOWN"
+        }
+      ],
+      "attempt_history_complete": true,
+      "capacity": {
+        "evidence_ref": "synthetic-capacity-1",
+        "horizon_seconds": 3600,
+        "measured_while_supplied": true,
+        "observed_at": "2026-09-18T12:00:00+00:00",
+        "source_revision": "synthetic-supplied-window",
+        "unit": "applications/hour",
+        "value": 12
+      },
+      "complete": true,
+      "discovery": {
+        "budget_minutes": 30,
+        "sources": [
+          {
+            "checks": 100,
+            "employer_group": "source-a",
+            "evidence_ref": "synthetic-source-window-1",
+            "fit_floor": 75,
+            "measurement_complete": true,
+            "observed_at": "2026-09-18T12:00:00+00:00",
+            "permitted": true,
+            "qualified_unique_live": 20,
+            "rate_limited": false,
+            "source_id": "source-a",
+            "verification_minutes": 60
+          },
+          {
+            "checks": 100,
+            "employer_group": "source-b",
+            "evidence_ref": "synthetic-source-window-1",
+            "fit_floor": 75,
+            "measurement_complete": true,
+            "observed_at": "2026-09-18T12:00:00+00:00",
+            "permitted": true,
+            "qualified_unique_live": 5,
+            "rate_limited": false,
+            "source_id": "source-b",
+            "verification_minutes": 60
+          },
+          {
+            "checks": 0,
+            "employer_group": "source-c",
+            "evidence_ref": "synthetic-source-window-1",
+            "fit_floor": 75,
+            "measurement_complete": true,
+            "observed_at": "2026-09-18T12:00:00+00:00",
+            "permitted": true,
+            "qualified_unique_live": 0,
+            "rate_limited": false,
+            "source_id": "source-c",
+            "verification_minutes": 0
+          }
+        ]
+      },
+      "hold_decisions": [],
+      "holds": [
+        {
+          "evidence_revision": "synthetic-evidence-1",
+          "family": "dedupe",
+          "hold_id": "hold-1",
+          "occurrences": 4,
+          "opened_at": "2026-09-16T12:00:00+00:00",
+          "owner": "canonical-reviewer",
+          "release_condition": "Canonical reviewer reconciles exact posting identity against submission history",
+          "review_after": "2026-09-18T10:00:00+00:00",
+          "role_id": "role-2"
+        },
+        {
+          "evidence_revision": "synthetic-evidence-1",
+          "family": "consent",
+          "hold_id": "hold-consent",
+          "occurrences": 4,
+          "opened_at": "2026-09-16T12:00:00+00:00",
+          "owner": "applicant",
+          "release_condition": "Applicant explicitly answers the exact consent question",
+          "review_after": "2026-09-18T10:00:00+00:00",
+          "role_id": "role-5"
+        }
+      ],
+      "leads": [
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "9e33bfaed10adca53ece8f4ef9cd11b1fe0b9f50a976f9650f99624773fe57ad",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": false,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/role-1",
+          "posting_verified": true,
+          "role_id": "role-1",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "READY"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "0f206b5c606cb807428cf6c45ccdc4ed57f2b49a0b753688037b33e4360b7094",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": false,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/role-2",
+          "posting_verified": true,
+          "role_id": "role-2",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "READY"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "8b52adf317819fbe6e00923eaae871920e97f1a26dd471b5eef1aae6ad2b8395",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": false,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/role-3",
+          "posting_verified": true,
+          "role_id": "role-3",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "READY"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": false,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "8e7220abc59d4eb4690258dd4483a4c323f10ff5d0b77446ac196f8c21922106",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": false,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/role-4",
+          "posting_verified": true,
+          "role_id": "role-4",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "READY"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": false,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "57585159809ae6d3ba8e18f27f999efce628b6c5bdd50dc7a04642d74e602bbc",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": false,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/role-5",
+          "posting_verified": true,
+          "role_id": "role-5",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "READY"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "dca84de1dd69baa74deeb98b137188d78262625deaa1ad736bcb82862e822b6f",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": false,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/synthetic-backlog:0",
+          "posting_verified": false,
+          "role_id": "synthetic-backlog:0",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "PARKED-PENDING-VERIFICATION"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "f6ab3fd87797c4da8f5e337a9c191edbf10a1f62d6977b8391c9f62031b8fb60",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": false,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/synthetic-backlog:1",
+          "posting_verified": false,
+          "role_id": "synthetic-backlog:1",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "PARKED-PENDING-VERIFICATION"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "93c29f7a03c3a94bf8d768d5ccd8879677d8b06ae079af2e20f2f3ade5d6b0d5",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": false,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/synthetic-backlog:2",
+          "posting_verified": false,
+          "role_id": "synthetic-backlog:2",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "PARKED-PENDING-VERIFICATION"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "654449a5a97ccaaf1d3b5c4b178ff716d1a5228d317e4e2ee1257e07f9c0fcba",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": false,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/synthetic-backlog:3",
+          "posting_verified": false,
+          "role_id": "synthetic-backlog:3",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "PARKED-PENDING-VERIFICATION"
+        }
+      ],
+      "observed_at": "2026-09-18T12:00:00+00:00",
+      "pool": {
+        "actionable": 0,
+        "observed_at": "2026-09-18T12:00:00+00:00",
+        "ready": 5,
+        "schema_version": 1
+      },
+      "question_dependencies": [
+        {
+          "action_band": "APPLY",
+          "deadline": "2026-09-18T18:00:00+00:00",
+          "fit_score": 84,
+          "open_question_ids": [
+            "travel"
+          ],
+          "other_gates_clear": false,
+          "role_id": "role-4"
+        },
+        {
+          "action_band": "APPLY",
+          "deadline": null,
+          "fit_score": 84,
+          "open_question_ids": [
+            "travel",
+            "consent"
+          ],
+          "other_gates_clear": false,
+          "role_id": "role-5"
+        }
+      ],
+      "releases": [],
+      "schema_version": 1,
+      "source_revision": "SYNTHETIC-DEMO-NOT-LIVE",
+      "tray": {
+        "questions": [
+          {
+            "employer": "Example",
+            "field_type": "select",
+            "id": "travel",
+            "options": [
+              "Yes",
+              "No"
+            ],
+            "policy_scope": "synthetic-role-scope",
+            "required": true,
+            "text": "Are you willing to travel?"
+          },
+          {
+            "employer": "Stripe",
+            "field_type": "select",
+            "id": "consent",
+            "options": [
+              "Yes",
+              "No"
+            ],
+            "policy_scope": "synthetic-role-scope",
+            "required": true,
+            "text": "WhatsApp consent?"
+          }
+        ],
+        "schema_version": 1
+      }
+    },
+    "incident_ref": "fixture://changed-evidence-invalidates-all-materials",
+    "schema_version": 1
+  },
+  {
+    "as_of": "2026-09-18T12:00:00+00:00",
+    "case_id": "refill-delayed-ten-minutes",
+    "expected": {
+      "exhaustion_seconds": 300.0,
+      "first_refill_seconds": 1800.0
+    },
+    "flow_export": {
+      "active": true,
+      "applications": [
+        {
+          "adapter_revision": "synthetic-adapter-1",
+          "application_id": "app-1",
+          "fit_score": 84,
+          "followup_observed_through": "2026-09-18T12:00:00+00:00",
+          "interview_at": "2026-09-08T12:00:00+00:00",
+          "interview_evidence_ref": "synthetic-interview-1",
+          "source_id": "source-a",
+          "submission_confirmed_by_adapter": true,
+          "submission_ref": "synthetic-receipt-app-1",
+          "submitted_at": "2026-08-29T12:00:00+00:00"
+        },
+        {
+          "adapter_revision": "synthetic-adapter-1",
+          "application_id": "app-2",
+          "fit_score": 84,
+          "followup_observed_through": "2026-09-18T12:00:00+00:00",
+          "source_id": "source-a",
+          "submission_confirmed_by_adapter": true,
+          "submission_ref": "synthetic-receipt-app-2",
+          "submitted_at": "2026-08-29T12:00:00+00:00"
+        },
+        {
+          "adapter_revision": "synthetic-adapter-1",
+          "application_id": "app-new",
+          "fit_score": 84,
+          "followup_observed_through": "2026-09-18T12:00:00+00:00",
+          "source_id": "source-a",
+          "submission_confirmed_by_adapter": true,
+          "submission_ref": "synthetic-receipt-app-new",
+          "submitted_at": "2026-09-16T12:00:00+00:00"
+        },
+        {
+          "adapter_revision": "synthetic-adapter-1",
+          "application_id": "app-unconfirmed",
+          "fit_score": 84,
+          "followup_observed_through": "2026-09-18T12:00:00+00:00",
+          "source_id": "source-a",
+          "submission_confirmed_by_adapter": false,
+          "submission_ref": "synthetic-receipt-app-unconfirmed",
+          "submitted_at": "2026-08-29T12:00:00+00:00"
+        }
+      ],
+      "attempt_events": [
+        {
+          "application_id": "8b52adf317819fbe6e00923eaae871920e97f1a26dd471b5eef1aae6ad2b8395",
+          "attempt_id": "82cff136dede57cb845206650711bf053207490c13894e1b3069a1b0512b6b69",
+          "content_hash": "b547b78f58b1bd82645878704eb90c55a113ccb577e87474163c313bdbaba7d1",
+          "event_id": "flow-b859bf0be2ee147dbaf4f6c49037be18e564f4eaf6fd469f443bdbe3034ffbea",
+          "execution_authorized": false,
+          "observed_at": "2026-09-18T11:50:00+00:00",
+          "schema_version": 1,
+          "sequence": 0,
+          "source_ref": "constructed-intent",
+          "state": "INTENT"
+        },
+        {
+          "application_id": "8b52adf317819fbe6e00923eaae871920e97f1a26dd471b5eef1aae6ad2b8395",
+          "attempt_id": "82cff136dede57cb845206650711bf053207490c13894e1b3069a1b0512b6b69",
+          "content_hash": "b547b78f58b1bd82645878704eb90c55a113ccb577e87474163c313bdbaba7d1",
+          "event_id": "synthetic-dispatch-1",
+          "execution_authorized": false,
+          "observed_at": "2026-09-18T11:51:00+00:00",
+          "schema_version": 1,
+          "sequence": 1,
+          "source_ref": "synthetic-dispatch-export",
+          "state": "DISPATCHED"
+        },
+        {
+          "application_id": "8b52adf317819fbe6e00923eaae871920e97f1a26dd471b5eef1aae6ad2b8395",
+          "attempt_id": "82cff136dede57cb845206650711bf053207490c13894e1b3069a1b0512b6b69",
+          "content_hash": "b547b78f58b1bd82645878704eb90c55a113ccb577e87474163c313bdbaba7d1",
+          "event_id": "synthetic-unknown-1",
+          "execution_authorized": false,
+          "observed_at": "2026-09-18T11:52:00+00:00",
+          "schema_version": 1,
+          "sequence": 2,
+          "source_ref": "synthetic-timeout-export",
+          "state": "UNKNOWN"
+        }
+      ],
+      "attempt_history_complete": true,
+      "capacity": {
+        "evidence_ref": "synthetic-capacity-1",
+        "horizon_seconds": 3600,
+        "measured_while_supplied": true,
+        "observed_at": "2026-09-18T12:00:00+00:00",
+        "source_revision": "synthetic-supplied-window",
+        "unit": "applications/hour",
+        "value": 12
+      },
+      "complete": true,
+      "discovery": {
+        "budget_minutes": 30,
+        "sources": [
+          {
+            "checks": 100,
+            "employer_group": "source-a",
+            "evidence_ref": "synthetic-source-window-1",
+            "fit_floor": 75,
+            "measurement_complete": true,
+            "observed_at": "2026-09-18T12:00:00+00:00",
+            "permitted": true,
+            "qualified_unique_live": 20,
+            "rate_limited": false,
+            "source_id": "source-a",
+            "verification_minutes": 60
+          },
+          {
+            "checks": 100,
+            "employer_group": "source-b",
+            "evidence_ref": "synthetic-source-window-1",
+            "fit_floor": 75,
+            "measurement_complete": true,
+            "observed_at": "2026-09-18T12:00:00+00:00",
+            "permitted": true,
+            "qualified_unique_live": 5,
+            "rate_limited": false,
+            "source_id": "source-b",
+            "verification_minutes": 60
+          },
+          {
+            "checks": 0,
+            "employer_group": "source-c",
+            "evidence_ref": "synthetic-source-window-1",
+            "fit_floor": 75,
+            "measurement_complete": true,
+            "observed_at": "2026-09-18T12:00:00+00:00",
+            "permitted": true,
+            "qualified_unique_live": 0,
+            "rate_limited": false,
+            "source_id": "source-c",
+            "verification_minutes": 0
+          }
+        ]
+      },
+      "hold_decisions": [],
+      "holds": [
+        {
+          "evidence_revision": "synthetic-evidence-1",
+          "family": "dedupe",
+          "hold_id": "hold-1",
+          "occurrences": 4,
+          "opened_at": "2026-09-16T12:00:00+00:00",
+          "owner": "canonical-reviewer",
+          "release_condition": "Canonical reviewer reconciles exact posting identity against submission history",
+          "review_after": "2026-09-18T10:00:00+00:00",
+          "role_id": "role-2"
+        },
+        {
+          "evidence_revision": "synthetic-evidence-1",
+          "family": "consent",
+          "hold_id": "hold-consent",
+          "occurrences": 4,
+          "opened_at": "2026-09-16T12:00:00+00:00",
+          "owner": "applicant",
+          "release_condition": "Applicant explicitly answers the exact consent question",
+          "review_after": "2026-09-18T10:00:00+00:00",
+          "role_id": "role-5"
+        }
+      ],
+      "leads": [
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "9e33bfaed10adca53ece8f4ef9cd11b1fe0b9f50a976f9650f99624773fe57ad",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": true,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/role-1",
+          "posting_verified": true,
+          "role_id": "role-1",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "READY"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "0f206b5c606cb807428cf6c45ccdc4ed57f2b49a0b753688037b33e4360b7094",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": true,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/role-2",
+          "posting_verified": true,
+          "role_id": "role-2",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "READY"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "8b52adf317819fbe6e00923eaae871920e97f1a26dd471b5eef1aae6ad2b8395",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": true,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/role-3",
+          "posting_verified": true,
+          "role_id": "role-3",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "READY"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": false,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "8e7220abc59d4eb4690258dd4483a4c323f10ff5d0b77446ac196f8c21922106",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": true,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/role-4",
+          "posting_verified": true,
+          "role_id": "role-4",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "READY"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": false,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "57585159809ae6d3ba8e18f27f999efce628b6c5bdd50dc7a04642d74e602bbc",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": true,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/role-5",
+          "posting_verified": true,
+          "role_id": "role-5",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "READY"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "dca84de1dd69baa74deeb98b137188d78262625deaa1ad736bcb82862e822b6f",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": false,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/synthetic-backlog:0",
+          "posting_verified": false,
+          "role_id": "synthetic-backlog:0",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "PARKED-PENDING-VERIFICATION"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "f6ab3fd87797c4da8f5e337a9c191edbf10a1f62d6977b8391c9f62031b8fb60",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": false,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/synthetic-backlog:1",
+          "posting_verified": false,
+          "role_id": "synthetic-backlog:1",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "PARKED-PENDING-VERIFICATION"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "93c29f7a03c3a94bf8d768d5ccd8879677d8b06ae079af2e20f2f3ade5d6b0d5",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": false,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/synthetic-backlog:2",
+          "posting_verified": false,
+          "role_id": "synthetic-backlog:2",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "PARKED-PENDING-VERIFICATION"
+        },
+        {
+          "action_band": "APPLY",
+          "answers_resolved": true,
+          "approval_expires_at": "2026-09-18T13:00:00+00:00",
+          "approval_valid": true,
+          "attempt_state": "NONE",
+          "dependencies": {
+            "answers": "synthetic-v1",
+            "approval": "synthetic-v1",
+            "attachments": "synthetic-v1",
+            "form": "synthetic-v1",
+            "policy": "synthetic-v1",
+            "route": "synthetic-v1",
+            "target": "synthetic-v1"
+          },
+          "fit_score": 84,
+          "history_reconciled": true,
+          "holds": [],
+          "identity": "654449a5a97ccaaf1d3b5c4b178ff716d1a5228d317e4e2ee1257e07f9c0fcba",
+          "launch_lock_held": false,
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+          "packet_present": false,
+          "policy_pass": true,
+          "posting_url": "https://example.org/jobs/synthetic-backlog:3",
+          "posting_verified": false,
+          "role_id": "synthetic-backlog:3",
+          "route": "browser",
+          "route_supported": true,
+          "schema_version": 1,
+          "status": "PARKED-PENDING-VERIFICATION"
+        }
+      ],
+      "observed_at": "2026-09-18T12:00:00+00:00",
+      "pool": {
+        "actionable": 0,
+        "observed_at": "2026-09-18T12:00:00+00:00",
+        "ready": 5,
+        "schema_version": 1
+      },
+      "question_dependencies": [
+        {
+          "action_band": "APPLY",
+          "deadline": "2026-09-18T18:00:00+00:00",
+          "fit_score": 84,
+          "open_question_ids": [
+            "travel"
+          ],
+          "other_gates_clear": true,
+          "role_id": "role-4"
+        },
+        {
+          "action_band": "APPLY",
+          "deadline": null,
+          "fit_score": 84,
+          "open_question_ids": [
+            "travel",
+            "consent"
+          ],
+          "other_gates_clear": true,
+          "role_id": "role-5"
+        }
+      ],
+      "releases": [
+        {
+          "available_at": "2026-09-18T12:20:00+00:00",
+          "conversion_evidence_ref": "synthetic-conversion-window",
+          "count": 4,
+          "estimated_conversion": 0.5,
+          "evidence_ref": "synthetic-backlog-1",
+          "p95_prepare_seconds": 300,
+          "p95_verify_seconds": 300,
+          "release_id": "synthetic-backlog",
+          "role_ids": [
+            "synthetic-backlog:0",
+            "synthetic-backlog:1",
+            "synthetic-backlog:2",
+            "synthetic-backlog:3"
+          ],
+          "stage": "VERIFICATION_ELIGIBLE"
+        }
+      ],
+      "schema_version": 1,
+      "source_revision": "SYNTHETIC-DEMO-NOT-LIVE",
+      "tray": {
+        "questions": [
+          {
+            "employer": "Example",
+            "field_type": "select",
+            "id": "travel",
+            "options": [
+              "Yes",
+              "No"
+            ],
+            "policy_scope": "synthetic-role-scope",
+            "required": true,
+            "text": "Are you willing to travel?"
+          },
+          {
+            "employer": "Stripe",
+            "field_type": "select",
+            "id": "consent",
+            "options": [
+              "Yes",
+              "No"
+            ],
+            "policy_scope": "synthetic-role-scope",
+            "required": true,
+            "text": "WhatsApp consent?"
+          }
+        ],
+        "schema_version": 1
+      }
+    },
+    "incident_ref": "fixture://refill-delayed-ten-minutes",
+    "schema_version": 1
+  }
+]

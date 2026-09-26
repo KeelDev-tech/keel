@@ -38,6 +38,11 @@ import re
 import sys
 import urllib.request
 
+try:
+    from .safe_http import urlopen as safe_urlopen
+except ImportError:  # Direct script / legacy engines-on-sys.path entry points.
+    from safe_http import urlopen as safe_urlopen
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 UA = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
@@ -112,7 +117,7 @@ def fetch_apply_html(tenant, slug, timeout=25):
     """GET the server-rendered apply page (read-only). Raises on failure."""
     url = f"https://{tenant}.breezy.hr/p/{slug}/apply"
     req = urllib.request.Request(url, headers=UA)
-    with urllib.request.urlopen(req, timeout=timeout) as r:
+    with safe_urlopen(req, timeout=timeout) as r:
         return r.read().decode("utf-8", "replace")
 
 

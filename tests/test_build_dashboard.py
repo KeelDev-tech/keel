@@ -36,7 +36,8 @@ TELEMETRY = "\n".join([
 
 class TestGatePanel(unittest.TestCase):
     def test_counts_by_gate(self):
-        home = make_home({"data/telemetry/events.jsonl": TELEMETRY})
+        # The counts test uses complete valid input; corruption is tested below.
+        home = make_home({"data/telemetry/events.jsonl": TELEMETRY.rsplit('\n', 1)[0]})
         data = bd.collect(home=home)
         self.assertEqual(data["gate_blocks"], {"needs_input": 2, "low_fit": 1})
         html = bd.render(data)
@@ -51,10 +52,11 @@ class TestGatePanel(unittest.TestCase):
         html = bd.render(data)
         self.assertIn("Unknown", html)
 
-    def test_malformed_lines_skipped(self):
+    def test_malformed_lines_make_total_unknown(self):
         home = make_home({"data/telemetry/events.jsonl": "not-json {{{"})
         data = bd.collect(home=home)
-        self.assertEqual(data["gate_blocks"], {})
+        self.assertIsNone(data["gate_blocks"])
+        self.assertTrue(any('malformed' in warning for warning in data['warnings']))
 
 
 if __name__ == "__main__":

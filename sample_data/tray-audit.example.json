@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "questions": [
+    {
+      "id": "synthetic-1",
+      "employer": "Fixture Employer",
+      "policy_scope": "fixture-posting-form-v1",
+      "text": "Location (City)",
+      "field_type": "text",
+      "required": true,
+      "options": [],
+      "answer_bank_key": "location"
+    },
+    {
+      "id": "synthetic-2",
+      "employer": "Fixture Employer",
+      "policy_scope": "fixture-posting-form-v1",
+      "text": "Location (City)",
+      "field_type": "text",
+      "required": true,
+      "options": [],
+      "answer_bank_key": "location"
+    },
+    {
+      "id": "synthetic-3",
+      "employer": "Stripe",
+      "policy_scope": "fixture-posting-form-v1",
+      "text": "Do you opt-in to receive WhatsApp messages from Stripe Recruiting?",
+      "field_type": "select",
+      "required": true,
+      "options": [
+        "Yes",
+        "No"
+      ],
+      "answer_bank_key": "whatsapp"
+    }
+  ],
+  "answer_bank": {
+    "answers": {
+      "location": "SYNTHETIC EXAMPLE ONLY",
+      "whatsapp": "DISPUTED_EXAMPLE_NEVER_REUSE"
+    },
+    "_provenance": {}
+  }
+}

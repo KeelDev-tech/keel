@@ -58,11 +58,13 @@ import os
 import re
 import sys
 import urllib.request
+from urllib.parse import urlsplit
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE)
 
 import ats as ats_mod  # noqa: E402
+from safe_http import urlopen as public_urlopen  # noqa: E402
 
 UA = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
                     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -79,9 +81,12 @@ def parse_board_url(url):
     Public-edition local parser used alongside engines/ats.py and engines/edge_probe.py
     helper). Raises ValueError when the URL is not a direct board URL.
     """
-    m = re.search(r"(?:job-boards|boards)\.greenhouse\.io/([a-z0-9_\-]+)/jobs/(\d+)",
-                  url or "", re.I)
-    if not m:
+    parsed = urlsplit(url or "")
+    m = re.fullmatch(r"/([a-z0-9_\-]+)/jobs/(\d+)/?", parsed.path, re.I)
+    if (parsed.scheme != "https" or
+            parsed.hostname not in {"job-boards.greenhouse.io", "boards.greenhouse.io"} or
+            parsed.port not in (None, 443) or parsed.username is not None or
+            parsed.password is not None or not m):
         raise ValueError("not a direct Greenhouse board URL: %r" % (url,))
     return m.group(1), m.group(2)
 
@@ -89,7 +94,7 @@ def parse_board_url(url):
 def fetch_html(url, timeout=15):
     """Fetch a page's HTML. Raises on any failure (caller fails closed)."""
     req = urllib.request.Request(url, headers=UA)
-    with urllib.request.urlopen(req, timeout=timeout) as r:
+    with public_urlopen(req, timeout=timeout) as r:
         return r.read().decode("utf-8", "replace")
 
 

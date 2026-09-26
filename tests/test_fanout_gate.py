@@ -59,6 +59,11 @@ def load_fanout_gate():
 class FanoutGateCase(unittest.TestCase):
     def setUp(self):
         self.fg = load_fanout_gate()
+        # These are synthetic cadence fixtures. Production imports private
+        # cron definitions and intentionally disables uncalibrated droughts.
+        self.fg.DROUGHT_CALIBRATED = True
+        self.fg.VERIFY_CADENCE_MINUTES = 120
+        self.fg.VERIFY_DROUGHT_RUNS = 3
         self.tmp = tempfile.mkdtemp(prefix="fgtest-")
         self.queue_path = os.path.join(self.tmp, "queue.json")
         self.telemetry_path = os.path.join(self.tmp, "events.jsonl")
@@ -293,6 +298,16 @@ class ReadyFloorCase(unittest.TestCase):
     def setUp(self):
         self.fg = load_fanout_gate()
         self.tmp = tempfile.mkdtemp(prefix="fgfloor-")
+        # The READY-floor property must not depend on a private live ledger.
+        self.fg.WATCHED_FILES = {}
+        for name in ("ledger", "queue", "needs_input", "telemetry"):
+            path = os.path.join(self.tmp, name + ".json")
+            with open(path, "w") as handle:
+                handle.write("" if name == "telemetry" else "[]")
+            self.fg.WATCHED_FILES[name] = path
+        self.fg.QUEUE = self.fg.WATCHED_FILES["queue"]
+        self.fg.TELEMETRY = self.fg.WATCHED_FILES["telemetry"]
+        self.fg.FORCED_SCAN_EVERY = 6
 
     def floor_reason(self, ready):
         return self.fg.ready_floor_reason({"ready": ready})
@@ -353,8 +368,8 @@ class ReadyFloorCase(unittest.TestCase):
               "last_verify_retry_signal_ts": now.isoformat()}
         with open(wm_path, "w") as f:
             json.dump(wm, f)
-        # Point main() at the synthetic files (QUEUE/TELEMETRY stay on the
-        # real paths so the hashes above stay valid).
+        # Point main() at the synthetic snapshot/watermark; all watched
+        # files already belong to this fixture.
         old_snap, old_wm = self.fg.SNAPSHOT, self.fg.WATERMARK
         self.fg.SNAPSHOT, self.fg.WATERMARK = snap_path, wm_path
         try:

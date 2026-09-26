@@ -1,42 +1,9 @@
 #!/usr/bin/env python3
-"""dedupe_gate.py — permanent discovery-side dedupe gate (ARM 51).
+"""Discovery deduplication using exact posting identities and bounded snapshots.
 
-Before discovery logs `lead_discovered` (or appends to a queue), every
-candidate is checked against BOTH:
-  1. ledger SUBMITTED rows — same normalized posting URL, or same
-     employer + equivalent title
-  2. the standard queue — same normalized posting URL, or same
-     employer + equivalent title
-
-Evidence:
-  - 2026-09-15 YC steered arm re-logged already-SUBMITTED Shadeform as
-    `lead_discovered` (re-harvest leak).
-  - 2026-09-14/15 Source/Source Network double submission: company-name
-    dedupe missed on "Source" vs "Source Network (Source Inc., DefraDB)";
-    both rows share confirmation_url
-    https://source.network/careers/chief-of-staff. URL matching is the
-    canonical fix — names collide, URLs don't.
-
-URL canonicalization (fail-closed, stronger than apply_loop._norm_url):
-  - lowercase scheme+host, drop default ports
-  - strip fragment, strip trailing slash
-  - drop TRACKING params (utm_*, gclid, fbclid, msclkid, ...) but KEEP
-    meaningful ones (gh_jid, job ids)
-  - empty / javascript: / mailto: / "#" URLs canonicalize to "" (no URL)
-
-Verdict levels:
-  - "duplicate" (hard): normalized-URL match on the ledger (any of
-    posting_url/application_url/confirmation_url/url) or the queue, OR
-    company containment + normalized-title equality.
-  - "suspect" (advisory only): company containment alone, or title
-    equality alone. Never blocks intake — e.g. "Source" vs "Sourcegraph"
-    is a different company.
-  - "fresh": none of the above.
-
-Backfilled-ledger company|employer mismatch is already fixed at the
-consumer side (apply_loop.already_submitted checks company|employer and
-normalized URLs since 2026-09-15); this gate is the discovery-side
-permanent fix and deliberately re-checks company|employer itself.
+Names, title similarity and company containment are advisory only. Durable
+coverage is restricted to explicitly configured sources. Missing/corrupt/stale
+coverage yields suspect, never fresh. This gate does not authorize submission.
 """
 
 import argparse
@@ -53,12 +20,12 @@ LEDGER = os.path.join(DATA, "application-ledger.json")
 STANDARD_QUEUE = os.path.join(PIPE, "data", "queues", "standard-queue.json")
 
 URL_FIELDS = ("ats_url", "application_url", "posting_url",
-              "confirmation_url", "url")
+              "confirmation_url", "url", "job_url", "jobUrl", "absolute_url")
 
 # Tracking params that never identify a posting. Everything else is kept.
 _TRACKING_PAT = re.compile(
     r"^(utm_.+|gclid|fbclid|msclkid|mc_cid|mc_eid|igshid|vero_.+"
-    r"|ref$|referrer|source$|campaign|cid$|sid$|trk|_hsenc|_hsmi)$",
+    r"|_hsenc|_hsmi)$",
     re.IGNORECASE)
 
 _CORP_SUFFIX_PAT = re.compile(
@@ -67,36 +34,41 @@ _CORP_SUFFIX_PAT = re.compile(
 
 
 def canonical_url(u):
-    """Canonical posting-URL form for dedupe comparison."""
-    u = (u or "").strip()
-    if not u or u.startswith(("javascript:", "mailto:")) or u == "#":
+    """Conservative URL key; retain meaningful queries and case-sensitive paths."""
+    if not isinstance(u, str) or len(u) > 8192 or any(ord(c) < 32 or ord(c) == 127 for c in u):
+        return ""
+    u = u.strip()
+    if not u or u == "#" or any(ord(c) <= 32 or ord(c) == 127 for c in u) or "\\" in u:
         return ""
     try:
         p = urlparse(u if "://" in u else "https://" + u)
-    except Exception:
+        if p.scheme.lower() not in {"http", "https"} or p.username is not None or p.password is not None:
+            return ""
+        host = (p.hostname or "").encode("idna").decode("ascii").lower()
+        port = p.port
+        if not host:
+            return ""
+        host = "[" + host + "]" if ":" in host else host
+        if port is not None and not (p.scheme.lower() == "https" and port == 443 or p.scheme.lower() == "http" and port == 80):
+            host = f"{host}:{port}"
+        kept = [(k, v) for k, v in parse_qsl(p.query, keep_blank_values=True, errors="strict")
+                if not _TRACKING_PAT.match(k)]
+        if len({k for k, v in kept}) == len(kept):
+            kept.sort()
+        path = p.path.rstrip("/") or "/"
+        return urlunparse((p.scheme.lower(), host, path, p.params, urlencode(kept), p.fragment))
+    except (ValueError, UnicodeError):
         return ""
-    host = (p.hostname or "").lower()
-    if not host:
-        return ""
-    if p.port and not (p.scheme == "https" and p.port == 443
-                       or p.scheme == "http" and p.port == 80):
-        host = f"{host}:{p.port}"
-    kept = [(k, v) for k, v in parse_qsl(p.query, keep_blank_values=True)
-            if not _TRACKING_PAT.match(k)]
-    kept.sort()
-    path = p.path.rstrip("/") or "/"
-    return urlunparse((p.scheme.lower() or "https", host, path, "",
-                       urlencode(kept), ""))
 
 
 def _norm_name(s):
-    s = (s or "").lower()
+    s = s.lower() if isinstance(s, str) else ""
     s = _CORP_SUFFIX_PAT.sub(" ", s)
     return re.sub(r"[^a-z0-9]", "", s)
 
 
 def _norm_title(s):
-    return re.sub(r"[^a-z0-9]", "", (s or "").lower())
+    return re.sub(r"[^a-z0-9]", "", s.lower() if isinstance(s, str) else "")
 
 
 def _company(e):
@@ -105,7 +77,7 @@ def _company(e):
 
 def _url_of(e):
     for k in URL_FIELDS:
-        v = (e.get(k) or "").strip()
+        v = e.get(k).strip() if isinstance(e.get(k), str) else ""
         if v:
             return v
     return ""
@@ -120,7 +92,7 @@ def _urls_of(e):
     """
     urls = []
     for k in URL_FIELDS:
-        v = (e.get(k) or "").strip()
+        v = e.get(k).strip() if isinstance(e.get(k), str) else ""
         if v:
             urls.append(v)
     return urls
@@ -155,10 +127,10 @@ def check_candidate(company, title, url, ledger_rows=None,
 
     When ledger_rows/queue_entries are not passed, the persistent
     dedupe index (dedupe_index.get_index) is used instead of reloading
-    the ledger + queue JSON per call — same verdict ladder, O(1)-ish
-    lookups. An explicit `index` (or explicit row lists) overrides.
-    Note: the index covers ALL live queues, a deliberate superset of
-    the legacy standard-queue-only scan.
+    the ledger + queue JSON per call. Identity lookup is indexed, while
+    bounded source hashing verifies freshness. An explicit `index` (or explicit row lists) overrides.
+    The index covers every explicitly configured queue; it never discovers
+    backup queues by globbing.
 
     `urls` (optional): the candidate's URL fields as a list. When given
     it is checked across ALL fields; otherwise the single `url` arg is
@@ -167,108 +139,43 @@ def check_candidate(company, title, url, ledger_rows=None,
     """
     cand_urls = urls if urls is not None else ([url] if url else [])
     if ledger_rows is None and queue_entries is None:
-        idx = index
-        if idx is None:
-            try:
+        try:
+            if index is None:
                 from dedupe_index import get_index
-                idx = get_index()
-            except Exception:
-                idx = None
-        if idx is not None:
-            return idx.check_candidate(company, title, url)
-        ledger_rows = [r for r in _load(LEDGER)
-                       if r.get("status") == "SUBMITTED"]
-        queue_entries = _load(STANDARD_QUEUE)
-        return _check_rows(company, title, cand_urls, ledger_rows,
-                           queue_entries)
-    if ledger_rows is None:
-        ledger_rows = [r for r in _load(LEDGER)
-                       if r.get("status") == "SUBMITTED"]
-    if queue_entries is None:
-        queue_entries = _load(STANDARD_QUEUE)
+                index = get_index(ledger_path=LEDGER, queue_path=STANDARD_QUEUE)
+            return index.check_candidate(company, title, url, urls=cand_urls)
+        except Exception as exc:
+            return "suspect", {"kind": "index_unavailable", "error": type(exc).__name__,
+                               "execution_authorized": False}
+    # Explicit snapshots retain the legacy call shape. Partial omitted inputs
+    # are read conservatively rather than silently treating an unreadable file
+    # as an empty source.
+    try:
+        if ledger_rows is None:
+            ledger_rows = _load_strict(LEDGER)
+        if queue_entries is None:
+            queue_entries = _load_strict(STANDARD_QUEUE)
+    except (OSError, ValueError, TypeError):
+        return "suspect", {"kind": "source_unavailable", "execution_authorized": False}
     return _check_rows(company, title, cand_urls, ledger_rows, queue_entries)
 
 
+def _load_strict(path):
+    from dedupe_index import _regular_bytes, _decode
+    data = _decode(_regular_bytes(path))
+    if isinstance(data, dict):
+        fields = [k for k in ("rows", "entries", "items", "leads") if k in data]
+        if len(fields) != 1:
+            raise ValueError("ambiguous snapshot")
+        data = data[fields[0]]
+    if not isinstance(data, list) or any(not isinstance(r, dict) for r in data):
+        raise ValueError("invalid row list")
+    return data
+
+
 def _check_rows(company, title, urls, ledger_rows, queue_entries):
-    # Ledger-side filter: only SUBMITTED rows ever block as
-    # duplicate_of_submitted. Explicit-ledger_rows callers (e.g. sweep)
-    # pass the full unfiltered ledger, so the filter must live here —
-    # a REJECTED row must not yield ("duplicate", kind=...) and block
-    # legitimate re-discovery. Queue entries are deliberately NOT
-    # status-filtered.
-    ledger_rows = [r for r in (ledger_rows or [])
-                   if isinstance(r, dict) and r.get("status") == "SUBMITTED"]
-    # Candidate side: check across ALL url fields, matching the
-    # ledger/queue row scan below.
-    cand_urls = [cu for cu in dict.fromkeys(
-        canonical_url(u) for u in (urls or [])) if cu]
-    nc, nt = _norm_name(company), _norm_title(title)
-
-    for cu in cand_urls:
-        for r in ledger_rows:
-            if isinstance(r, dict) and any(
-                    canonical_url(r.get(k)) == cu for k in URL_FIELDS):
-                return ("duplicate", {
-                    "kind": "duplicate_of_submitted",
-                    "match": "posting_url",
-                    "ledger_role_id": r.get("role_id"),
-                    "ledger_company": r.get("company") or r.get("employer"),
-                    "url": cu})
-        for e in queue_entries:
-            if isinstance(e, dict) and any(
-                    canonical_url(e.get(k)) == cu for k in URL_FIELDS):
-                return ("duplicate", {
-                    "kind": "duplicate_in_queue",
-                    "match": "posting_url",
-                    "queue_role_id": e.get("role_id"),
-                    "queue_status": e.get("status"),
-                    "url": cu})
-
-    if nc and len(nc) >= 4:
-        for r in ledger_rows:
-            if not isinstance(r, dict):
-                continue
-            rc = _norm_name(r.get("company") or r.get("employer"))
-            if not rc:
-                continue
-            contained = nc in rc or rc in nc
-            title_eq = nt and _norm_title(r.get("title")) == nt
-            if contained and title_eq:
-                return ("duplicate", {
-                    "kind": "duplicate_of_submitted",
-                    "match": "employer_title",
-                    "ledger_role_id": r.get("role_id"),
-                    "ledger_company": r.get("company") or r.get("employer"),
-                    "ledger_title": r.get("title")})
-        for e in queue_entries:
-            if not isinstance(e, dict):
-                continue
-            ec = _norm_name(_company(e))
-            if not ec:
-                continue
-            contained = nc in ec or ec in nc
-            title_eq = nt and _norm_title(e.get("title")) == nt
-            if contained and title_eq:
-                return ("duplicate", {
-                    "kind": "duplicate_in_queue",
-                    "match": "employer_title",
-                    "queue_role_id": e.get("role_id"),
-                    "queue_status": e.get("status")})
-        # Advisory only: name containment without title equality, or
-        # title equality without name containment.
-        for r in ledger_rows:
-            if not isinstance(r, dict):
-                continue
-            rc = _norm_name(r.get("company") or r.get("employer"))
-            rt = _norm_title(r.get("title"))
-            if (rc and (nc in rc or rc in nc)) or (nt and rt and rt == nt):
-                return ("suspect", {
-                    "kind": "possible_duplicate",
-                    "ledger_role_id": r.get("role_id"),
-                    "ledger_company": r.get("company") or r.get("employer"),
-                    "note": "name or title matched alone — human judgment; "
-                            "does not block intake"})
-    return ("fresh", {})
+    from dedupe_index import check_rows
+    return check_rows(company, title, urls, ledger_rows, queue_entries)
 
 
 def filter_batch(entries, ledger_rows=None, queue_entries=None, index=None):
@@ -285,33 +192,34 @@ def filter_batch(entries, ledger_rows=None, queue_entries=None, index=None):
     if not use_rows and idx is None:
         try:
             from dedupe_index import get_index
-            idx = get_index()
+            idx = get_index(ledger_path=LEDGER, queue_path=STANDARD_QUEUE)
         except Exception:
             idx = None
-    if not use_rows and idx is None:
-        ledger_rows = [r for r in _load(LEDGER)
-                       if r.get("status") == "SUBMITTED"]
-        queue_entries = _load(STANDARD_QUEUE)
-        use_rows = True
-    fresh, dupes = [], []
-    for e in entries:
-        if not isinstance(e, dict):
-            continue
-        if use_rows:
-            verdict, evidence = check_candidate(
-                _company(e), e.get("title"), _url_of(e),
-                ledger_rows=ledger_rows, queue_entries=queue_entries,
-                urls=_urls_of(e))
-        else:
-            verdict, evidence = idx.check_candidate(
-                _company(e), e.get("title"), _url_of(e),
-                description=e.get("description"))
+    entries = [e for e in entries if isinstance(e, dict)]
+    if not use_rows and idx is not None and callable(getattr(idx, "check_batch", None)):
+        results = idx.check_batch(entries)
+    else:
+        results = [check_candidate(_company(e), e.get("title"), _url_of(e),
+            ledger_rows=ledger_rows, queue_entries=queue_entries, index=idx, urls=e) for e in entries]
+    from dedupe_index import keys_for_urls
+    fresh, dupes, seen = [], [], set()
+    for entry, (verdict, evidence) in zip(entries, results):
+        keys, conflict = keys_for_urls(entry)
+        if not conflict and keys & seen:
+            verdict, evidence = "duplicate", {"kind": "duplicate_in_batch", "match": "posting_identity",
+                                               "execution_authorized": False}
         if verdict == "duplicate":
-            e = dict(e)
-            e["dedupe_evidence"] = evidence
-            dupes.append(e)
+            entry = dict(entry)
+            entry["dedupe_evidence"] = evidence
+            dupes.append(entry)
         else:
-            fresh.append(e)
+            # Keep advisory/coverage evidence visible without blocking intake.
+            if verdict == "suspect":
+                entry = dict(entry)
+                entry["dedupe_advisory"] = evidence
+            fresh.append(entry)
+            if not conflict:
+                seen.update(keys)
     return fresh, dupes
 
 

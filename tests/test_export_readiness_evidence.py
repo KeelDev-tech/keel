@@ -20,8 +20,12 @@ real personal identifiers.
 import hashlib
 import json
 import os
+import re
 import sys
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -353,3 +357,123 @@ def test_e2e_empty_evidence_dict_is_fail_closed():
     assert row["launch_lock_held"] is False  # empty registry dir: no lease
     assert row["attempt_state"] == "NONE"    # ledger+journal checked, empty
     assert row["history_reconciled"] is True
+
+
+# --- identity-marker runtime override (ARM02, 2026-09-22, pulse-806) ----------
+# Pulse-805 root-caused executable_ready=0 as an instrument artifact: commit
+# 3e0a8b2 sanitized PACKET_IDENTITY_MARKERS to example values, so every real
+# packet's brief failed identity_covered by construction. Markers are now
+# env-configurable with a restricted private-file injection path; the example
+# default keeps public CI / committed-history behavior unchanged.
+
+
+@pytest.fixture(autouse=True)
+def _pin_example_markers(monkeypatch):
+    """Pin the example-value markers for every test unless the test itself
+    re-pins. load_staged_packets reads the module global at call time, so a
+    module-level override suffices; the host's private markers file (0600)
+    cannot leak into CI or other machines' runs."""
+    monkeypatch.setattr(ex, "PACKET_IDENTITY_MARKERS",
+                        ex._EXAMPLE_IDENTITY_MARKERS)
+    yield
+
+
+def test_identity_marker_default_remains_example(tmp_path, monkeypatch):
+    """With neither env var nor private file present, the loader returns the
+    example-value default: committed-history behavior is unchanged."""
+    monkeypatch.delenv(ex._IDENTITY_MARKERS_ENV, raising=False)
+    monkeypatch.setattr(ex, "_IDENTITY_MARKERS_FILE",
+                        str(tmp_path / "no-such-markers.json"))
+    assert ex._load_identity_markers() == ex._EXAMPLE_IDENTITY_MARKERS
+    assert ex._EXAMPLE_IDENTITY_MARKERS == (
+        "alex.applicant1@example.invalid", "Alex Applicant Doe")
+
+
+def test_identity_marker_env_override(tmp_path, monkeypatch):
+    """KEEL_PACKET_IDENTITY_MARKERS_JSON injects custom markers; malformed
+    input fails closed to the example default."""
+    monkeypatch.delenv(ex._IDENTITY_MARKERS_ENV, raising=False)
+    monkeypatch.setattr(ex, "_IDENTITY_MARKERS_FILE",
+                        str(tmp_path / "no-such-markers.json"))
+    monkeypatch.setenv(ex._IDENTITY_MARKERS_ENV,
+                       '["email@example.invalid","Name Example"]')
+    assert ex._load_identity_markers() == ("email@example.invalid",
+                                           "Name Example")
+    monkeypatch.setenv(ex._IDENTITY_MARKERS_ENV, "{not json")
+    assert ex._load_identity_markers() == ex._EXAMPLE_IDENTITY_MARKERS
+    monkeypatch.setenv(ex._IDENTITY_MARKERS_ENV, '["only-one"]')
+    # single marker is a valid non-empty list; still honored
+    assert ex._load_identity_markers() == ("only-one",)
+
+
+def test_identity_marker_file_override(tmp_path, monkeypatch):
+    """The restricted private file supplies markers; empty or malformed files
+    fail closed to the example default."""
+    monkeypatch.delenv(ex._IDENTITY_MARKERS_ENV, raising=False)
+    fpath = tmp_path / "packet-identity-markers.json"
+    fpath.write_text(json.dumps({"markers": ["m1@example.invalid",
+                                             "Marker One"]}))
+    monkeypatch.setattr(ex, "_IDENTITY_MARKERS_FILE", str(fpath))
+    assert ex._load_identity_markers() == ("m1@example.invalid", "Marker One")
+    fpath.write_text(json.dumps({"markers": []}))
+    assert ex._load_identity_markers() == ex._EXAMPLE_IDENTITY_MARKERS
+    fpath.write_text("not json at all")
+    assert ex._load_identity_markers() == ex._EXAMPLE_IDENTITY_MARKERS
+
+
+def test_identity_covered_recovers_with_injected_markers(tmp_path,
+                                                        monkeypatch):
+    """With injected markers matching a packet brief, identity_covered
+    recovers from the instrument-blocked False to True; with the example
+    default the same brief fails closed. Fixture markers are synthetic so no
+    real identity appears in this file."""
+    markers = ("real-test-1@example.invalid", "Real Testone")
+    fpath = tmp_path / "packet-identity-markers.json"
+    fpath.write_text(json.dumps({"markers": list(markers)}))
+    monkeypatch.delenv(ex._IDENTITY_MARKERS_ENV, raising=False)
+    monkeypatch.setattr(ex, "_IDENTITY_MARKERS_FILE", str(fpath))
+    brief = ("Submit a job application for Real Testone to TestCo.\n"
+             "STEP 0\n"
+             "  - first_name: Real\n"
+             "  - email: real-test-1@example.invalid  [banked]\n")
+    pkt_path = str(tmp_path / "packet.json")
+    with open(pkt_path, "w") as f:
+        json.dump({"brief": brief, "upload_files": ["/tmp/resume.pdf"],
+                   "ats_url": "https://example.org/jobs/1"}, f)
+    spath = write_staged(tmp_path, packet_path=pkt_path)
+    # Example defaults on an injected-marker brief: fails closed (pulse-805)
+    monkeypatch.setattr(ex, "PACKET_IDENTITY_MARKERS",
+                        ex._EXAMPLE_IDENTITY_MARKERS)
+    before = ex.load_staged_packets(spath)
+    assert before["TEST-ROLE-1"]["identity_covered"] is False
+    # Injected markers: the gauge recovers
+    monkeypatch.setattr(ex, "PACKET_IDENTITY_MARKERS",
+                        ex._load_identity_markers())
+    after = ex.load_staged_packets(spath)
+    assert after["TEST-ROLE-1"]["packet"] is not None
+    assert after["TEST-ROLE-1"]["identity_covered"] is True
+
+
+def test_identity_markers_repo_hygiene():
+    """The committed source embeds ONLY example-value identity markers.
+
+    Guards commit 3e0a8b2's sanitization boundary: a real applicant
+    identifier must never re-enter the source tree. Private markers ride
+    in the 0600 file (git-ignored) or the env var — both outside the repo.
+    """
+    src = Path(ex.__file__).read_text()
+    # Every committed literal marker is an example value: example-domain
+    # emails, or example-persona names.
+    for m in ex._EXAMPLE_IDENTITY_MARKERS:
+        ml = m.lower()
+        assert ("@example.invalid" in ml or "example" in ml
+                or "applicant" in ml), m
+    # The private file path stays under hidden_files (outside the
+    # public-synced tree); the env var is the other injection path.
+    assert "hidden_files" in ex._IDENTITY_MARKERS_FILE
+    # No non-example email literal anywhere in the source.
+    emails = re.findall(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
+                        src)
+    assert emails, "expected at least the example literals"
+    for em in emails:
+        assert em.endswith("@example.invalid"), em

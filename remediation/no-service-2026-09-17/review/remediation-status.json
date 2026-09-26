@@ -1,0 +1,843 @@
+{
+  "schema_version": 1,
+  "as_of": "2026-09-17",
+  "production_deployed": false,
+  "source_register_sha256": "4843b5f91bfc02695af5c7827a787ac118dcfa61484de3d87dd5c82a322c8020",
+  "table_entries": 100,
+  "live_limitations_cleared_by_this_delivery": 0,
+  "counts_by_delivery_status": {
+    "OPEN_PROVIDER_TRUTH": 5,
+    "COMPONENT_TESTED_INTEGRATION_REQUIRED": 30,
+    "OPEN_IMPLEMENTATION_OR_EVIDENCE": 16,
+    "PARTIAL_IDENTITY_NOT_AUTHORITY": 5,
+    "PARTIAL_PRIMITIVE": 2,
+    "PROVIDER_EVIDENCE_REQUIRED": 6,
+    "PRESERVE_REJECTED_OR_SUPERSEDED": 3,
+    "PRESERVE_HOLD": 2,
+    "BASELINE_REPRODUCED_LOCAL": 1,
+    "PATCH_TESTED_NOT_DEPLOYED": 3,
+    "PARTIAL_ENGINE_PATCH": 3,
+    "PARTIAL_COMPONENT_AND_ENGINE_FIX": 1,
+    "USER_BOUNDARY_PRESERVED": 1,
+    "PRESERVE_REPORTED_LIVE_FIX": 1,
+    "PARTIAL_LOCAL_DIAGNOSTICS_ONLY": 1,
+    "PARTIAL_INTERNAL_ONLY": 1,
+    "PARTIAL_READ_ONLY_FETCHER": 1,
+    "CURRENT_TRANSACTION_REQUIRED": 1,
+    "NEW_PACKAGE_SCOPED": 1,
+    "NEW_PACKAGE_TESTED": 1,
+    "PARTIAL_COMPONENT": 1,
+    "CURRENT_WRITER_REQUIRED": 1,
+    "PARTIAL_INTERFACE": 3,
+    "SNAPSHOT_HELPER_CONFIRMED": 1,
+    "USER_DECISION_REQUIRED": 1,
+    "MEASUREMENT_RULE_PRESERVED": 2,
+    "PARTIAL_MODULAR_PACKAGE": 1,
+    "EDITION_SCOPE_DOCUMENTED": 1,
+    "OPEN_BENCHMARK_WORK": 1,
+    "PARTIAL_DISCOVERY_SUPPORT": 2,
+    "CURRENT_SOURCE_REBASE_REQUIRED": 1
+  },
+  "entries": [
+    {
+      "id": "F17",
+      "limitation": "HTTP 2xx treated as proven application submission on direct-submit paths",
+      "original_status": "Open (partially mitigated in review copy; no validated success-receipt parser exists)",
+      "delivery_status": "OPEN_PROVIDER_TRUTH",
+      "work": "receipt_diagnostic only detects missing/corrupt correlation and always returns UNKNOWN; never accepts a caller-controlled success.",
+      "remaining": "Implement trusted capture and validated provider-specific receipt contracts in the live F18 writer, then independent adversarial review."
+    },
+    {
+      "id": "F18",
+      "limitation": "Central outcome recording bypasses the evidence gate",
+      "original_status": "Open (text gate + hold enforcement added in review copy; provenance open)",
+      "delivery_status": "OPEN_PROVIDER_TRUTH",
+      "work": "receipt_diagnostic only detects missing/corrupt correlation and always returns UNKNOWN; never accepts a caller-controlled success.",
+      "remaining": "Implement trusted capture and validated provider-specific receipt contracts in the live F18 writer, then independent adversarial review."
+    },
+    {
+      "id": "F20",
+      "limitation": "Approval fingerprints bind resume filename, not file bytes",
+      "original_status": "Open",
+      "delivery_status": "COMPONENT_TESTED_INTEGRATION_REQUIRED",
+      "work": "contracts.py freezes attachment/media bytes and fingerprints complete targets, answers, policy/form and publishing account/revision; explicit rights required.",
+      "remaining": "Wire real approval issuer and dispatch byte/account checks; validate rights/provenance, secrets and key lifecycle. Hashes do not authenticate approval."
+    },
+    {
+      "id": "F21",
+      "limitation": "Human approval is a caller-supplied label",
+      "original_status": "Open",
+      "delivery_status": "OPEN_IMPLEMENTATION_OR_EVIDENCE",
+      "work": "No closure claim; included local code does not implement or validate this complete requirement.",
+      "remaining": "Requires current source/architecture, real users/provider/operational evidence or market analysis as described in the supplied register; not inherently a paid-service purchase."
+    },
+    {
+      "id": "F22",
+      "limitation": "Ambiguous API outcomes fall back to a second (browser) submission channel",
+      "original_status": "Open (partially fixed on covered API paths in review copy; browser-origin uncertainty + cross-role identity open)",
+      "delivery_status": "PARTIAL_IDENTITY_NOT_AUTHORITY",
+      "work": "Canonical identity helper and conservative hold-aware readiness are tested; per-invocation lock tokens prevent same-task-name reuse.",
+      "remaining": "Live cross-role/provider aliasing, durable browser intents, historical import and authenticated reconciliation remain; no hold is cleared by this package."
+    },
+    {
+      "id": "F34",
+      "limitation": "Answer-bank scope metadata dropped before use in application briefs",
+      "original_status": "Open",
+      "delivery_status": "COMPONENT_TESTED_INTEGRATION_REQUIRED",
+      "work": "answers.py preserves scope/provenance/expiry/field identity, abstains on conflicting answers, keeps consent employer-scoped and requires attestation allowlist.",
+      "remaining": "Wire every brief/form consumer; feed verified bank/issuer references; add true blockers and explicit live attestation scope to spawn briefs."
+    },
+    {
+      "id": "A-B1",
+      "limitation": "No validated success-receipt parser exists for API paths",
+      "original_status": "Open",
+      "delivery_status": "OPEN_PROVIDER_TRUTH",
+      "work": "receipt_diagnostic only detects missing/corrupt correlation and always returns UNKNOWN; never accepts a caller-controlled success.",
+      "remaining": "Implement trusted capture and validated provider-specific receipt contracts in the live F18 writer, then independent adversarial review."
+    },
+    {
+      "id": "A-B2",
+      "limitation": "Holds keyed on role_id, not canonical application identity",
+      "original_status": "Open",
+      "delivery_status": "PARTIAL_IDENTITY_NOT_AUTHORITY",
+      "work": "Canonical identity helper and conservative hold-aware readiness are tested; per-invocation lock tokens prevent same-task-name reuse.",
+      "remaining": "Live cross-role/provider aliasing, durable browser intents, historical import and authenticated reconciliation remain; no hold is cleared by this package."
+    },
+    {
+      "id": "A-B3",
+      "limitation": "Browser clicks do not create durable intents",
+      "original_status": "Open",
+      "delivery_status": "PARTIAL_IDENTITY_NOT_AUTHORITY",
+      "work": "Canonical identity helper and conservative hold-aware readiness are tested; per-invocation lock tokens prevent same-task-name reuse.",
+      "remaining": "Live cross-role/provider aliasing, durable browser intents, historical import and authenticated reconciliation remain; no hold is cleared by this package."
+    },
+    {
+      "id": "A-B4",
+      "limitation": "Historical attempts not automatically imported",
+      "original_status": "Open",
+      "delivery_status": "PARTIAL_IDENTITY_NOT_AUTHORITY",
+      "work": "Canonical identity helper and conservative hold-aware readiness are tested; per-invocation lock tokens prevent same-task-name reuse.",
+      "remaining": "Live cross-role/provider aliasing, durable browser intents, historical import and authenticated reconciliation remain; no hold is cleared by this package."
+    },
+    {
+      "id": "A-B5",
+      "limitation": "No authenticated reconciliation mechanism for holds",
+      "original_status": "Open",
+      "delivery_status": "PARTIAL_IDENTITY_NOT_AUTHORITY",
+      "work": "Canonical identity helper and conservative hold-aware readiness are tested; per-invocation lock tokens prevent same-task-name reuse.",
+      "remaining": "Live cross-role/provider aliasing, durable browser intents, historical import and authenticated reconciliation remain; no hold is cleared by this package."
+    },
+    {
+      "id": "A-B6",
+      "limitation": "No atomicity across queue, ledger, technique library, telemetry",
+      "original_status": "Open",
+      "delivery_status": "PARTIAL_PRIMITIVE",
+      "work": "queue_io fsyncs the replacement file and directory. Diagnostic journal atomically accepts diagnostic event + work.",
+      "remaining": "Whole queue/ledger/learning/telemetry atomicity remains open. The sidecar is not that transaction boundary."
+    },
+    {
+      "id": "A-B7",
+      "limitation": "Greenhouse frontend route used by code is reverse-engineered and unvalidated",
+      "original_status": "Open — audit 2026-09-17 measured it: employer-hosted Greenhouse renderer is structurally DEAD over HTTP (40 technique_blocked, byte-identical signature, 0 successes in 3 days telemetry); the same postings are LIVE and browser-viable (3/36 submitted via browser with confirmation_text). Renderer verdict detail was discarded at verify time, so blocks fired at attempt time after full verify→READY→packet→launch investment. **P1 SHIPPED + LIVE 2026-09-17 12:59 PDT (PQ-9):** full `api_direct_detect` verdict (renderer/reason/detected_at) stamped at verify time; employer-hosted short-circuits before the api-direct guard lock (no lock, no packet, no fastlane screen); re-stamped every verify, no pinning; missing verdict falls through fail-safe. 163 tests green (6 new + 157 neighboring); ARM 70 seam review approved; `renderer_employer_hosted` registered in GATE_TYPES — gate emits with no unknown-value warning, 6/6 renderer tests green. The ~48 attempt-time blocks/day are now short-circuited before guard. Renderer-audit arc closed on the P1 half. Entry stays open for per-employer contract validation (P2, Trent-gated PD-5). conflict-review.md §1 premise corrected with dated note",
+      "delivery_status": "PROVIDER_EVIDENCE_REQUIRED",
+      "work": "Current browser-route boundaries and PQ-9 are preserved; public discovery is separate from submission.",
+      "remaining": "Authorized provider/browser validation and sample URLs are required; paid service is not automatically needed, but code cannot invent access or proof."
+    },
+    {
+      "id": "A-B8",
+      "limitation": "Native rejection allowlist derives from implementation and synthetic tests, not live-provider validation",
+      "original_status": "Under review",
+      "delivery_status": "PROVIDER_EVIDENCE_REQUIRED",
+      "work": "Current browser-route boundaries and PQ-9 are preserved; public discovery is separate from submission.",
+      "remaining": "Authorized provider/browser validation and sample URLs are required; paid service is not automatically needed, but code cannot invent access or proof."
+    },
+    {
+      "id": "A-B9",
+      "limitation": "Caller-supplied confirmation language still not authenticated provider evidence",
+      "original_status": "Partially fixed",
+      "delivery_status": "OPEN_PROVIDER_TRUTH",
+      "work": "receipt_diagnostic only detects missing/corrupt correlation and always returns UNKNOWN; never accepts a caller-controlled success.",
+      "remaining": "Implement trusted capture and validated provider-specific receipt contracts in the live F18 writer, then independent adversarial review."
+    },
+    {
+      "id": "A-C1",
+      "limitation": "Api-direct kill switch (keel_legacy_hold.require_gateway()) — REJECTED",
+      "original_status": "Rejected — never apply",
+      "delivery_status": "PRESERVE_REJECTED_OR_SUPERSEDED",
+      "work": "No rejected legacy patch is included.",
+      "remaining": "Keep the live architecture and standing directives; no action to reinstate these changes."
+    },
+    {
+      "id": "A-C2",
+      "limitation": "Receipt-writer adversarial review returned FAIL",
+      "original_status": "FAIL — review copy only, NOT deployed, no-go for cutover",
+      "delivery_status": "PRESERVE_HOLD",
+      "work": "No replacement receipt writer is delivered; diagnostic SQLite explicitly rejects submission outcomes and existing live databases.",
+      "remaining": "Rebuild/review live writer under the chosen canonical architecture; no cutover based on this package."
+    },
+    {
+      "id": "A-C3",
+      "limitation": "Two competing receipt-integrity architectures (live F18 vs patch's separate-SQLite store)",
+      "original_status": "Held — no separate SQLite authority without reconciliation with queues, locks, intent, telemetry",
+      "delivery_status": "PRESERVE_HOLD",
+      "work": "No replacement receipt writer is delivered; diagnostic SQLite explicitly rejects submission outcomes and existing live databases.",
+      "remaining": "Rebuild/review live writer under the chosen canonical architecture; no cutover based on this package."
+    },
+    {
+      "id": "A-C4",
+      "limitation": "Transferred brief language contradicts standing directives — REJECTED",
+      "original_status": "Rejected",
+      "delivery_status": "PRESERVE_REJECTED_OR_SUPERSEDED",
+      "work": "No rejected legacy patch is included.",
+      "remaining": "Keep the live architecture and standing directives; no action to reinstate these changes."
+    },
+    {
+      "id": "A-C5",
+      "limitation": "Transferred verify_retry.py is stale — SUPERSEDED",
+      "original_status": "Superseded — do not apply",
+      "delivery_status": "PRESERVE_REJECTED_OR_SUPERSEDED",
+      "work": "No rejected legacy patch is included.",
+      "remaining": "Keep the live architecture and standing directives; no action to reinstate these changes."
+    },
+    {
+      "id": "A-C6",
+      "limitation": "Transferred 344-test claim independently unreproduced",
+      "original_status": "Open — awaiting the original 537-file source tree/source ZIP",
+      "delivery_status": "BASELINE_REPRODUCED_LOCAL",
+      "work": "Recovered the full earlier ZIP and reran its 344 selected tests successfully. Evidence: prior-build-reproduction.json.",
+      "remaining": "This is reproduction, not an independent security verdict. New live integrations require their own tests."
+    },
+    {
+      "id": "B-E1",
+      "limitation": "Api-direct loop acquires launch locks then refuses them all as `fastlane_browser` — stale 2h locks; `--spawn` refuses \"launch lock not acquired: HELD\" (Stripe YC J8181026, SDR AUNZ J8074892, Tech Ops J7718947 on 2026-09-17; ~42–44 stale Stripe locks in pulse 317)",
+      "original_status": "Open — manual refill procedure exists (check run log for `refused / fastlane_browser`, release stale lock to _released/, re-spawn). Release-on-refuse proposal unshipped; Trent skipped the proposed tap on 2026-09-17 — proceed via autonomous engine design, not repeated prompting",
+      "delivery_status": "PATCH_TESTED_NOT_DEPLOYED",
+      "work": "api_direct_loop/api_fastlane/launch_lock patches: refuse/route before lock; per-invocation token; release owned pre-dispatch lock; serialize acquire/release.",
+      "remaining": "Port onto current code; keep all durable attempt holds; deploy coordinated lock writers, no bulk stale-lock deletion."
+    },
+    {
+      "id": "B-E2",
+      "limitation": "86 api-direct `no_packet` skips",
+      "original_status": "Open",
+      "delivery_status": "PARTIAL_ENGINE_PATCH",
+      "work": "Missing packet becomes durable packet_build request on the existing queue entry; browser handoff likewise, without lock acquisition.",
+      "remaining": "Wire the current parent controller to consume requests idempotently and recheck readiness before launch."
+    },
+    {
+      "id": "B-E3",
+      "limitation": "Launch-guard stand-down telemetry truncated to `'}'`",
+      "original_status": "Open — proposal in pulse finding J-20260916-2050-gate-930",
+      "delivery_status": "PATCH_TESTED_NOT_DEPLOYED",
+      "work": "Structured guard parsing reports status, verdict and holder; malformed/free-text GO is refused.",
+      "remaining": "Integrate into current guard adapter and inspect live logs."
+    },
+    {
+      "id": "B-F1",
+      "limitation": "READY drained 47→6 with zero refill; effective launchable pool 0 (all six held by refuse-locks); rolling submission rate 1.0/hour",
+      "original_status": "Open",
+      "delivery_status": "PARTIAL_COMPONENT_AND_ENGINE_FIX",
+      "work": "B-E1/B-E2 code removes avoidable starvation causes; readiness and refill explain actual inventory.",
+      "remaining": "Integrate live adapters/consumer/discovery; no live READY or throughput improvement is claimed."
+    },
+    {
+      "id": "B-F2",
+      "limitation": "No discovery sweeps for ~36 hours",
+      "original_status": "Open",
+      "delivery_status": "COMPONENT_TESTED_INTEGRATION_REQUIRED",
+      "work": "Public Greenhouse discovery stages URL-bearing postings and deduplicates IDs before verification; URL alias helper covers all three documented fields.",
+      "remaining": "Configure actual boards and connect existing scheduler; respect source limits. No live discovery schedule was resumed here."
+    },
+    {
+      "id": "B-F3",
+      "limitation": "No-AI/unaided-work attestation wave spreading cross-employer (176 events 2026-09-17: Stripe 97, Databricks 22, Samsara 20; Fastly, Salesloft, MongoDB, Elastic newly observed)",
+      "original_status": "Open by design",
+      "delivery_status": "USER_BOUNDARY_PRESERVED",
+      "work": "No-AI/unaided answers remain NEEDS_USER. Employer-scoped verified essays/consent can be resolved only when supplied.",
+      "remaining": "User must provide truthful permitted answers; no preauthorization or AI-generated claim of unaided work."
+    },
+    {
+      "id": "B-F4",
+      "limitation": "Greenhouse Enterprise wall — nearly all job-boards.greenhouse.io boards render the Enterprise endpoint (GitLab, Anthropic, xAI, Neo4j, AIO Logic refused); ledger shows zero api-direct production submissions ever",
+      "original_status": "Open — structural",
+      "delivery_status": "PROVIDER_EVIDENCE_REQUIRED",
+      "work": "Current browser-route boundaries and PQ-9 are preserved; public discovery is separate from submission.",
+      "remaining": "Authorized provider/browser validation and sample URLs are required; paid service is not automatically needed, but code cannot invent access or proof."
+    },
+    {
+      "id": "B-F5",
+      "limitation": "Lever direct-submit refused by design over pure HTTP (API-key wall + platform-wide hCaptcha); lever_submit.py dry-run pre-flight only",
+      "original_status": "Open",
+      "delivery_status": "PROVIDER_EVIDENCE_REQUIRED",
+      "work": "Current browser-route boundaries and PQ-9 are preserved; public discovery is separate from submission.",
+      "remaining": "Authorized provider/browser validation and sample URLs are required; paid service is not automatically needed, but code cannot invent access or proof."
+    },
+    {
+      "id": "B-F6",
+      "limitation": "Ashby is browser_only in the ATS radar (not HTTP-renderable)",
+      "original_status": "Open — structural",
+      "delivery_status": "PROVIDER_EVIDENCE_REQUIRED",
+      "work": "Current browser-route boundaries and PQ-9 are preserved; public discovery is separate from submission.",
+      "remaining": "Authorized provider/browser validation and sample URLs are required; paid service is not automatically needed, but code cannot invent access or proof."
+    },
+    {
+      "id": "B-F7",
+      "limitation": "Workday UNTESTABLE — no sample URLs",
+      "original_status": "Open",
+      "delivery_status": "PROVIDER_EVIDENCE_REQUIRED",
+      "work": "Current browser-route boundaries and PQ-9 are preserved; public discovery is separate from submission.",
+      "remaining": "Authorized provider/browser validation and sample URLs are required; paid service is not automatically needed, but code cannot invent access or proof."
+    },
+    {
+      "id": "B-F8",
+      "limitation": "Feeder watchdog found a dry pool (2026-09-15 first run: 25 parked leads all \"NO URL\", 0 promoted)",
+      "original_status": "Open",
+      "delivery_status": "COMPONENT_TESTED_INTEGRATION_REQUIRED",
+      "work": "Public Greenhouse discovery stages URL-bearing postings and deduplicates IDs before verification; URL alias helper covers all three documented fields.",
+      "remaining": "Configure actual boards and connect existing scheduler; respect source limits. No live discovery schedule was resumed here."
+    },
+    {
+      "id": "B-F9",
+      "limitation": "Buffer-queue drift — a re-screen parked 4 Databricks leads whose fresh launchable packets sat stale in buffer/",
+      "original_status": "Partially fixed (rule: buffer-queue consistency sweep after ANY park/purge; canonical state is the queue) — no automated sweep ships the rule",
+      "delivery_status": "COMPONENT_TESTED_INTEGRATION_REQUIRED",
+      "work": "buffer_plan supports all queue wrappers, detects duplicates/orphans/stale dependencies and distinguishes IN-FLIGHT from launchable work.",
+      "remaining": "Apply plans under live canonical queue lock and recheck at claim; the included planner does not move live files."
+    },
+    {
+      "id": "B-F10",
+      "limitation": "RP01 intake/policy mismatch had starved high-priority leads (PRIORITY APPLY accepted at intake but not by verification/promotion/block logic; 168-hour cooldown)",
+      "original_status": "Cleared live 2026-09-17 (RP01 in production)",
+      "delivery_status": "PRESERVE_REPORTED_LIVE_FIX",
+      "work": "RP01 and verify_retry are not modified.",
+      "remaining": "Retain live evidence; current deployment not reverified here."
+    },
+    {
+      "id": "B-D2",
+      "limitation": "READY is a label that can sit on blocked work",
+      "original_status": "Open",
+      "delivery_status": "COMPONENT_TESTED_INTEGRATION_REQUIRED",
+      "work": "readiness.py provides one strict evaluator with dependency hashes, attempt/legacy checks and disjoint inventory.",
+      "remaining": "Publish authoritative observations from current queues, bank, approval verifier, locks and routes; shadow/replay before claims and dashboard integration."
+    },
+    {
+      "id": "B-D3",
+      "limitation": "\"Promoted\" does not mean \"passed the complete readiness contract\"",
+      "original_status": "Open",
+      "delivery_status": "COMPONENT_TESTED_INTEGRATION_REQUIRED",
+      "work": "readiness.py provides one strict evaluator with dependency hashes, attempt/legacy checks and disjoint inventory.",
+      "remaining": "Publish authoritative observations from current queues, bank, approval verifier, locks and routes; shadow/replay before claims and dashboard integration."
+    },
+    {
+      "id": "B-D4",
+      "limitation": "Fixed buffer constants (in-flight cap 4, packet target 4, ceiling 8, age cap 12h) not demand-driven",
+      "original_status": "Open",
+      "delivery_status": "COMPONENT_TESTED_INTEGRATION_REQUIRED",
+      "work": "refill_plan uses non-starved capacity and P95 preparation time, subtracts WIP, bounds verification checks and surfaces infeasible near-zero yield.",
+      "remaining": "Measure capacity/yield definitions on live data, set source budgets and compare actual refill/idle windows."
+    },
+    {
+      "id": "B-D5",
+      "limitation": "Refresh-skip watermark hashes queues but not answer/policy/form/attachment dependencies",
+      "original_status": "Open",
+      "delivery_status": "COMPONENT_TESTED_INTEGRATION_REQUIRED",
+      "work": "readiness.py provides one strict evaluator with dependency hashes, attempt/legacy checks and disjoint inventory.",
+      "remaining": "Publish authoritative observations from current queues, bank, approval verifier, locks and routes; shadow/replay before claims and dashboard integration."
+    },
+    {
+      "id": "B-D6",
+      "limitation": "Event-driven top-ups only fire when refresh_buffer() runs; external scheduling hooks not fully supplied",
+      "original_status": "Under review (external evidence missing)",
+      "delivery_status": "COMPONENT_TESTED_INTEGRATION_REQUIRED",
+      "work": "Diagnostic/preparation Journal: unique event IDs, transactional outbox, fencing tokens, heartbeats, retry-after/backoff and dead letters.",
+      "remaining": "Wire durable parent event hooks. External dispatch crash recovery remains in the live canonical attempt store, never this sidecar."
+    },
+    {
+      "id": "B-D7",
+      "limitation": "Starved engine's observed launch rate is censored demand",
+      "original_status": "Open",
+      "delivery_status": "COMPONENT_TESTED_INTEGRATION_REQUIRED",
+      "work": "refill_plan uses non-starved capacity and P95 preparation time, subtracts WIP, bounds verification checks and surfaces infeasible near-zero yield.",
+      "remaining": "Measure capacity/yield definitions on live data, set source budgets and compare actual refill/idle windows."
+    },
+    {
+      "id": "B-D8",
+      "limitation": "Throughput ceiling implied by verify yield (~200 verifications/hour at 0.056 net yield caps promotions at ~11.2/hour; a 30/hour target needs ≥15% yield)",
+      "original_status": "Open",
+      "delivery_status": "COMPONENT_TESTED_INTEGRATION_REQUIRED",
+      "work": "refill_plan uses non-starved capacity and P95 preparation time, subtracts WIP, bounds verification checks and surfaces infeasible near-zero yield.",
+      "remaining": "Measure capacity/yield definitions on live data, set source budgets and compare actual refill/idle windows."
+    },
+    {
+      "id": "B-D9",
+      "limitation": "No shared readiness evaluator and no adaptive controller exist (designed, not built)",
+      "original_status": "Under review (designed, not built)",
+      "delivery_status": "COMPONENT_TESTED_INTEGRATION_REQUIRED",
+      "work": "readiness.py provides one strict evaluator with dependency hashes, attempt/legacy checks and disjoint inventory.",
+      "remaining": "Publish authoritative observations from current queues, bank, approval verifier, locks and routes; shadow/replay before claims and dashboard integration."
+    },
+    {
+      "id": "B-D10",
+      "limitation": "Dashboard shows READY counts but not executable READY by route, runway, replenishment ETA, per-stage yield, nominal-to-actual loss, or typed shortage causes (SUPPLY_LIMITED / PROVIDER_LIMITED / AWAITING_DECISION / INTERNAL_FAILURE)",
+      "original_status": "Open",
+      "delivery_status": "COMPONENT_TESTED_INTEGRATION_REQUIRED",
+      "work": "Inventory CLI reports nominal/executable counts, route counts, typed losses; refill reports runway/ETA and unfilled demand.",
+      "remaining": "Connect the actual dashboard to canonical fresh observations; synthetic demo is not current inventory."
+    },
+    {
+      "id": "B-D11",
+      "limitation": "No guard against dividing by near-zero yield",
+      "original_status": "Open",
+      "delivery_status": "COMPONENT_TESTED_INTEGRATION_REQUIRED",
+      "work": "refill_plan uses non-starved capacity and P95 preparation time, subtracts WIP, bounds verification checks and surfaces infeasible near-zero yield.",
+      "remaining": "Measure capacity/yield definitions on live data, set source budgets and compare actual refill/idle windows."
+    },
+    {
+      "id": "F27",
+      "limitation": "Local storage has no single durable transaction boundary (rename without fsync; queue/ledger/learning/event updates span files)",
+      "original_status": "Open",
+      "delivery_status": "PARTIAL_PRIMITIVE",
+      "work": "queue_io fsyncs the replacement file and directory. Diagnostic journal atomically accepts diagnostic event + work.",
+      "remaining": "Whole queue/ledger/learning/telemetry atomicity remains open. The sidecar is not that transaction boundary."
+    },
+    {
+      "id": "F28",
+      "limitation": "Audit-chain integrity weaker than its assurance claims (process-local lock, head anchor beside the writable log, append failures degrade to unchained writes, MUSE audit rows mutable)",
+      "original_status": "Open",
+      "delivery_status": "OPEN_IMPLEMENTATION_OR_EVIDENCE",
+      "work": "No closure claim; included local code does not implement or validate this complete requirement.",
+      "remaining": "Requires current source/architecture, real users/provider/operational evidence or market analysis as described in the supplied register; not inherently a paid-service purchase."
+    },
+    {
+      "id": "F29",
+      "limitation": "Tenant scoping stops short of the whole control plane (login searches usernames globally; workspace config process-global)",
+      "original_status": "Open",
+      "delivery_status": "OPEN_IMPLEMENTATION_OR_EVIDENCE",
+      "work": "No closure claim; included local code does not implement or validate this complete requirement.",
+      "remaining": "Requires current source/architecture, real users/provider/operational evidence or market analysis as described in the supplied register; not inherently a paid-service purchase."
+    },
+    {
+      "id": "F30",
+      "limitation": "First-run setup is not an atomic recoverable operation (setup token consumed before validation; concurrent setups unprotected)",
+      "original_status": "Open",
+      "delivery_status": "OPEN_IMPLEMENTATION_OR_EVIDENCE",
+      "work": "No closure claim; included local code does not implement or validate this complete requirement.",
+      "remaining": "Requires current source/architecture, real users/provider/operational evidence or market analysis as described in the supplied register; not inherently a paid-service purchase."
+    },
+    {
+      "id": "F31",
+      "limitation": "Local HTTP is not a production web perimeter (no Host/Origin/CSRF enforcement, no bounded read timeout, exceptions expose internal messages)",
+      "original_status": "Open",
+      "delivery_status": "OPEN_IMPLEMENTATION_OR_EVIDENCE",
+      "work": "No closure claim; included local code does not implement or validate this complete requirement.",
+      "remaining": "Requires current source/architecture, real users/provider/operational evidence or market analysis as described in the supplied register; not inherently a paid-service purchase."
+    },
+    {
+      "id": "F32",
+      "limitation": "Key and secret isolation limited to one local process identity (services share one managed signing key store; connector secrets in ordinary config rows)",
+      "original_status": "Open",
+      "delivery_status": "OPEN_IMPLEMENTATION_OR_EVIDENCE",
+      "work": "No closure claim; included local code does not implement or validate this complete requirement.",
+      "remaining": "Requires current source/architecture, real users/provider/operational evidence or market analysis as described in the supplied register; not inherently a paid-service purchase."
+    },
+    {
+      "id": "F33",
+      "limitation": "Deletion and export report more completeness than they deliver (deletion leaves derivatives; traversals capped at 200 rows; export silently caps tables at 1,000 rows)",
+      "original_status": "Open",
+      "delivery_status": "PARTIAL_LOCAL_DIAGNOSTICS_ONLY",
+      "work": "Diagnostic export is paginated and tested beyond 1,000 rows; SQLite backup/restore tested locally.",
+      "remaining": "Complete account data/derivative graph export and deletion across live stores remains unimplemented; not a deletion-completeness claim."
+    },
+    {
+      "id": "F38",
+      "limitation": "Agent safety is largely prompt-level; no end-to-end threat evaluation",
+      "original_status": "Under review (design gap)",
+      "delivery_status": "OPEN_IMPLEMENTATION_OR_EVIDENCE",
+      "work": "No closure claim; included local code does not implement or validate this complete requirement.",
+      "remaining": "Requires current source/architecture, real users/provider/operational evidence or market analysis as described in the supplied register; not inherently a paid-service purchase."
+    },
+    {
+      "id": "F39",
+      "limitation": "Operations-control claims not verifiable from documentation alone",
+      "original_status": "Under review (external evidence missing)",
+      "delivery_status": "OPEN_IMPLEMENTATION_OR_EVIDENCE",
+      "work": "No closure claim; included local code does not implement or validate this complete requirement.",
+      "remaining": "Requires current source/architecture, real users/provider/operational evidence or market analysis as described in the supplied register; not inherently a paid-service purchase."
+    },
+    {
+      "id": "F42",
+      "limitation": "Federated telemetry suppression does not establish privacy (arbitrary ATS/gate strings survive as bucket labels; repeated events from one lead can meet the threshold)",
+      "original_status": "Open",
+      "delivery_status": "PARTIAL_INTERNAL_ONLY",
+      "work": "Internal telemetry allowlists labels and bounds each candidate to one contribution. External publication/sale is not exposed.",
+      "remaining": "Differencing/privacy analysis and the standing G1 privacy-counsel gate remain; no anonymized/federated privacy claim."
+    },
+    {
+      "id": "F43",
+      "limitation": "Outbound fetch/upload boundaries need a dedicated security review (pipeline follows URLs/redirects; no complete redirect/DNS/private-address/protocol/credential policy demonstrated; no SSRF probe run)",
+      "original_status": "Under review (static risk, not exploited)",
+      "delivery_status": "PARTIAL_READ_ONLY_FETCHER",
+      "work": "Public fetch validates exact HTTPS destination/path, every DNS address, pinned TLS peer, response size, content type and no redirects/proxies/credentials.",
+      "remaining": "Full upload/side-effect broker and browser egress review remain. DNS and total I/O need existing process-level deadline supervision."
+    },
+    {
+      "id": "F19",
+      "limitation": "Worker ingestion is not replay safe",
+      "original_status": "Open",
+      "delivery_status": "COMPONENT_TESTED_INTEGRATION_REQUIRED",
+      "work": "Diagnostic/preparation Journal: unique event IDs, transactional outbox, fencing tokens, heartbeats, retry-after/backoff and dead letters.",
+      "remaining": "Wire durable parent event hooks. External dispatch crash recovery remains in the live canonical attempt store, never this sidecar."
+    },
+    {
+      "id": "F23",
+      "limitation": "Publishing authorization does not bind the effective connector account",
+      "original_status": "Open",
+      "delivery_status": "COMPONENT_TESTED_INTEGRATION_REQUIRED",
+      "work": "contracts.py freezes attachment/media bytes and fingerprints complete targets, answers, policy/form and publishing account/revision; explicit rights required.",
+      "remaining": "Wire real approval issuer and dispatch byte/account checks; validate rights/provenance, secrets and key lifecycle. Hashes do not authenticate approval."
+    },
+    {
+      "id": "F24",
+      "limitation": "Media bytes, rights and inspection provenance not authoritative (signing a media path does not freeze file bytes; rights default to cleared/owned)",
+      "original_status": "Open",
+      "delivery_status": "COMPONENT_TESTED_INTEGRATION_REQUIRED",
+      "work": "contracts.py freezes attachment/media bytes and fingerprints complete targets, answers, policy/form and publishing account/revision; explicit rights required.",
+      "remaining": "Wire real approval issuer and dispatch byte/account checks; validate rights/provenance, secrets and key lifecycle. Hashes do not authenticate approval."
+    },
+    {
+      "id": "F25",
+      "limitation": "Policy checks and capacity checks are not atomic with dispatch admission",
+      "original_status": "Open",
+      "delivery_status": "CURRENT_TRANSACTION_REQUIRED",
+      "work": "No dispatch-capacity reservation is introduced outside the live canonical transaction.",
+      "remaining": "Port policy epoch and quota reservation into the existing claim/egress transaction; current state store is required."
+    },
+    {
+      "id": "F26",
+      "limitation": "Process-death recovery and bounded retries incomplete (no claim lease/heartbeat recovery; outbox has no backoff schedule)",
+      "original_status": "Open",
+      "delivery_status": "COMPONENT_TESTED_INTEGRATION_REQUIRED",
+      "work": "Diagnostic/preparation Journal: unique event IDs, transactional outbox, fencing tokens, heartbeats, retry-after/backoff and dead letters.",
+      "remaining": "Wire durable parent event hooks. External dispatch crash recovery remains in the live canonical attempt store, never this sidecar."
+    },
+    {
+      "id": "F35",
+      "limitation": "Export sanitization assertions not supported by the archive (excluded runtime files and operational records present despite exclusion claims)",
+      "original_status": "Open",
+      "delivery_status": "NEW_PACKAGE_SCOPED",
+      "work": "New delivery uses an explicit source allowlist, per-file hashes and final archive scan; excludes full old source/runtime/bank/backups.",
+      "remaining": "No retroactive sanitization claim for older exports; inspect final audit scope and retain private distribution."
+    },
+    {
+      "id": "F36",
+      "limitation": "Advertised offline test baseline not reproducible (stdlib-only instructions conflict with pytest imports; an executor run made an external api.ashbyhq.com request)",
+      "original_status": "Open",
+      "delivery_status": "NEW_PACKAGE_TESTED",
+      "work": "One stdlib runner; tested with python -S; network/DNS/proxy/process execution denied inside reviewed tests; selected legacy tests only.",
+      "remaining": "Do not treat the guard as an OS sandbox or run broad legacy discovery; live provider tests remain separate."
+    },
+    {
+      "id": "F37",
+      "limitation": "Schemas and compatibility versions not consistently enforced (default schema_version without version check; bool accepted as int; multiple status/queue vocabularies need regex bridges)",
+      "original_status": "Open",
+      "delivery_status": "COMPONENT_TESTED_INTEGRATION_REQUIRED",
+      "work": "Versioned observations, exact int/bool checks, duplicate-key/nonfinite rejection and strict status handling.",
+      "remaining": "Use explicit adapters across every legacy queue/status/schema consumer; no global schema migration delivered."
+    },
+    {
+      "id": "F46",
+      "limitation": "Production reliability and comparative superiority unproved (no production connector credentials, deployment, observed SLO window, restore evidence, load profile, or independent competitor benchmark)",
+      "original_status": "Under review (external evidence missing)",
+      "delivery_status": "OPEN_IMPLEMENTATION_OR_EVIDENCE",
+      "work": "No closure claim; included local code does not implement or validate this complete requirement.",
+      "remaining": "Requires current source/architecture, real users/provider/operational evidence or market analysis as described in the supplied register; not inherently a paid-service purchase."
+    },
+    {
+      "id": "C-G8",
+      "limitation": "Privacy and operations (gap-register G8 — LIMITED_LOCAL_ISOLATION_TESTS)",
+      "original_status": "Partial",
+      "delivery_status": "OPEN_IMPLEMENTATION_OR_EVIDENCE",
+      "work": "No closure claim; included local code does not implement or validate this complete requirement.",
+      "remaining": "Requires current source/architecture, real users/provider/operational evidence or market analysis as described in the supplied register; not inherently a paid-service purchase."
+    },
+    {
+      "id": "D-H1",
+      "limitation": "Verify/score reads the FORM, not the POSTING — 4 posting-text misses in one night (Addepar 5-day on-site submitted, HelloFresh bachelor's-required submitted, Lucid 50% travel launched pre-fill, Giga full-time on-site)",
+      "original_status": "Open",
+      "delivery_status": "PARTIAL_COMPONENT",
+      "work": "Discovery extracts posting content; posting_signals identifies travel, office-day, degree and unaided-work passages for review.",
+      "remaining": "Wire full posting-text screening and actual user policy. Regex hints cannot prove absence of a requirement or make a complete eligibility decision."
+    },
+    {
+      "id": "D-H2",
+      "limitation": "Spawn briefs never enumerate the attestation scope — the five pre-authorized attestations live in answer_bank/prescreen but not in the spawn brief's truthful-values section (a LeanTaaS session improvised a vaccination-policy acknowledgment)",
+      "original_status": "Open",
+      "delivery_status": "COMPONENT_TESTED_INTEGRATION_REQUIRED",
+      "work": "answers.py preserves scope/provenance/expiry/field identity, abstains on conflicting answers, keeps consent employer-scoped and requires attestation allowlist.",
+      "remaining": "Wire every brief/form consumer; feed verified bank/issuer references; add true blockers and explicit live attestation scope to spawn briefs."
+    },
+    {
+      "id": "D-H3",
+      "limitation": "Experience-assertion checkboxes can be filled from employer-name inference (a CSSMER session checked four boxes citing a \"verified Napa River Inn hospitality ops record\" not in answer_bank)",
+      "original_status": "Open — three compound fixes listed, none shipped",
+      "delivery_status": "COMPONENT_TESTED_INTEGRATION_REQUIRED",
+      "work": "answers.py preserves scope/provenance/expiry/field identity, abstains on conflicting answers, keeps consent employer-scoped and requires attestation allowlist.",
+      "remaining": "Wire every brief/form consumer; feed verified bank/issuer references; add true blockers and explicit live attestation scope to spawn briefs."
+    },
+    {
+      "id": "D-H4",
+      "limitation": "SMS consent overgeneralization — bare answers.sms_texting_permission=\"Yes\" rendered into every launch brief",
+      "original_status": "Partially fixed — standing global answer quarantined to _quarantined; interim OVERRIDE needed per launch until per-employer consent handling is wired",
+      "delivery_status": "COMPONENT_TESTED_INTEGRATION_REQUIRED",
+      "work": "answers.py preserves scope/provenance/expiry/field identity, abstains on conflicting answers, keeps consent employer-scoped and requires attestation allowlist.",
+      "remaining": "Wire every brief/form consumer; feed verified bank/issuer references; add true blockers and explicit live attestation scope to spawn briefs."
+    },
+    {
+      "id": "D-H5",
+      "limitation": "Cost model v1 leaves cost_http_requests and cost_taps UNMETERED per submission",
+      "original_status": "Open",
+      "delivery_status": "COMPONENT_TESTED_INTEGRATION_REQUIRED",
+      "work": "measurement.py accounts by stable attempt ID, deduplicates replay, rejects proxy taps and reports missing coverage, including failed attempts.",
+      "remaining": "Instrument real HTTP/taps/user time/model/infra meters; allocate costs. All-in dollars and cost-per-verified-completion remain null."
+    },
+    {
+      "id": "D-H6",
+      "limitation": "Ledger headline gaps — resume_lane missing on 86%, date_submitted missing on 86% of SUBMITTED rows",
+      "original_status": "Open",
+      "delivery_status": "CURRENT_WRITER_REQUIRED",
+      "work": "No legacy success rows or missing lane/date fields are fabricated or backfilled.",
+      "remaining": "Add resume_lane and date_submitted to the live canonical verified-outcome append path; that writer must first satisfy the receipt contract."
+    },
+    {
+      "id": "D-H7",
+      "limitation": "Zero browser lifecycle telemetry — browser subagents have no shell, so STEP 7 log_event.py events cannot run there; the task's \"continue anyway\" rule keeps the application going with zero emitted events",
+      "original_status": "Open",
+      "delivery_status": "PARTIAL_INTERFACE",
+      "work": "Journal accepts browser_lifecycle events from parent orchestration.",
+      "remaining": "Add real parent launch/progress/completion instrumentation in the current repository; no browser lifecycle events were captured here."
+    },
+    {
+      "id": "D-H8",
+      "limitation": "FIM watches goal-owned cron defs on disk, but a schedule vanishing from the scheduler does not alert",
+      "original_status": "Open",
+      "delivery_status": "COMPONENT_TESTED_INTEGRATION_REQUIRED",
+      "work": "scheduler_drift compares actual scheduler exports and distinguishes failed reads from disappeared jobs.",
+      "remaining": "Wire authoritative scheduler export and Tier-1 alert delivery."
+    },
+    {
+      "id": "D-H9",
+      "limitation": "pdt_now() helper for queue_io.py proposed but never added",
+      "original_status": "Open — meanwhile every ad-hoc writer uses the ZoneInfo pattern explicitly",
+      "delivery_status": "SNAPSHOT_HELPER_CONFIRMED",
+      "work": "Recovered queue_io already has pdt_now; tests confirm aware clock. Documentation uses %Z for PST/PDT.",
+      "remaining": "Keep live helper; replace any hardcoded zone labels in other current writers."
+    },
+    {
+      "id": "D-H10",
+      "limitation": "Mining proposals die unreviewed — \"an unreviewed proposal file is a broken loop\"",
+      "original_status": "Open",
+      "delivery_status": "PARTIAL_INTERFACE",
+      "work": "proposal_review diagnostic work is durable and retryable; human promotion boundaries preserved.",
+      "remaining": "Wire live triage digest into evaluator prompt and main-agent review cycle; no automatic proposal promotion."
+    },
+    {
+      "id": "D-H11",
+      "limitation": "Orphaned parked leads — a park without a queue entry + reason is a lost lead (one needed hand-recovery)",
+      "original_status": "Partially fixed — rule in place (canonical park writes queue entry + reason); incident lead restored fail-closed",
+      "delivery_status": "PARTIAL_ENGINE_PATCH",
+      "work": "Canonical in-place parking updates reason and blockers; missing/duplicate lead refuses mutation.",
+      "remaining": "Wire every live park path and retain the current transaction for cross-queue moves."
+    },
+    {
+      "id": "D-H12",
+      "limitation": "Residuals: queue_io.queue_lock() needs a configurable path for test pipelines; log_event gate-vocab test failure is pre-existing and unrelated to shipped fixes",
+      "original_status": "Open",
+      "delivery_status": "PARTIAL_ENGINE_PATCH",
+      "work": "queue_lock accepts per-call lock_path; patch_entry preserves queue wrappers; neighboring queue regressions pass.",
+      "remaining": "Rebase; the separately reported live gate-vocabulary test needs its current source/failure output and is not fixed here."
+    },
+    {
+      "id": "D-H13",
+      "limitation": "C-14 charter amendment (canonical-counting evidence rule) proposed but pending human approval",
+      "original_status": "Open",
+      "delivery_status": "USER_DECISION_REQUIRED",
+      "work": "No charter change is applied.",
+      "remaining": "C-14 promotion requires the named human approval in the original register."
+    },
+    {
+      "id": "D-H14",
+      "limitation": "parking_schema note_required false positive when queue_notes is list-typed — potential affected: 1,335 standard + 103 needs-input records",
+      "original_status": "Open — proposal unshipped (triaged under \"tested value only\")",
+      "delivery_status": "PATCH_TESTED_NOT_DEPLOYED",
+      "work": "Parking schema accepts nonempty list-valued notes and rejects empty/mixed-type notes.",
+      "remaining": "Rebase patch and rerun current parking consumers before updating live status."
+    },
+    {
+      "id": "D-EV3",
+      "limitation": "~36h unwired sweep gap — an ATS-radar onboarding proposal sat unacted 37h (coinbase gh_jid-proxy case); learning-proposals triage backlog 135 drafts vs weekly evaluator",
+      "original_status": "Partially closed 2026-09-17 — triage sieve shipped (`worker-charter/triage_sieve.py`, 18/18 tests green, neighboring 39/39): 136 drafts → 73 promote-candidates, 45 review, 14 needs-evidence, 4 duplicate, 0 defer (fail-closed). Tool never promotes (verified behaviorally + statically); promotions stay human-approved. Open: wire digest into evaluator prompt context (coordinator's call); ATS-radar onboarding (coinbase) still open",
+      "delivery_status": "PARTIAL_INTERFACE",
+      "work": "proposal_review diagnostic work is durable and retryable; human promotion boundaries preserved.",
+      "remaining": "Wire live triage digest into evaluator prompt and main-agent review cycle; no automatic proposal promotion."
+    },
+    {
+      "id": "D-E4",
+      "limitation": "Browser task slot starvation pattern — needs_user sessions in parked states hold Chromium slots indefinitely while live work queues (2026-09-15: ten parked tasks starved one live application ~15 min)",
+      "original_status": "Partially closed (lane-stall post-mortem: parked-forever sessions always propose close; repair-inflight with fail-closed guards; cron delivers to main chat) — rule: parked task ≠ live session",
+      "delivery_status": "COMPONENT_TESTED_INTEGRATION_REQUIRED",
+      "work": "parked_session_plan proposes closing only old lane-routable, unsubmitted sessions, preserving takeover/deadline exceptions.",
+      "remaining": "Wire browser task inventory and authorized close handler; never close UNKNOWN submit state or user-takeover sessions automatically."
+    },
+    {
+      "id": "F40",
+      "limitation": "Best-in-world bars reward volume and backlog over verified value (permanent 4× supply/burn target grows backlog; raw submissions/hour rewards duplicates, low fit, weak confirmation)",
+      "original_status": "Under review (design gap)",
+      "delivery_status": "MEASUREMENT_RULE_PRESERVED",
+      "work": "Shadow executable inventory and missing cost meters avoid raw-volume/composite-dollar overclaim; no receipt-backed success is invented.",
+      "remaining": "Wire verified qualified outcomes into live dashboards; lower counts after truthful measurement must not relax gates."
+    },
+    {
+      "id": "F41",
+      "limitation": "Learning signals are observational and may be premature (small-sample ranking differences against a pooled baseline; response delays and selection effects confound apparent gains)",
+      "original_status": "Under review (design gap)",
+      "delivery_status": "OPEN_IMPLEMENTATION_OR_EVIDENCE",
+      "work": "No closure claim; included local code does not implement or validate this complete requirement.",
+      "remaining": "Requires current source/architecture, real users/provider/operational evidence or market analysis as described in the supplied register; not inherently a paid-service purchase."
+    },
+    {
+      "id": "F44",
+      "limitation": "Large orchestrators and hardcoded paths obstruct reliable scaling (three central modules total 8,497 lines; 141 files with tilde-workspace/expanduser references)",
+      "original_status": "Under review (design gap)",
+      "delivery_status": "PARTIAL_MODULAR_PACKAGE",
+      "work": "New modules take explicit inputs/paths; test locks are path-local; package runs without hardcoded home layout.",
+      "remaining": "Large live orchestrator/path refactor requires current code and contract migration."
+    },
+    {
+      "id": "F45",
+      "limitation": "Full user journey and accessibility unverified (keyboard access, mobile layout, assistive tech, setup recovery, second-operator end-to-end use never tested)",
+      "original_status": "Under review (external evidence missing)",
+      "delivery_status": "OPEN_IMPLEMENTATION_OR_EVIDENCE",
+      "work": "No closure claim; included local code does not implement or validate this complete requirement.",
+      "remaining": "Requires current source/architecture, real users/provider/operational evidence or market analysis as described in the supplied register; not inherently a paid-service purchase."
+    },
+    {
+      "id": "E-I6",
+      "limitation": "Cost instrumentation is partial (some measures are proxies, composite units are not actual dollars; browser launches used as an approval-effort proxy)",
+      "original_status": "Open",
+      "delivery_status": "COMPONENT_TESTED_INTEGRATION_REQUIRED",
+      "work": "measurement.py accounts by stable attempt ID, deduplicates replay, rejects proxy taps and reports missing coverage, including failed attempts.",
+      "remaining": "Instrument real HTTP/taps/user time/model/infra meters; allocate costs. All-in dollars and cost-per-verified-completion remain null."
+    },
+    {
+      "id": "E-I7",
+      "limitation": "Fit scores and observational learning do not prove improved interviews (no independent relevance labels, job-age checks, or consent-based outcome ingestion)",
+      "original_status": "Open",
+      "delivery_status": "OPEN_IMPLEMENTATION_OR_EVIDENCE",
+      "work": "No closure claim; included local code does not implement or validate this complete requirement.",
+      "remaining": "Requires current source/architecture, real users/provider/operational evidence or market analysis as described in the supplied register; not inherently a paid-service purchase."
+    },
+    {
+      "id": "E-I8",
+      "limitation": "Product boundary ambiguity — public-edition onboarding docs stop at a launch packet while the uploaded system contains private execution paths",
+      "original_status": "Open",
+      "delivery_status": "EDITION_SCOPE_DOCUMENTED",
+      "work": "README explicitly defines this delivery as local remediation + isolated integration code, not hosted/execution product release.",
+      "remaining": "Define separately what the eventual public product includes and validate that journey."
+    },
+    {
+      "id": "E-I9",
+      "limitation": "Comparator identities left as unnamed A/B/C placeholders; build-roadmap.json and benchmark-contract.json not found in the delivered package",
+      "original_status": "Open",
+      "delivery_status": "OPEN_BENCHMARK_WORK",
+      "work": "Every register row now has machine-readable remediation mapping; no competitor result is fabricated.",
+      "remaining": "Named versions/plans, comparator contract and controlled benchmark still require research and execution; this is not the missing market benchmark."
+    },
+    {
+      "id": "E-I10",
+      "limitation": "No measured provider-and-form support matrix — connector code exists but supported-route coverage and live reliability unverified",
+      "original_status": "Open",
+      "delivery_status": "PARTIAL_DISCOVERY_SUPPORT",
+      "work": "Read-only Greenhouse discovery is implemented; no claimed API submission support is added.",
+      "remaining": "Build measured provider/form/account matrix and real contract fixtures using available authorized browser/accounts."
+    },
+    {
+      "id": "E-I11",
+      "limitation": "Pricing pressure from free/cheap automation (Simplify Copilot free autofill/tracking/matches/resume builder; JobCopilot from $0.93/day; LoopCV free/€9.99+/month)",
+      "original_status": "Open (market condition, not a defect)",
+      "delivery_status": "OPEN_IMPLEMENTATION_OR_EVIDENCE",
+      "work": "No closure claim; included local code does not implement or validate this complete requirement.",
+      "remaining": "Requires current source/architecture, real users/provider/operational evidence or market analysis as described in the supplied register; not inherently a paid-service purchase."
+    },
+    {
+      "id": "E-I12",
+      "limitation": "Integrity fixes can reduce reported throughput (closing F17/F18/F22 removes false success and unsafe fallback)",
+      "original_status": "Standing directive: treat the drop as measurement correction; report trustworthy completions only",
+      "delivery_status": "MEASUREMENT_RULE_PRESERVED",
+      "work": "Shadow executable inventory and missing cost meters avoid raw-volume/composite-dollar overclaim; no receipt-backed success is invented.",
+      "remaining": "Wire verified qualified outcomes into live dashboards; lower counts after truthful measurement must not relax gates."
+    },
+    {
+      "id": "E-I13",
+      "limitation": "Fixed earlier findings F01–F16 exist only in a separate review copy — nothing is deployed",
+      "original_status": "Partially fixed (review copy only)",
+      "delivery_status": "CURRENT_SOURCE_REBASE_REQUIRED",
+      "work": "Only five new incremental patches are included; old F01-F16 bundle is not reapplied.",
+      "remaining": "Review historical fixes against current code and migrate actual approvals as required."
+    },
+    {
+      "id": "E-G1",
+      "limitation": "Gap-register G1 (prove application arrival) — PARTIAL_LOCAL_IMPLEMENTATION",
+      "original_status": "Partial",
+      "delivery_status": "OPEN_PROVIDER_TRUTH",
+      "work": "receipt_diagnostic only detects missing/corrupt correlation and always returns UNKNOWN; never accepts a caller-controlled success.",
+      "remaining": "Implement trusted capture and validated provider-specific receipt contracts in the live F18 writer, then independent adversarial review."
+    },
+    {
+      "id": "E-G2",
+      "limitation": "Gap-register G2 (send exactly approved content) — PARTIAL_LOCAL_IMPLEMENTATION",
+      "original_status": "Partial",
+      "delivery_status": "COMPONENT_TESTED_INTEGRATION_REQUIRED",
+      "work": "contracts.py freezes attachment/media bytes and fingerprints complete targets, answers, policy/form and publishing account/revision; explicit rights required.",
+      "remaining": "Wire real approval issuer and dispatch byte/account checks; validate rights/provenance, secrets and key lifecycle. Hashes do not authenticate approval."
+    },
+    {
+      "id": "E-G3",
+      "limitation": "Gap-register G3 (maintain usable READY supply) — PARTIAL_LOCAL_IMPLEMENTATION",
+      "original_status": "Partial",
+      "delivery_status": "COMPONENT_TESTED_INTEGRATION_REQUIRED",
+      "work": "readiness.py provides one strict evaluator with dependency hashes, attempt/legacy checks and disjoint inventory.",
+      "remaining": "Publish authoritative observations from current queues, bank, approval verifier, locks and routes; shadow/replay before claims and dashboard integration."
+    },
+    {
+      "id": "E-G4",
+      "limitation": "Gap-register G4 (independent-user journey) — SPECIFIED_NOT_IMPLEMENTED",
+      "original_status": "Not started",
+      "delivery_status": "OPEN_IMPLEMENTATION_OR_EVIDENCE",
+      "work": "No closure claim; included local code does not implement or validate this complete requirement.",
+      "remaining": "Requires current source/architecture, real users/provider/operational evidence or market analysis as described in the supplied register; not inherently a paid-service purchase."
+    },
+    {
+      "id": "E-G5",
+      "limitation": "Gap-register G5 (measured route support) — PARTIAL_LOCAL_IMPLEMENTATION",
+      "original_status": "Partial",
+      "delivery_status": "PARTIAL_DISCOVERY_SUPPORT",
+      "work": "Read-only Greenhouse discovery is implemented; no claimed API submission support is added.",
+      "remaining": "Build measured provider/form/account matrix and real contract fixtures using available authorized browser/accounts."
+    },
+    {
+      "id": "E-G6",
+      "limitation": "Gap-register G6 (evidence of better outcomes) — PARTIAL_LOCAL_IMPLEMENTATION",
+      "original_status": "Partial",
+      "delivery_status": "OPEN_IMPLEMENTATION_OR_EVIDENCE",
+      "work": "No closure claim; included local code does not implement or validate this complete requirement.",
+      "remaining": "Requires current source/architecture, real users/provider/operational evidence or market analysis as described in the supplied register; not inherently a paid-service purchase."
+    },
+    {
+      "id": "E-G7",
+      "limitation": "Gap-register G7 (complete unit economics) — PARTIAL_LOCAL_IMPLEMENTATION",
+      "original_status": "Partial",
+      "delivery_status": "COMPONENT_TESTED_INTEGRATION_REQUIRED",
+      "work": "measurement.py accounts by stable attempt ID, deduplicates replay, rejects proxy taps and reports missing coverage, including failed attempts.",
+      "remaining": "Instrument real HTTP/taps/user time/model/infra meters; allocate costs. All-in dollars and cost-per-verified-completion remain null."
+    }
+  ]
+}
