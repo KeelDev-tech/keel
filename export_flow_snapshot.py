@@ -118,7 +118,7 @@ ADAPTER_VERSION = "export_flow_snapshot/1.3.0"  # 1.3.0 (2026-09-20 ARM 3):
 # mapping fails closed to the v1 placeholder posture when its evidence is
 # absent; lead_row() without an evidence dict keeps the exact v1 behavior.
 # Candidate key feeding application_identity() digests. Runtime override
-# precedence (first hit wins), mirroring _load_identity_markers() below:
+# precedence (first hit wins):
 #   1. env KEEL_CANDIDATE_ID
 #   2. the restricted file hidden_files/candidate-id.json
 #      (mode 0600; JSON {"candidate_id": "..."}); the private host keeps
