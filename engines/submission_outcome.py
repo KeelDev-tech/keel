@@ -242,7 +242,7 @@ def new_attempt_id(transport, role_id, fingerprint=""):
 
 
 def _strip_html(html):
-    text = re.sub(r"<script.*?</script\s*>|<style.*?</style\s*>", " ", html,
+    text = re.sub(r"<script.*?</script[^>]*>|<style.*?</style[^>]*>", " ", html,
                   flags=re.S | re.I)
     text = re.sub(r"<[^>]+>", " ", text)
     return re.sub(r"\s+", " ", text).strip()

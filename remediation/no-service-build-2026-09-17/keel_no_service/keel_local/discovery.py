@@ -59,7 +59,7 @@ def fetch_public_board(url, *, timeout=10, maximum_bytes=4 * 1024 * 1024):
     connection = http.client.HTTPSConnection(parsed.hostname, timeout=timeout)
     try:
         raw.connect(sockaddr)
-        connection.sock = ssl.create_default_context().wrap_socket(raw, server_hostname=parsed.hostname)
+        _ctx = ssl.create_default_context(); _ctx.minimum_version = ssl.TLSVersion.TLSv1_2; connection.sock = _ctx.wrap_socket(raw, server_hostname=parsed.hostname)
         connection.request("GET", parsed.path + "?" + parsed.query,
                            headers={"Accept": "application/json", "Accept-Encoding": "identity",
                                     "User-Agent": "KeelLocalDiscovery/0.1"})

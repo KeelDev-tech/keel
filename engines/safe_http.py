@@ -238,6 +238,7 @@ def _exchange(url, method, headers, records, timeout, max_bytes):
     parsed = urlsplit(url)
     deadline = time.monotonic() + timeout
     context = ssl.create_default_context()
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.set_alpn_protocols(["http/1.1"])
     last_error = None
     # DNS is not consulted again by the socket connection.
