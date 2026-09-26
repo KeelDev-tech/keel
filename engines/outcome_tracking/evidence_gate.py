@@ -48,9 +48,12 @@ def load_ledger(path=LEDGER_PATH):
     return data if isinstance(data, list) else []
 
 
-def _scan_ledger_for_quote(events_path, claim_ts, role_id):
+def _scan_ledger_for_quote(events_path, claim_ts, role_id, now=None):
     """Look for a submitted event with a quoted confirmation for role_id
-    inside the evidence window (claim_ts .. claim_ts + 24h)."""
+    inside the evidence window (claim_ts .. claim_ts + 24h), additionally
+    bounded by the evaluation time: when `now` is given, the event must
+    also fall inside (now - 24h .. now), so stale evidence cannot verify
+    a claim evaluated later."""
     try:
         with open(events_path) as f:
             lines = f.readlines()
@@ -82,6 +85,10 @@ def _scan_ledger_for_quote(events_path, claim_ts, role_id):
                     hours = (ev_dt - claim_dt).total_seconds() / 3600
                     if not (0 <= hours <= PENDING_WINDOW_H):
                         continue
+                    if now is not None:
+                        age_h = (now - ev_dt).total_seconds() / 3600
+                        if not (0 <= age_h <= PENDING_WINDOW_H):
+                            continue
                 except Exception:
                     continue
             return m.group(1)
@@ -149,18 +156,29 @@ def load_gate_events(events_path=EVENTS_PATH):
     return out
 
 
-def coverage(rows, events_path=EVENTS_PATH):
+def coverage(rows, events_path=EVENTS_PATH, *, now=None):
     """(verified, pending, unevidenced) counts over SUBMITTED rows.
 
     verified: a submitted telemetry event with a quoted confirmation
-      inside the window. pending: submitted event exists but no quoted
-      confirmation yet. unevidenced: no submitted event at all.
+      inside the 24h claim window. pending: submitted event exists but
+      no quoted confirmation yet. unevidenced: no submitted event at all.
+
+    When `now` is explicitly given, it bounds the evaluation: a quoted
+    confirmation or submitted event older than 24h before `now` no
+    longer counts (stale evidence cannot verify a claim evaluated
+    later). When `now` is omitted, only the 24h claim window applies.
     """
+    explicit_now = now
+    now = now or utc_now()
+    if now.tzinfo is None or now.utcoffset() is None:
+        raise ValueError("now requires an explicit timezone")
+    window_start = now - timedelta(hours=PENDING_WINDOW_H)
     verified = pending = unevidenced = 0
     for r in find_submitted_rows(rows):
         rid = r.get("role_id", "")
         quote = _scan_ledger_for_quote(
-            events_path, r.get("date_submitted", ""), rid)
+            events_path, r.get("date_submitted", ""), rid,
+            now=explicit_now)
         if quote:
             verified += 1
             continue
@@ -177,6 +195,18 @@ def coverage(rows, events_path=EVENTS_PATH):
                         continue
                     if (e.get("event_type") == "submitted"
                             and e.get("role_id") == rid):
+                        if explicit_now is not None:
+                            # Stale-event bound only when evaluating at
+                            # an explicit time.
+                            try:
+                                ev_dt = datetime.fromisoformat(
+                                    str(e.get("ts", "")).replace("Z", "+00:00"))
+                            except Exception:
+                                continue
+                            if ev_dt.tzinfo is None:
+                                ev_dt = ev_dt.replace(tzinfo=timezone.utc)
+                            if not (window_start <= ev_dt <= now):
+                                continue
                         has_event = True
                         break
         except FileNotFoundError:

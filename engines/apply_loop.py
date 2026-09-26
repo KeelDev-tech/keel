@@ -142,6 +142,33 @@ BUFFER_LOCK_FILE = os.path.join(STATE_DIR, "packet-buffer.lock")
 
 
 # ---------------------------------------------------------------------------
+# Never-auto-submit attestation marker
+# ---------------------------------------------------------------------------
+
+def _never_auto_submit_keys(guard_result):
+    """Extract never-auto-submit attestation keys from a guard result.
+
+    Returns the sorted, deduplicated, nonempty keys of mismatches where
+    category == "attestation" and kind == "out_of_scope" — an attestation
+    the answer bank abstains on that leaked into the packet. Such a lead
+    would need a false attestation to submit, so it must never auto-submit.
+    Safe for None, {}, or "mismatches": None.
+    """
+    if not isinstance(guard_result, dict):
+        return []
+    mismatches = guard_result.get("mismatches") or []
+    keys = set()
+    for m in mismatches:
+        if not isinstance(m, dict):
+            continue
+        if m.get("category") == "attestation" and m.get("kind") == "out_of_scope":
+            key = m.get("key")
+            if key:
+                keys.add(key)
+    return sorted(keys)
+
+
+# ---------------------------------------------------------------------------
 # Queue IO
 # ---------------------------------------------------------------------------
 

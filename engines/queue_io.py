@@ -394,3 +394,39 @@ def notes_text(entry):
     if isinstance(n, list):
         return " | ".join(str(x) for x in n if x)
     return str(n or "")
+
+
+def commit_snapshot(changes, expected):
+    """Atomic compare-and-refuse multi-file commit.
+
+    changes: {path: new_content} — the writes to apply.
+    expected: {path: expected_current_content} — a snapshot taken before
+      the caller computed `changes`.
+
+    Every path in `changes` is re-read under queue_lock() and compared
+    to its expected snapshot BEFORE any write happens. Every changed
+    path MUST have an entry in `expected` — a change without a prior
+    snapshot is a programming error and fails closed. If any path's
+    current content differs (stale snapshot — someone else wrote first),
+    RuntimeError is raised and NOTHING is written. Only when every path
+    matches does the commit proceed, writing all files via
+    atomic_write_json. No partial commits, ever.
+    """
+    with queue_lock(owner="queue_io:commit_snapshot"):
+        current = {}
+        for path in changes:
+            if path not in expected:
+                raise RuntimeError(
+                    f"queue snapshot missing for {path}: every changed "
+                    "path must have an expected snapshot; refusing all changes")
+            try:
+                with open(path, "rb") as f:
+                    current[path] = strict_loads(f.read())
+            except FileNotFoundError:
+                current[path] = None
+            if current[path] != expected[path]:
+                raise RuntimeError(
+                    f"stale queue snapshot for {path}: expected snapshot "
+                    "does not match current content; refusing all changes")
+        for path, content in changes.items():
+            atomic_write_json(path, content)

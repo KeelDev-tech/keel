@@ -26,6 +26,10 @@ monitors/
 !monitors/
 monitors/*
 !monitors/formation_writer.py
+!monitors/fanout_gate.py
+!monitors/pulse_snapshot.py
+!monitors/pulse_dashboard.py
+!monitors/verify_heartbeat.py
 
 # Internal launch-verification artifact (regenerable; embeds private paths)
 launch/proof-points.json

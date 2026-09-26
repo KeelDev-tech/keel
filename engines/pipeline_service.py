@@ -695,7 +695,20 @@ def prepare_role(workspace, role_id, resume, *, _offline_fixture=False):
         raise ValueError('preparation lease refused: '+str(info.get('status')))
     packet_path = None
     try:
-        packet_path = apply_loop.build_packet(selected, 'standard', task_id=task)
+        # Preparation-only path: build the modern packet contract directly.
+        # (apply_loop.build_packet emits the legacy launch-packet schema,
+        # which packet_contract.validate rejects.)
+        bank = apply_loop.load_answer_bank()
+        policy = apply_loop.load_policy()
+        materials = apply_loop._materials_for(selected, 'standard')
+        intel = {"questions": [], "ats": "unknown",
+                 "source_url": packet_contract.source_url(selected)}
+        packet = packet_contract.prepare(selected, bank, policy,
+                                         str(workspace), materials, intel)
+        packets_dir = workspace / 'data' / 'launch-packets'
+        packets_dir.mkdir(parents=True, exist_ok=True)
+        packet_path = str(packets_dir / f"{role_id}.json")
+        atomic_json(Path(packet_path), packet)
         with queue_lock(timeout=10, owner='prepare-role:validate'):
             documents, ledger = _documents(workspace)
             matches = [row for _, row in _all_rows(documents) if row.get('role_id') == role_id]

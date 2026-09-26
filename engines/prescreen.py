@@ -719,12 +719,20 @@ def _primary_gate(reasons):
     return "needs_input"
 
 
-def park_lead(role_id, reasons, queue_dir=None, backup=True):
+def park_lead(role_id, reasons, queue_dir=None, backup=True,
+             never_auto_submit_keys=None):
     """Move a lead from its owning queue (standard OR strategic) to
     needs_input-queue.json using ONLY the conventional fields the
     classifier reads. Overwrites any stale status_reason. Backs up the
     touched queue files first. One-lead-one-queue is preserved: the lead
     is removed from exactly the queue file that held it.
+
+    never_auto_submit_keys: optional iterable of answer-bank keys whose
+      attestations the bank abstains on. When nonempty (after cleaning),
+      the lead is stamped with never_auto_submit_attestation =
+      sorted(unique(nonempty keys)) — a sticky marker the verify_retry
+      promotion gate honors. The field is omitted entirely when no keys
+      are given.
 
     Returns {"ok": True, ...} or {"ok": False, "error": ...}.
     """
@@ -782,6 +790,10 @@ def park_lead(role_id, reasons, queue_dir=None, backup=True):
            f"prescreen {ts}: parked awaiting applicant input")
     )
     lead["status_updated"] = ts_short
+    if never_auto_submit_keys:
+        cleaned = sorted({k for k in never_auto_submit_keys if k})
+        if cleaned:
+            lead["never_auto_submit_attestation"] = cleaned
 
     owner_leads = [l for l in owner_leads if l.get("role_id") != role_id]
     ni_leads.append(lead)
