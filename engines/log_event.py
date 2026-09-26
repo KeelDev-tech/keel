@@ -309,7 +309,7 @@ def _sync_event_directory():
         directory = parent
 
 
-def log(event_type: str, role_id: str = "", company: str = "", ats: str = "",
+def _prepare_event(event_type: str, role_id: str = "", company: str = "", ats: str = "",
         source: str = "", details: dict = None, event_id: str = None) -> dict:
     if event_type not in EVENT_TYPES:
         raise ValueError(f"unknown event_type '{event_type}'. "
@@ -350,6 +350,14 @@ def log(event_type: str, role_id: str = "", company: str = "", ats: str = "",
         "source": source or "",
         "details": details,
     }
+    return event, caller_supplied_event_id
+
+
+def log(event_type: str, role_id: str = "", company: str = "", ats: str = "",
+        source: str = "", details: dict = None, event_id: str = None) -> dict:
+    event, caller_supplied_event_id = _prepare_event(event_type, role_id, company, ats,
+                                                    source, details, event_id)
+    event_id = event['event_id']
     # 2026-09-18 (Keel 0.6.0 trust port): minimal event-id replay semantics.
     # When the caller supplies an event_id, the check-and-append is atomic:
     # an identical earlier payload is returned as-is (idempotent replay, no
@@ -384,6 +392,78 @@ def log(event_type: str, role_id: str = "", company: str = "", ats: str = "",
             os.fsync(f.fileno())
         _sync_event_directory()
     return event
+
+
+MAX_BATCH_EVENTS = 128
+MAX_BATCH_BYTES = 2 * 1024 * 1024
+
+
+def _append_batch(events):
+    # A process crash can leave a prefix. No caller receives receipts until
+    # every append and the persistence barriers finish; replay checks IDs.
+    with open(EVENTS, 'a', encoding='utf-8') as stream:
+        for event in events:
+            stream.write(json.dumps(event, allow_nan=False) + '\n')
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
+def log_batch(requests):
+    """Bounded, replay-safe group commit; one history scan and sync per batch.
+
+    Request keys match ``log``. Explicit unique event IDs are mandatory.
+    Validation/conflicts append nothing. I/O failure may leave a prefix and
+    returns no receipts; exact replay recovers complete records. Malformed
+    history (including a torn line) is held, never silently truncated.
+    """
+    if type(requests) is not list or not 1 <= len(requests) <= MAX_BATCH_EVENTS:
+        raise ValueError('event batch size invalid')
+    events, comparisons, total = [], {}, 0
+    fields = {'event_type', 'event_id', 'role_id', 'company', 'ats', 'source', 'details'}
+    for request in requests:
+        if (type(request) is not dict or not {'event_type', 'event_id'} <= set(request)
+                or set(request) - fields or not isinstance(request['event_id'], str)):
+            raise ValueError('event batch request invalid')
+        if any(request.get(key) is not None and type(request[key]) is not str
+               for key in ('role_id', 'company', 'ats', 'source') if key in request):
+            raise ValueError('event batch text invalid')
+        event, _ = _prepare_event(**request)
+        key = event['event_id']
+        if key in comparisons:
+            raise ValueError('duplicate event_id in batch')
+        encoded = json.dumps(event, allow_nan=False).encode('utf-8')
+        total += len(encoded) + 1
+        if total > MAX_BATCH_BYTES:
+            raise ValueError('event batch byte limit exceeded')
+        comparisons[key] = {k: v for k, v in event.items() if k != 'ts'}
+        events.append(event)
+    previous = {}
+    os.makedirs(os.path.dirname(EVENTS), exist_ok=True)
+    with _event_lock():
+        try:
+            with open(EVENTS, 'r', encoding='utf-8') as stream:
+                while True:
+                    line = stream.readline(MAX_BATCH_BYTES + 1)
+                    if not line:
+                        break
+                    if len(line.encode('utf-8')) > MAX_BATCH_BYTES or not line.endswith('\n'):
+                        raise ValueError('event history record incomplete or oversized')
+                    if not line.strip():
+                        continue
+                    record = json.loads(line)
+                    if type(record) is not dict:
+                        raise ValueError('event history record invalid')
+                    key = record.get('event_id')
+                    if not isinstance(key, str) or key not in comparisons:
+                        continue
+                    if key in previous or {k: v for k, v in record.items() if k != 'ts'} != comparisons[key]:
+                        raise ValueError('event history identity conflict')
+                    previous[key] = record
+        except FileNotFoundError:
+            pass
+        _append_batch([e for e in events if e['event_id'] not in previous])
+        _sync_event_directory()
+    return [previous.get(event['event_id'], event) for event in events]
 
 
 def emit_429_halt(scope, details=None, source=None):

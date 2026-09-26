@@ -115,7 +115,7 @@ def prepare(update, base):
     # the NEW directory, retaining original audit evidence in the untouched base.
     payload = {name: {'sha256': hashlib.sha256(body).hexdigest(), 'bytes': len(body)}
                for name, (body, _) in sorted(files.items()) if name != 'MANIFEST.json'}
-    files['MANIFEST.json'] = ((json.dumps({'schema_version': 1, 'version': 'advance-20260926',
+    files['MANIFEST.json'] = ((json.dumps({'schema_version': 1, 'version': 'readiness-20260926',
                                          'files': payload}, sort_keys=True, indent=2) + '\n').encode(), False)
     return files, len(changed)
 

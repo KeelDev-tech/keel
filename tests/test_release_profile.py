@@ -369,6 +369,10 @@ runpy.run_module(module, run_name='__main__')
             self.assertEqual(shipped_example['report']['computed_nodes'], 3)
             self.assertFalse(shipped_example['report']['execution_authorized'])
 
+            qualification = module_cli('keel_next', 'qualify', '--home', str(temp / 'crash-qualification'))
+            self.assertEqual(qualification['status'], 'QUALIFICATION_PASSED', qualification)
+            self.assertEqual(len(qualification['scenarios']), 4)
+
             benchmark = module_cli('keel_next', 'benchmark', '--home', str(temp / 'pipeline-benchmark'),
                                    '--boards', '3', '--jobs-per-board', '8', '--max-new', '12')
             self.assertEqual(benchmark['status'], 'BENCHMARK_PASSED')

@@ -37,6 +37,32 @@ class PipelineScaleTests(unittest.TestCase):
     def reader(self, jobs):
         return service.PublicBoardReader(fetcher=lambda *_: {'jobs': jobs})
 
+    def test_default_batch_outbox_keeps_pending_until_directory_sync(self):
+        import log_event
+        import json
+        items = []
+        for i in range(4):
+            item = row(i)
+            item['verification_event_pending'] = {
+                'event_type': 'lead_verified', 'event_id': 'batch-outbox-' + str(i),
+                'source': 'synthetic', 'details': {'synthetic': True}}
+            items.append(item)
+        atomic_json(self.queue, items)
+        events = self.home / 'events.jsonl'
+        with patch.object(log_event, 'EVENTS', str(events)):
+            with patch.object(log_event, '_sync_event_directory', side_effect=OSError('fixture')):
+                failed = service.flush_outbox(self.home)
+            self.assertEqual(failed['emitted'], 0)
+            self.assertEqual(failed['pending'], 4)
+            self.assertTrue(all(item.get('verification_event_pending') for item in read_json(self.queue)))
+            recovered = service.flush_outbox(self.home)
+            self.assertEqual(recovered['emitted'], 4)
+            self.assertEqual(recovered['pending'], 0)
+            self.assertEqual(service.flush_outbox(self.home)['emitted'], 0)
+        records = [json.loads(line) for line in events.read_text().splitlines()]
+        self.assertEqual(len(records), 4)
+        self.assertEqual(len({record['event_id'] for record in records}), 4)
+
     def test_selection_uses_current_identities_and_fills_exact_limit(self):
         atomic_json(self.queue, [row(1)])
         def fetch(*_):

@@ -549,23 +549,36 @@ def flush_outbox(workspace, logger=None):
     Concurrent row changes do not erase newer pending events. The queue file
     is rewritten once per acknowledgment batch, not once for every lead.
     """
+    batch_logger = None
     if logger is None:
         import log_event
         logger = log_event.log
+        batch_logger = log_event.log_batch
     with queue_lock(timeout=10, owner='verification-outbox:snapshot'):
         documents, _ = _documents(workspace)
         pending = [(path, row['role_id'], copy.deepcopy(row['verification_event_pending']))
                    for path, row in _all_rows(documents) if row.get('verification_event_pending')]
     accepted, errors = defaultdict(list), []
-    for path, rid, event in pending:
+    batch_size = log_event.MAX_BATCH_EVENTS if batch_logger is not None else 1
+    for start in range(0, len(pending), batch_size):
+        group = pending[start:start + batch_size]
         try:
-            receipt = logger(event['event_type'], role_id=rid, source=event['source'],
-                             details=event['details'], event_id=event['event_id'])
-            if not isinstance(receipt, dict) or receipt.get('event_id') != event['event_id']:
+            requests = [{'event_type': event['event_type'], 'role_id': rid, 'source': event['source'],
+                         'details': event['details'], 'event_id': event['event_id']}
+                        for _, rid, event in group]
+            if batch_logger is not None:
+                receipts = batch_logger(requests)
+            else:
+                first = requests[0]
+                receipts = [logger(first['event_type'], **{k: v for k, v in first.items() if k != 'event_type'})]
+            if (type(receipts) is not list or len(receipts) != len(group)
+                    or any(not isinstance(receipt, dict) or receipt.get('event_id') != event['event_id']
+                           for receipt, (_, _, event) in zip(receipts, group))):
                 raise ValueError('logger returned no durable receipt')
-            accepted[path].append((rid, event))
+            for path, rid, event in group:
+                accepted[path].append((rid, event))
         except Exception as exc:
-            errors.append({'role_id': rid, 'reason': type(exc).__name__})
+            errors.extend({'role_id': rid, 'reason': type(exc).__name__} for _, rid, _ in group)
     emitted = 0
     for path, acknowledgments in accepted.items():
         try:
