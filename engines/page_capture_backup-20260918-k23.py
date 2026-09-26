@@ -23,6 +23,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from keel_paths import HOME  # noqa: E402
+import safe_http  # noqa: E402 — policy-checked transport
 CAPTURE_DIR = os.path.join(HOME, "hidden_files", "page-captures")
 MANIFEST = os.path.join(CAPTURE_DIR, "manifest.jsonl")
 PDT = ZoneInfo("America/Los_Angeles")
@@ -58,7 +59,7 @@ def capture(url, html=None, timeout=25):
     else:
         try:
             req = urllib.request.Request(url, headers=UA)
-            with urllib.request.urlopen(req, timeout=timeout) as r:
+            with safe_http.urlopen(req, timeout=timeout) as r:
                 status = r.status
                 body = r.read()
         except urllib.error.HTTPError as e:

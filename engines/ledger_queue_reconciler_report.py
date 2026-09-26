@@ -72,13 +72,8 @@ import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
-# The vendored candidate imports the LIVE ledger writer module
-# (job-pipeline tree) for LEDGER/canon_ledger_status. Prepend its directory
-# before importing so resolution is deterministic.
-_JOB_OUTCOME_TRACKING = os.path.expanduser(
-    "~/workspace/job-pipeline/engines/outcome-tracking")
-if _JOB_OUTCOME_TRACKING not in sys.path:
-    sys.path.insert(0, _JOB_OUTCOME_TRACKING)
+# Use the shipped read-only schema compatibility adapter, never import an
+# arbitrary private writer merely to obtain a path and status normalizer.
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
@@ -87,20 +82,25 @@ import ledger_queue_reconciler as _lqr  # noqa: E402  (vendored, sha-pinned belo
 VENDORED_SHA256 = ("7ce8a9bd43b09a63ade4f395ba661a80734252d7d199e31de35c582579d44f23")
 REPORT_ONLY_VERSION = "0.1.0"
 
-# Private-host data layout. The host may point at its own data tree via
-# KEEL_JOB_PIPELINE_DIR; the default matches this host's layout and is not
-# part of the public contract. This module is report-only against the LIVE
-# ledger — it is inert on any host where those files do not exist.
-_JOB_PIPE = os.environ.get("KEEL_JOB_PIPELINE_DIR",
-                           os.path.expanduser("~/workspace/job-pipeline"))
-LIVE_LEDGER_PATH = os.path.join(_JOB_PIPE, "ledger", "application-ledger.json")
+# Explicit private-host configuration retains its established layout. A
+# normal installation reads the same workspace initialized by keel.py.
+from keel_paths import HOME as _LOCAL_HOME, DATA as _LOCAL_DATA
+
+_JOB_PIPE = os.environ.get("KEEL_JOB_PIPELINE_DIR")
+if _JOB_PIPE is not None and (not _JOB_PIPE.strip() or not os.path.isabs(_JOB_PIPE)):
+    raise ValueError("KEEL_JOB_PIPELINE_DIR must be a nonblank absolute path")
+_QUEUE_DIR = (os.path.join(_JOB_PIPE, "queue") if _JOB_PIPE is not None
+              else os.path.join(_LOCAL_DATA, "queues"))
+LIVE_LEDGER_PATH = (os.path.join(_JOB_PIPE, "ledger", "application-ledger.json")
+                    if _JOB_PIPE is not None else os.path.join(_LOCAL_DATA, "application-ledger.json"))
 LIVE_QUEUE_PATHS = {
-    "standard": os.path.join(_JOB_PIPE, "queue", "standard-queue.json"),
-    "needs_input": os.path.join(_JOB_PIPE, "queue", "needs_input-queue.json"),
-    "strategic": os.path.join(_JOB_PIPE, "queue", "strategic-queue.json"),
+    "standard": os.path.join(_QUEUE_DIR, "standard-queue.json"),
+    "needs_input": os.path.join(_QUEUE_DIR, "needs_input-queue.json"),
+    "strategic": os.path.join(_QUEUE_DIR, "strategic-queue.json"),
 }
 LIVE_WATERMARK_PATH = os.path.join(
-    _JOB_PIPE, "hidden_files", "ledger_queue_reconciler_state.json")
+    _JOB_PIPE if _JOB_PIPE is not None else _LOCAL_HOME,
+    "hidden_files", "ledger_queue_reconciler_state.json")
 
 # Real host modules captured BEFORE any guard is installed.
 _REAL_QUEUE_IO = _lqr.queue_io
@@ -359,7 +359,7 @@ def _build_parser():
     parser.add_argument("--rescan", action="store_true",
                         help="compatibility flag; every run scans all rows")
     parser.add_argument("--ledger", default=LIVE_LEDGER_PATH)
-    parser.add_argument("--queue-dir", default=os.path.join(_JOB_PIPE, "queue"))
+    parser.add_argument("--queue-dir", default=_QUEUE_DIR)
     parser.add_argument("--watermark", default=LIVE_WATERMARK_PATH)
     return parser
 

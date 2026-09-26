@@ -450,10 +450,12 @@ def screen_entry_prepromotion(entry, url=None, answer_bank=None):
     against an HTTP form-intel probe of the posting, so blocked leads route
     straight to needs_input without ever promoting or burning a packet build.
 
-    Returns {"verdict": "CLEAN"|"PARK", "reasons": [...]}.
-    Fail-OPEN by design: no URL, probe failure, or an ATS with no HTTP
-    extraction returns CLEAN — the post-build prescreen still guards those
-    exactly as before this change. Never raises.
+    Returns {"verdict": "CLEAN"|"PARK"|"UNKNOWN", "reasons": [...]}.
+    Fail-OPEN by design for leads with no URL to screen: returns CLEAN.
+    A form-intel probe that FAILS returns UNKNOWN -- the screen could not
+    run, so the lead remains verification work and must NOT be treated as
+    clean (fail-closed on screen failure; the promotion path raises
+    VerificationUnavailable on UNKNOWN). Never raises.
     """
     try:
         e = entry or {}
@@ -466,8 +468,11 @@ def screen_entry_prepromotion(entry, url=None, answer_bank=None):
             return {"verdict": "CLEAN", "reasons": []}
         try:
             intel = _fi.probe_url(probe_url)
-        except Exception:
-            return {"verdict": "CLEAN", "reasons": []}
+        except Exception as ex:
+            # Fail-closed: the screen failed, so the verdict is UNKNOWN --
+            # the lead remains verification work. Never CLEAN.
+            return {"verdict": "UNKNOWN",
+                    "reasons": [f"form-intel probe failed: {ex}"]}
         if not isinstance(intel, dict):
             return {"verdict": "CLEAN", "reasons": []}
         # NOTE: empty questions do NOT early-return CLEAN. An ATS with no

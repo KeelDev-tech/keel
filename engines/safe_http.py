@@ -112,6 +112,40 @@ def _cooldown_path(host):
     return contained_path(root, Path("data/http-cooldowns") / (name + ".json"), must_exist=False)
 
 
+class HostRateLimited(NetworkPolicyError):
+    """A host is cooling down after HTTP 429; cached reads are denied."""
+
+
+def _check_host_cooldown_locked(host, path):
+    """Check both hold stores while the caller owns the host's file lock."""
+    state = read_json(path, missing=None, limit=4096)
+    if state is not None:
+        if (not isinstance(state, dict) or type(state.get("schema_version")) is not int
+                or state["schema_version"] != 1 or state.get("host") != host or "until" not in state):
+            raise NetworkPolicyError("invalid persistent host cooldown")
+        until = state["until"]
+        if until is not None and (type(until) not in (int, float) or not math.isfinite(until) or until < 0):
+            raise NetworkPolicyError("invalid persistent cooldown expiry")
+        if until is None or until > time.time():
+            raise HostRateLimited("host is cooling down after HTTP 429")
+    with _backoff_lock:
+        if _backoff.get(host, 0) > time.monotonic():
+            raise HostRateLimited("host is cooling down after HTTP 429")
+        _backoff.pop(host, None)
+
+
+def check_host_cooldown(url, *, timeout=20):
+    """Deny cached reads during a shared host hold, without DNS or transport."""
+    host = urlsplit(validate_url(url)).hostname
+    if type(timeout) not in (int, float) or not math.isfinite(timeout) or not 0 < timeout <= 60:
+        raise NetworkPolicyError("timeout must be between 0 and 60 seconds")
+    path = _cooldown_path(host)
+    deadline = time.monotonic() + timeout
+    with file_lock(str(path) + ".lock", timeout=_remaining(deadline)):
+        _remaining(deadline)
+        _check_host_cooldown_locked(host, path)
+
+
 def _retry_delay(raw):
     # RFC delta-seconds is an integer, not a float/exponent or signed number.
     raw = str(raw).strip()

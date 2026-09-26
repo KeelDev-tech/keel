@@ -69,6 +69,7 @@ from datetime import datetime, timedelta, timezone
 
 from keel_paths import HOME  # noqa: E402 — repo path convention
 import api_direct_policy  # noqa: E402 — Workstream A retirement gate (import-free module)
+import safe_http  # noqa: E402 — policy-checked transport
 STORE_PATH = os.path.join(HOME, "hidden_files", "submit-intents.json")
 LOCK_PATH = STORE_PATH + ".lock"
 
@@ -650,7 +651,7 @@ def greenhouse_confirmation_probe(page_ref):
                     req = urllib.request.Request(
                         host + cpath,
                         headers={"User-Agent": "Mozilla/5.0"})
-                    with urllib.request.urlopen(req, timeout=30) as r:
+                    with safe_http.urlopen(req, timeout=30) as r:
                         html = r.read().decode("utf-8", "replace")
                     import re as _re
                     clean = _re.sub(r"<[^>]+>", " ", html)

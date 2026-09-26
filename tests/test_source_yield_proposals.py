@@ -7,6 +7,7 @@ synthetic in-memory event lists.
 import datetime as dt
 import os
 import sys
+import pytest
 
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "engines"))
@@ -16,7 +17,8 @@ NOW = dt.datetime(2026, 9, 17, 6, 0, tzinfo=dt.timezone.utc)
 
 
 def _ev(event_type, role_id, ts, batch=None, fit=None, reason=""):
-    details = {}
+    # Fixture attribution is explicit; production never infers this from a role ID.
+    details = {"source_id": syp.family_of(role_id)}
     if batch:
         details["batch"] = batch
     if fit is not None:
@@ -51,7 +53,7 @@ def test_b_decay_bar_fires_demotion_proposal():
     t2 = NOW - dt.timedelta(hours=2)
     evs = (_staged("YCM", t1, "staged-ingest-2026-09-15-2200", n_new=16, n_dup=2)
            + _staged("YCM", t2, "staged-ingest-2026-09-16-0400", n_new=11, n_dup=9))
-    props, suppressed, healthy = syp.generate(evs, {}, 27, [])
+    props, suppressed, healthy = syp.generate(evs, {"yc-mirrors": {"ceiling_days": 7}}, 27, [])
     assert len(props) == 1, f"expected 1 demotion proposal, got {len(props)}"
     p = props[0]
     assert p["kind"] == "demotion" and p["domain"] == "source-yield"
@@ -60,7 +62,7 @@ def test_b_decay_bar_fires_demotion_proposal():
         assert p[k], f"missing {k}"
     assert "yc-mirrors" in p["title"]
     assert "delta-gated" in p["proposal_or_fix"]
-    assert "0 Trent taps" in p["proposal_or_fix"]
+    assert "operator approval is required" in p["proposal_or_fix"]
     assert "dup rate" in p["evidence"]
     print("b ok: decay bar -> demotion proposal with publish-ready schema")
 
@@ -72,7 +74,7 @@ def test_c_guard_suppresses_when_source_converts():
            + _staged("YCM", t2, "staged-ingest-2026-09-16-0400", n_new=11, n_dup=9)
            + [_ev("submitted", "YCM-ACME-CONVERT-20260916",
                    NOW - dt.timedelta(days=3))])
-    props, suppressed, healthy = syp.generate(evs, {}, 27, evs)
+    props, suppressed, healthy = syp.generate(evs, {"yc-mirrors": {"ceiling_days": 7}}, 27, evs)
     assert props == [], f"guard failed: {len(props)} proposals emitted"
     assert len(suppressed) == 1
     assert "GUARD" in suppressed[0]["reason"]
@@ -93,7 +95,7 @@ def test_d_promotion_bar_fires():
     assert p["kind"] == "promotion" and p["domain"] == "source-yield"
     assert "getro" in p["title"]
     assert "needs human approval" in p["proposal_or_fix"]
-    assert "0 Trent taps" in p["proposal_or_fix"]
+    assert "operator approval is required" in p["proposal_or_fix"]
     print("d ok: promotion bar -> promotion proposal")
 
 
@@ -160,17 +162,13 @@ if __name__ == "__main__":
     print("all 8 tests passed")
 
 
-def test_i_staging_file_attribution_takes_precedence():
-    # The staging file names the sweep even when the role_id prefix is generic
+def test_i_source_attribution_is_explicit_only():
     e = {"role_id": "C3X-ACME-1", "details": {"staging_file": "yc-mirrors-delta-leads.json"}}
+    assert syp.family_of_event(e) is None
+    e["details"]["source_id"] = "yc-mirrors"
     assert syp.family_of_event(e) == "yc-mirrors"
-    e2 = {"role_id": "C3X-ACME-1", "details": {"staging_file": "census3x-20260916-leads.json"}}
-    assert syp.family_of_event(e2) == "census3x"
-    e3 = {"role_id": "C3X-ACME-1", "details": {}}
-    assert syp.family_of_event(e3) == "census3x"  # falls back to prefix
-    e4 = {"role_id": "ZZZ-ACME-1", "details": {"staging_file": "misc.json"}}
-    assert syp.family_of_event(e4) is None  # unknown -> never proposed on
-    print("i ok: staging-file attribution with prefix fallback")
+    e["source_id"] = "census3x"
+    assert syp.family_of_event(e) is None
 
 
 def test_j_c3x_prefix_maps_to_census3x():
@@ -237,3 +235,106 @@ def test_n_promotion_requires_roster_cadence():
     assert props == [], f"promotion fired for unrostered family: {len(props)}"
     assert any(h["family"] == "census3x" for h in healthy)
     print("n ok: promotion requires a rostered cadence")
+
+
+def test_nonduplicate_rejections_do_not_raise_duplicate_rate():
+    evs = _staged("YCM", NOW, "first", n_new=1)
+    evs += [_ev("staged_rejected", "YCM-other", NOW, batch="second", reason="missing required field")]
+    stats = syp.rank_sources(evs, now=NOW)["yc-mirrors"]
+    assert stats["dup_rejected"] == 0
+    assert stats["other_rejected"] == 1 and stats["staged_total"] == 2
+    assert stats["dup_rate"] == 0
+
+
+def test_event_and_candidate_deduplication():
+    e = _staged("YCM", NOW, "first", n_new=1)[0]
+    copied = dict(e, event_id="copy")
+    stats = syp.rank_sources([e, e, copied], now=NOW)["yc-mirrors"]
+    assert stats["ingested"] == stats["net_new"] == 1
+    conflict = dict(e, event_id="x")
+    with pytest.raises(ValueError, match="conflicting_event_id"):
+        syp.rank_sources([conflict, dict(conflict, role_id="YCM-different")], now=NOW)
+
+
+def test_aggregate_rejections_count_explicit_reasons():
+    e = _ev("staged_rejected", "YCM-aggregate", NOW)
+    e["role_id"] = ""
+    e["details"].update(aggregate=True, count=3, role_ids=["a", "b", "c"],
+        reasons={"duplicate role_id in queue": 2, "missing title": 1},
+        reason_role_ids={"duplicate role_id in queue": ["a", "b"], "missing title": ["c"]})
+    stats = syp.rank_sources([e], now=NOW)["yc-mirrors"]
+    assert stats["dup_rejected"] == 2 and stats["other_rejected"] == 1
+    e["details"]["count"] = 4
+    with pytest.raises(ValueError, match="aggregate_rejection_count_mismatch"):
+        syp.rank_sources([e], now=NOW)
+
+
+def test_roster_sections_do_not_bleed_and_biweekly_is_fourteen(tmp_path, monkeypatch):
+    roster = tmp_path / "roster.md"
+    roster.write_text("## YC mirrors (company mirrors + /jobs)\n- Status: ACCEPT\n"
+                      "## Getro network boards (VC portfolio job boards)\n"
+                      "- Cadence: BIWEEKLY\n- Last swept: 2026-09-15\n")
+    monkeypatch.setattr(syp, "ROSTER", str(roster))
+    result = syp.parse_roster()
+    assert result["yc-mirrors"]["ceiling_days"] is None
+    assert result["yc-mirrors"]["last_swept"] == ""
+    assert result["getro"]["ceiling_days"] == 14
+
+
+@pytest.mark.parametrize("raw", ['{bad}\n', '[]\n',
+    '{"ts":"2026-09-16T12:00:00","event_type":"staged_ingested"}\n',
+    '{"ts":"2026-09-18T12:00:00Z","event_type":"staged_ingested"}\n',
+    '{"ts":"2026-09-16T12:00:00Z","event_type":"x","details":{"x":NaN}}\n'])
+def test_bad_telemetry_never_becomes_empty_success(tmp_path, monkeypatch, raw):
+    telemetry = tmp_path / "events.jsonl"
+    telemetry.write_text(raw)
+    monkeypatch.setattr(syp, "TELEMETRY", str(telemetry))
+    with pytest.raises(ValueError):
+        syp.load_events(NOW - dt.timedelta(days=2), now=NOW)
+
+
+def test_missing_inputs_report_hold(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(syp, "TELEMETRY", str(tmp_path / "missing"))
+    assert syp.main(["--now", NOW.isoformat()]) == 2
+    import json
+    report = json.loads(capsys.readouterr().out)
+    assert report["status"] == "HOLD" and report["proposals"] == []
+
+
+def test_unknown_attribution_holds_and_unknown_submission_protects():
+    events = _staged("YCM", NOW, "first", n_new=1)
+    events[0]["details"].pop("source_id")
+    proposals, suppressed, _ = syp.generate(events, {}, 30, [], now=NOW)
+    assert not proposals and suppressed[0]["kind"] == "hold"
+    assert syp.recent_submitter_families([{"event_type": "submission_claimed", "role_id": "YCM-x"}]) == {"*"}
+
+
+def test_synthetic_events_excluded_and_missing_fit_not_invented():
+    events = _staged("YCM", NOW, "first", n_new=1, fit=True)
+    synthetic = _staged("YCM", NOW, "second", n_new=1)[0]
+    synthetic["synthetic_test"] = True
+    result = syp.rank_sources(events + [synthetic], now=NOW)["yc-mirrors"]
+    assert result["ingested"] == 1 and result["fit_median"] is None
+
+
+def test_incomplete_fit_coverage_does_not_promote():
+    events = _staged("YCM", NOW, "first", n_new=6, fit=85)
+    for row in events[1:]:
+        row["details"].pop("fit_score")
+    proposals, _, _ = syp.generate(events, {"yc-mirrors": {"ceiling_days": 7}}, 30, [], now=NOW)
+    assert not proposals
+    assert syp.rank_sources(events, now=NOW)["yc-mirrors"]["fit_coverage_complete"] is False
+
+
+def test_ordinary_weekly_sweeps_in_long_window_do_not_demote():
+    events = _staged("YCM", NOW - dt.timedelta(days=14), "first", n_new=1, n_dup=5)
+    events += _staged("YCM", NOW, "second", n_new=1, n_dup=5)
+    proposals, _, _ = syp.generate(events, {"yc-mirrors": {"ceiling_days": 7}}, 24 * 30, [], now=NOW)
+    assert not proposals
+    proposals, _, _ = syp.generate(events, {}, 24 * 30, [], now=NOW)
+    assert not proposals
+
+
+def test_empty_telemetry_is_hold_not_healthy():
+    proposals, suppressed, healthy = syp.generate([], {}, 30, [], now=NOW)
+    assert not proposals and not healthy and suppressed[0]["kind"] == "hold"

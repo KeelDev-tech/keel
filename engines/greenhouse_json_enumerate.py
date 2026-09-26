@@ -70,6 +70,7 @@ from zoneinfo import ZoneInfo
 BASE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE)
 import api_direct_detect as add  # noqa: E402 (shared UA)
+import safe_http  # noqa: E402 — policy-checked transport
 from ats_discovery import normalize as N  # noqa: E402
 import dedupe_gate  # noqa: E402
 import queue_intake  # noqa: E402
@@ -122,7 +123,7 @@ def fetch_board_json(board):
     """GET the board's jobs JSON. Raises RateLimited on 429."""
     req = urllib.request.Request(API.format(board=board), headers=add.UA)
     try:
-        with urllib.request.urlopen(req, timeout=20) as r:
+        with safe_http.urlopen(req, timeout=20) as r:
             return json.loads(r.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         if e.code == 429:
@@ -333,15 +334,9 @@ def enumerate_boards(boards, live=False):
             # Intra-batch dedupe (4b): same posting re-listed under a new
             # jid, or two boards carrying the same employer+title. Staging
             # would reject these as duplicate_in_batch; skip them here.
-            url_key = dedupe_gate.canonical_url(url)
-            emp_key = (dedupe_gate._norm_name(company),
-                       dedupe_gate._norm_title(title))
-            if url_key and url_key in batch_url_keys:
-                skipped_batch_dup += 1
-                if live:
-                    board_seen[jid] = utcnow()  # seen — don't resurface
-                continue
-            if emp_key[0] and emp_key[1] and emp_key in batch_emp_titles:
+            from dedupe_index import keys_for_urls
+            url_keys, identity_conflict = keys_for_urls([url])
+            if not identity_conflict and url_keys & batch_url_keys:
                 skipped_batch_dup += 1
                 if live:
                     board_seen[jid] = utcnow()  # seen — don't resurface
@@ -355,10 +350,8 @@ def enumerate_boards(boards, live=False):
                       file=sys.stderr)
                 continue  # fail closed: not marked seen, retried next run
             new_entries.append(entry)
-            if url_key:
-                batch_url_keys.add(url_key)
-            if emp_key[0] and emp_key[1]:
-                batch_emp_titles.add(emp_key)
+            if not identity_conflict:
+                batch_url_keys.update(url_keys)
             if live:
                 board_seen[jid] = utcnow()
             fresh += 1

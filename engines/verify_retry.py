@@ -41,6 +41,7 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE)
 import api_direct_detect
 import ats
+import safe_http  # noqa: E402 — policy-checked transport
 import log_event
 
 # Classification logic lives in genuine_pat.py (2026-09-16 restructure:
@@ -322,7 +323,7 @@ def check_live(url, title_hint=""):
             return "ambiguous", "listing/board page — not the individual posting"
         req = urllib.request.Request(final_url,
                                      headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with safe_http.urlopen(req, timeout=15) as resp:
             if resp.status in (404, 410):
                 return "dead", f"HTTP {resp.status} on posting page"
             html = resp.read().decode("utf-8", "replace")[:200000].lower()
@@ -410,7 +411,7 @@ def fetch_posting_text(url):
             return ""
         req = urllib.request.Request(final_url,
                                      headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with safe_http.urlopen(req, timeout=15) as resp:
             if resp.status in (404, 410):
                 return ""
             html = resp.read().decode("utf-8", "replace")[:200000]
@@ -448,9 +449,15 @@ def screen_promotion_form(entry, url):
     promotion, so blocked leads route straight to needs_input (the tray)
     without ever promoting or burning a packet build.
 
-    Returns [reasons] (empty = clean). Fail-open: import/probe/parse
-    trouble -> []. A hit parks the lead to needs_input
-    (gate=needs_input, screen=prepromotion) instead of promoting."""
+    Returns [reasons] (empty = clean). A hit parks the lead to needs_input
+    (gate=needs_input, screen=prepromotion) instead of promoting.
+
+    Fail-closed on screen failure: when the form-intel probe fails the
+    screen verdict is UNKNOWN (not CLEAN) and this raises
+    VerificationUnavailable -- the lead remains verification work and must
+    never promote on an unrun screen. Import trouble still fails open
+    (returns []) per the pre-existing contract.
+    """
     try:
         from prescreen import screen_entry_prepromotion
     except Exception:
@@ -461,9 +468,21 @@ def screen_promotion_form(entry, url):
         return []
     if not isinstance(res, dict):
         return []
+    if res.get("verdict") == "UNKNOWN":
+        raise VerificationUnavailable(
+            "pre-promotion form screen could not run: %s"
+            % "; ".join(res.get("reasons") or ["form-intel probe failed"]))
     if res.get("verdict") == "PARK":
         return res.get("reasons") or ["pre-promotion form screen parked (no reason text)"]
     return []
+
+
+class VerificationUnavailable(Exception):
+    """The pre-promotion form screen could not run (probe/network failure).
+
+    Fail-closed: a lead whose form screen is UNKNOWN remains verification
+    work and must never promote to READY on an unrun screen.
+    """
 
 
 # ---------------------------------------------------------------------------
@@ -1393,8 +1412,20 @@ def _scan_and_apply(live, limit, wave_id=None):
                       "stale-park guard (park-family event newer than "
                       "status_updated).").strip(" |")
                 continue
-            reasons = screen_promotion_posting(e, url) + \
-                screen_promotion_form(e, url)
+            try:
+                reasons = screen_promotion_posting(e, url) + \
+                    screen_promotion_form(e, url)
+            except VerificationUnavailable as vu:
+                # Fail-closed: the form screen could not run (probe/network
+                # trouble) -- the lead remains verification work, never
+                # promotes. Hold it parked and continue the batch.
+                held += 1
+                parked_reasons[rid] = "verification unavailable: %s" % vu
+                e["queue_notes"] = (
+                    (e.get("queue_notes") or "")
+                    + " | verify-retry: promotion withheld -- form screen "
+                      "unavailable (%s); remains verification work." % vu).strip(" |")
+                continue
             if reasons:
                 # Blocked at the form/posting level: park to needs_input
                 # (the tray), never promote.

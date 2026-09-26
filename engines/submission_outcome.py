@@ -87,6 +87,7 @@ import uuid
 from datetime import datetime, timezone
 
 from keel_paths import HOME  # noqa: E402 — repo path convention
+import safe_http  # noqa: E402 — policy-checked transport
 DEFAULT_STORE_DIR = os.path.join(HOME, "hidden_files")
 OUTCOMES_LOG = "submission-outcomes.jsonl"
 HOLDS_LOG = "submission-reconciliation-holds.jsonl"
@@ -274,7 +275,7 @@ def fetch_confirmation_receipt(page, attempt_id, timeout=30):
         url = host + path
         try:
             req = urllib.request.Request("https://" + url, headers=_UA)
-            with urllib.request.urlopen(req, timeout=timeout) as r:
+            with safe_http.urlopen(req, timeout=timeout) as r:
                 if r.status != 200:
                     continue
                 # Redirect guard (red-team 2026-09-17): urllib follows

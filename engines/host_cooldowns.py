@@ -210,25 +210,33 @@ def _cooling_down(host, until):
     return exc
 
 
-def check_host(host):
+def check_host(host, *, timeout=5.0):
     """Admission check. Returns None when the host is clear.
 
     Raises HostCoolingDown when an active cooldown exists (in-process or
     durable). Raises CooldownStateError when durable state is corrupt
     (fail-closed: deny admission rather than risk burning a throttled host).
     """
+    if type(timeout) not in (int, float) or not math.isfinite(timeout) or not 0 < timeout <= 60:
+        raise ValueError("cooldown timeout must be finite and between 0 and 60 seconds")
+    deadline = time.monotonic() + timeout
     host = normalize_host(host)
     with _backoff_lock:
-        held_until = _backoff.get(host)
-        if held_until is not None:
+        if host in _backoff:
+            held_until = _backoff[host]
             now_m = time.monotonic()
             if held_until is None or held_until > now_m:
                 raise _cooling_down(host, None if held_until is None
                                     else time.time() + (held_until - now_m))
             _backoff.pop(host, None)
     path = _cooldown_path(host)
-    with _locked(path + ".lock", timeout=5.0):
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("cooldown admission deadline exceeded")
+    with _locked(path + ".lock", timeout=remaining):
         state = _read_state_locked(path, host)
+    if time.monotonic() >= deadline:
+        raise TimeoutError("cooldown admission deadline exceeded")
     if state is None:
         return None
     until = state["until"]
@@ -237,24 +245,60 @@ def check_host(host):
     return None
 
 
-def record_429(host, retry_after=None):
+def _stronger_hold(left, right):
+    """Both arguments are real holds: None is indefinite, never 'absent'."""
+    return None if left is None or right is None else max(left, right)
+
+
+def record_429(host, retry_after=None, *, timeout=5.0):
     """Record an observed HTTP 429. Sets the in-process hold first (so this
     process stops immediately even if the disk write fails), then persists
     the durable cooldown. Returns the absolute `until` (epoch, or None for
     indefinite). Raises OSError if the durable write fails -- the in-process
-    hold is retained, matching the candidate's failed-write semantics."""
+    hold is retained, matching the candidate's failed-write semantics.
+
+    An existing longer or indefinite hold is never shortened. timeout=0 records
+    the immediate process hold then refuses persistence without waiting; this
+    lets a caller preserve an observed 429 after its I/O budget is exhausted.
+    """
+    if type(timeout) not in (int, float) or not math.isfinite(timeout) or not 0 <= timeout <= 60:
+        raise ValueError("cooldown persistence timeout must be finite and between 0 and 60 seconds")
+    deadline = time.monotonic() + timeout
     host = normalize_host(host)
     delay = parse_retry_after("60" if retry_after is None else retry_after)
     now_m = time.monotonic()
     hold_until_m = None if delay is None else now_m + delay
     with _backoff_lock:
+        if host in _backoff:
+            hold_until_m = _stronger_hold(_backoff[host], hold_until_m)
         _backoff[host] = hold_until_m
     until = None if delay is None else time.time() + delay
     path = _cooldown_path(host)
-    state = {"schema_version": SCHEMA_VERSION, "host": host, "until": until,
-             "recorded_at": time.time()}
-    with _locked(path + ".lock", timeout=5.0):
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("cooldown persistence deadline exceeded; process hold retained")
+    with _locked(path + ".lock", timeout=remaining):
+        previous = _read_state_locked(path, host)
+        if previous is not None:
+            until = _stronger_hold(until, previous['until'])
+        # Re-read the in-memory maximum while owning the durable lock. Another
+        # local thread may have recorded a stronger hold while we waited.
+        with _backoff_lock:
+            current_m = _backoff.get(host, hold_until_m)
+            monotonic_now, wall_now = time.monotonic(), time.time()
+            memory_wall = None if current_m is None else wall_now + max(0, current_m - monotonic_now)
+            until = _stronger_hold(until, memory_wall)
+            if until is not None and not math.isfinite(until):
+                until = None
+            merged_m = None if until is None else monotonic_now + max(0, until - wall_now)
+            _backoff[host] = _stronger_hold(current_m, merged_m)
+        if time.monotonic() >= deadline:
+            raise TimeoutError("cooldown persistence deadline exceeded; process hold retained")
+        state = {"schema_version": SCHEMA_VERSION, "host": host, "until": until,
+                 "recorded_at": time.time()}
         _atomic_write_json(path, state)
+    if time.monotonic() >= deadline:
+        raise TimeoutError("cooldown persistence deadline exceeded; process hold retained")
     return until
 
 

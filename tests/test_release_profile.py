@@ -102,6 +102,9 @@ class ProfilePackagingTests(unittest.TestCase):
                          'keel_machine/runtime.py', 'keel_muse/coordinator.py',
                          'keel_agent/state.py', 'keel_next/benchmark.py',
                          'docs/MACHINE_RUNTIME.md', 'docs/PIPELINE_SCALE.md',
+                         'keel_evolve/__init__.py', 'keel_evolve/core.py',
+                         'keel_evolve/demo.py', 'keel_evolve/__main__.py',
+                         'docs/EVOLUTION_ENGINE.md',
                          'sample_data/machine-plan.example.json'):
             self.assertIn(required, names)
         self.assertNotIn('README.md', names)  # audit README contains historical assertions
@@ -372,6 +375,12 @@ runpy.run_module(module, run_name='__main__')
             qualification = module_cli('keel_next', 'qualify', '--home', str(temp / 'crash-qualification'))
             self.assertEqual(qualification['status'], 'QUALIFICATION_PASSED', qualification)
             self.assertEqual(len(qualification['scenarios']), 4)
+
+            evolution = module_cli('keel_next', 'evolve', '--home', str(temp / 'evolution-demo'))
+            self.assertEqual(evolution['status'], 'EVOLUTION_DEMO_PASSED', evolution)
+            self.assertTrue(all(evolution['checks'].values()))
+            self.assertFalse(evolution['execution_authorized'])
+            self.assertFalse(evolution['paid_services_required'])
 
             benchmark = module_cli('keel_next', 'benchmark', '--home', str(temp / 'pipeline-benchmark'),
                                    '--boards', '3', '--jobs-per-board', '8', '--max-new', '12')

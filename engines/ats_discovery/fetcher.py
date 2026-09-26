@@ -6,9 +6,14 @@ implementation with descriptive UA and per-call pacing handled by the caller
 (sweep.py paces between boards; adapters pace between detail fetches).
 """
 
+import os
+import sys
 import time
 import urllib.request
 import urllib.error
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import safe_http  # noqa: E402 — policy-checked transport
 
 UA = "KeelPipelineDiscovery/1.0 (job-discovery research; contact: pipeline)"
 
@@ -25,7 +30,7 @@ def http_get(url, timeout=25):
     """Return (status:int, content_type:str, body:str). Raise RateLimited on 429."""
     req = urllib.request.Request(url, headers={"User-Agent": UA})
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with safe_http.urlopen(req, timeout=timeout) as r:
             ct = r.headers.get("Content-Type", "") or ""
             return r.status, ct, r.read().decode("utf-8", "replace")
     except urllib.error.HTTPError as e:

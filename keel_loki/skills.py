@@ -285,7 +285,8 @@ class SkillWorkshop:
             recipe = self._recipe(events, skill_id, active)
             if recipe["scope"] != scope or recipe["form_revision"] != form_revision or not recipe["created_at"] <= now < recipe["expires_at"]:
                 return None
-            return {**recipe, "status": "PROMOTED"}
+            return {**recipe, "status": "PROMOTED", "rendered_browser_verified": False,
+                    "qualification_mode": "in_memory_reference_replay"}
 
     @staticmethod
     def _check_control_time(events, skill_id, now):
@@ -311,6 +312,96 @@ class SkillWorkshop:
             payload = {"skill_id": skill_id, "version": to_version, "observed_at": now, "execution_authorized": False}
             self._append(events, "ROLLBACK", payload)
         return payload
+
+
+    def qualify_rendered(self, skill_id, version, *, now, expected_source_revision):
+        """Append evidence produced by the fixed local browser lab itself.
+
+        Does not consume a caller-provided result, and does not turn the legacy
+        in-memory replay into browser evidence. Synthetic scope remains exact.
+        """
+        from .browser_lab import run_rendered
+        require_int(now)
+        require_hash(expected_source_revision)
+        with self._locked():
+            events = self._events()
+            self._check_rendered_time(events, skill_id, now)
+            recipe = self._recipe(events, skill_id, version)
+            report = run_rendered(recipe, now=now, expected_source_revision=expected_source_revision)
+            payload = {"skill_id": skill_id, "version": version, **report}
+            event = self._append(events, "RENDERED_QUALIFY", payload)
+        return {"qualification_sha256": event["event_sha256"], **payload}
+
+    @staticmethod
+    def _check_rendered_time(events, skill_id, now):
+        if any(event["kind"] in ("RENDERED_QUALIFY", "RENDERED_PROMOTE")
+               and event["payload"]["skill_id"] == skill_id
+               and now < event["payload"]["observed_at"] for event in events):
+            _fail("skill_rendered_control_time_regressed")
+
+    def promote_rendered(self, skill_id, version, *, qualification_sha256, now):
+        """Promote only the latest internally produced complete rendered trial.
+
+        Promotion is a synthetic preparation qualification, never authority to
+        fill an employer form, attest, approve or submit an application.
+        """
+        from .browser_lab import source_revision
+        require_hash(qualification_sha256)
+        require_int(now)
+        with self._locked():
+            events = self._events()
+            self._check_rendered_time(events, skill_id, now)
+            recipe = self._recipe(events, skill_id, version)
+            matches = [e for e in events if e["kind"] == "RENDERED_QUALIFY" and
+                       e["payload"]["skill_id"] == skill_id and e["payload"]["version"] == version]
+            event = matches[-1] if matches else None
+            result = event["payload"] if event else {}
+            if (event is None or event["event_sha256"] != qualification_sha256 or result.get("status") != "PASS"
+                    or result.get("rendered_browser_verified") is not True
+                    or result.get("recipe_sha256") != digest(recipe)
+                    or result.get("source_revision") != source_revision()
+                    or result.get("scope") != recipe["scope"]
+                    or result.get("form_revision") != recipe["form_revision"]):
+                _fail("skill_latest_bound_rendered_qualification_required")
+            if not result["observed_at"] <= now < recipe["expires_at"]:
+                _fail("skill_rendered_promotion_time_invalid")
+            payload = {"skill_id": skill_id, "version": version, "qualification_sha256": qualification_sha256,
+                       "observed_at": now, "source_revision": result["source_revision"],
+                       "synthetic": True, "execution_authorized": False}
+            self._append(events, "RENDERED_PROMOTE", payload)
+        return payload
+
+    def active_rendered(self, skill_id, *, scope, form_revision, now):
+        """Separate from active(): in-memory replay never satisfies this API."""
+        from .browser_lab import source_revision
+        require_id(skill_id)
+        _scope(scope)
+        require_hash(form_revision)
+        require_int(now)
+        with self._locked():
+            events = self._events()
+            promoted = [e["payload"] for e in events if e["kind"] == "RENDERED_PROMOTE"
+                        and e["payload"]["skill_id"] == skill_id]
+            if not promoted:
+                return None
+            latest = promoted[-1]
+            recipe = self._recipe(events, skill_id, latest["version"])
+            qualified = [e for e in events if e["kind"] == "RENDERED_QUALIFY" and
+                         e["payload"]["skill_id"] == skill_id and e["payload"]["version"] == latest["version"]]
+            if (not qualified or qualified[-1]["event_sha256"] != latest["qualification_sha256"]
+                    or latest["source_revision"] != source_revision()
+                    or scope != recipe["scope"] or form_revision != recipe["form_revision"]
+                    or not max(recipe["created_at"], latest["observed_at"]) <= now < recipe["expires_at"]):
+                return None
+            # Existing rollback/disable is also honored for rendered consumers.
+            promotion_sequence = next(e["sequence"] for e in reversed(events)
+                if e["kind"] == "RENDERED_PROMOTE" and e["payload"] == latest)
+            if any(e["kind"] == "ROLLBACK" and e["payload"]["skill_id"] == skill_id
+                   and e["sequence"] > promotion_sequence for e in events):
+                return None
+            return {**recipe, "status": "RENDERED_QUALIFIED", "synthetic": True,
+                    "rendered_browser_verified": True, "qualification_sha256": latest["qualification_sha256"],
+                    "execution_authorized": False, "submission_authorized": False}
 
 
 def demo(home):

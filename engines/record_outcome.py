@@ -41,6 +41,7 @@ vocabulary with the rest of the pipeline.
 """
 
 import json
+import math
 import os
 import re
 import sys
@@ -60,6 +61,13 @@ LEGACY_ATS_KEYS = frozenset({
     "greenhouse_legacy_embed", "greenhouse_modern", "harri", "successfactors",
 })
 VALID_ATS = frozenset(ATS_PATTERNS) | LEGACY_ATS_KEYS
+# Closed outcome vocabulary: the only two outcomes this writer records.
+# Anything else (e.g. 'maybe') is refused before any side effect — the
+# telemetry gate values ('submitted'/'gate_blocked') are derived from this
+# outcome, so an unknown outcome can never be written.
+VALID_OUTCOMES = frozenset({"submitted", "blocked"})
+# fit_score domain: a real (finite, non-bool) number on the 0–100 scale.
+_FIT_SCORE_MIN, _FIT_SCORE_MAX = 0, 100
 
 try:
     # prescreen._primary_gate is the canonical gate classifier (see
@@ -141,6 +149,30 @@ def _num_score(v):
     return v if isinstance(v, (int, float)) and not isinstance(v, bool) else None
 
 
+def _validate_fit_score(v):
+    """Raise ValueError unless v is a finite real number in [0, 100].
+
+    The bool check is explicit (bool subclasses int — True/False would
+    otherwise pass as 1/0). Non-numeric, non-bool values (e.g. strings)
+    keep the legacy behavior: they are silently omitted from details by
+    _num_score, never written. Everything that WOULD be written must be a
+    finite, in-range number.
+    """
+    if isinstance(v, bool):
+        raise ValueError(
+            f"refusing to record outcome: fit_score must be a real number, "
+            f"not a bool ({v!r})")
+    if not isinstance(v, (int, float)):
+        return
+    if not math.isfinite(v):
+        raise ValueError(
+            f"refusing to record outcome: fit_score is not finite ({v!r})")
+    if not (_FIT_SCORE_MIN <= v <= _FIT_SCORE_MAX):
+        raise ValueError(
+            f"refusing to record outcome: fit_score {v!r} outside "
+            f"{_FIT_SCORE_MIN}–{_FIT_SCORE_MAX}")
+
+
 def record(ats: str, technique: str, outcome: str, note: str,
            role_id: str = "", company: str = "", source: str = "",
            fit_score=None, resume_lane: str = "unknown", lane: str = "",
@@ -164,22 +196,15 @@ def record(ats: str, technique: str, outcome: str, note: str,
             "refusing to record outcome: technique/note are placeholder "
             "literals ('tech'/'note') — pass the real technique name and "
             "note.")
-    if outcome == "submitted":
-        # SECURITY CHOKE POINT: the security authority must ALLOW this
-        # submission before anything is recorded. The note carries the
-        # confirmation quote (ATS-derived, therefore untrusted) and is
-        # injection-scanned; the caller must hold the record_submission
-        # capability; every decision lands in the hash-chained security
-        # ledger. Refusal raises PolicyDenied (a ValueError) — the same
-        # fail-closed contract as the refusals above.
-        if not _SECURITY_AVAILABLE or _sec_authorize_submission is None:
-            raise ValueError(
-                "refusing to record outcome: security authority "
-                "unavailable — fail closed")
-        _sec_authorize_submission(
-            agent_hint="keel-application-engine", ats=ats,
-            technique=technique, note=note, role_id=role_id,
-            company=company)
+    # Fail closed on unknown outcomes: the closed outcome vocabulary is
+    # submitted/blocked — anything else (e.g. 'maybe') refuses before any
+    # side effect, because the emitted telemetry gate ('submitted' vs
+    # 'gate_blocked') is derived from the outcome and an unknown outcome
+    # must never be written.
+    if outcome not in VALID_OUTCOMES:
+        raise ValueError(
+            f"refusing to record outcome: unknown outcome {outcome!r} — "
+            f"valid: {sorted(VALID_OUTCOMES)}")
     # Backfill support: `date` overrides the evidence entry's date for
     # honest backfills of outcomes recorded in queue/ledger but never
     # passed through this writer. Validated YYYY-MM-DD; defaults to today.
@@ -192,6 +217,15 @@ def record(ats: str, technique: str, outcome: str, note: str,
         raise ValueError(
             f"refusing to record outcome: bad date {ev_date!r} — "
             "use YYYY-MM-DD")
+    # Strict calendar validation: the shape check above accepts
+    # '2026-02-30' — a date that never happened must never anchor
+    # occurred_at.
+    try:
+        datetime.strptime(ev_date, "%Y-%m-%d")
+    except ValueError:
+        raise ValueError(
+            f"refusing to record outcome: impossible calendar date "
+            f"{ev_date!r} — use a real YYYY-MM-DD date")
     # Fail closed on unknown timestamp bases: the vocabulary is closed and
     # the basis is never inferred. A --date backfill without an explicit
     # --timestamp-basis stays "unknown" (never upgraded here).
@@ -199,10 +233,38 @@ def record(ats: str, technique: str, outcome: str, note: str,
         raise ValueError(
             f"refusing to record outcome: unknown timestamp_basis "
             f"{timestamp_basis!r} — valid: {sorted(TIMESTAMP_BASES)}")
+    # fit_score validation runs before anything is logged: bools, NaN/inf,
+    # and out-of-[0,100] scores refuse. (None is a no-op; non-numeric,
+    # non-bool values keep the legacy silent-omission from details.)
+    _validate_fit_score(fit_score)
+    if outcome == "submitted":
+        # SECURITY CHOKE POINT: the security authority must ALLOW this
+        # submission before anything is recorded. The note carries the
+        # confirmation quote (ATS-derived, therefore untrusted) and is
+        # injection-scanned; the caller must hold the record_submission
+        # capability; every decision lands in the hash-chained security
+        # ledger. Refusal raises PolicyDenied (a ValueError) — the same
+        # fail-closed contract as the refusals above.
+        #
+        # Ordering: the choke runs AFTER all input validation, so an
+        # invalid record never reaches the security authority (no decision
+        # entry is ledgered for a record that could never be written).
+        if not _SECURITY_AVAILABLE or _sec_authorize_submission is None:
+            raise ValueError(
+                "refusing to record outcome: security authority "
+                "unavailable — fail closed")
+        _sec_authorize_submission(
+            agent_hint="keel-application-engine", ats=ats,
+            technique=technique, note=note, role_id=role_id,
+            company=company)
+    if not emit_telemetry:
+        # Honest backfill: nothing is written — say so plainly instead of
+        # claiming a durable write.
+        print(f"outcome for {ats}/{technique} not recorded: telemetry "
+              f"disabled (--no-telemetry honest backfill; no durable write)")
+        return
     print(f"recorded {outcome} for {ats}/{technique} "
           f"(telemetry only; technique library is private per SPLIT.md)")
-    if not emit_telemetry:
-        return
     # Telemetry: mirror the outcome into the append-only event log. Every
     # event carries ats (top level) and resume_lane (fail-closed to
     # 'unknown' when the caller lacks it) so ATS/lane conversion analysis

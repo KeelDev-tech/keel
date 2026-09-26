@@ -11,6 +11,7 @@ import math
 from keel_loki.common import (LokiError, clone, digest, require_dict, require_hash,
                               require_id, require_int)
 from keel_loki.questions import plan_questions
+from keel_loki.decision_sessions import plan_decision_session
 
 
 class ReviewError(LokiError):
@@ -227,7 +228,7 @@ def _percentile(values, q):
     return values[lo] + (values[hi] - values[lo]) * (index - lo)
 
 
-def project_review(snapshot, *, now, expected_snapshot_sha256=None):
+def project_review(snapshot, *, now, expected_snapshot_sha256=None, session_minutes=None):
     """Project exact questions, packet deltas, live blockers and observed metrics."""
     try:
         snapshot, apps, questions = _validate(snapshot, now)
@@ -346,13 +347,16 @@ def project_review(snapshot, *, now, expected_snapshot_sha256=None):
                 "unverified_observations": sum(a["submission_status"] == "UNVERIFIED_OBSERVATION" for a in projected),
                 "unknown": sum(a["submission_status"] == "UNKNOWN" for a in projected),
                 "success_rate": None, "reason": "No verified attempt denominator or complete outcome window."}}
-        return {"schema": "keel.muse.review-projection.v1", "snapshot_sha256": snapshot_hash,
+        report = {"schema": "keel.muse.review-projection.v1", "snapshot_sha256": snapshot_hash,
             "source_sha256": snapshot["source_sha256"], "snapshot_id": snapshot["snapshot_id"], "as_of": now,
             "captured_at": snapshot["captured_at"], "snapshot_age_seconds": now - snapshot["captured_at"],
             "applications": projected, "question_plan": question_plan, "metrics": metrics, "snapshot": snapshot,
             "source_truth_authenticated": False, "human_identity_authenticated": False,
             "execution_authorized": False, "canonical_writes": 0, "network_requests": 0,
             "scope": "Private review projection from supplied observations; requests require authenticated host ingestion."}
+        if session_minutes is not None:
+            report["decision_session"] = plan_decision_session(specs, now, minute_budget=session_minutes)
+        return report
     except (LokiError, ValueError, TypeError, KeyError) as exc:
         if isinstance(exc, ReviewError):
             raise
@@ -362,9 +366,40 @@ def project_review(snapshot, *, now, expected_snapshot_sha256=None):
 def validate_projection(report):
     _check(type(report) is dict and report.get("schema") == "keel.muse.review-projection.v1", "projection_schema_invalid")
     rebuilt = project_review(report.get("snapshot"), now=report.get("as_of"),
-                             expected_snapshot_sha256=report.get("snapshot_sha256"))
+                             expected_snapshot_sha256=report.get("snapshot_sha256"),
+                             session_minutes=report.get("decision_session", {}).get("minute_budget")
+                             if type(report.get("decision_session", {})) is dict else None)
     _check(digest(rebuilt) == digest(report), "projection_changed")
     return rebuilt
+
+
+def record_session_effort(report, *, event_id, question_id, human_minutes, now,
+                          expected_report_sha256):
+    """Create a declared effort observation, never infer elapsed time or results.
+
+The host must durably deduplicate event IDs and authenticate the reporting
+human. Values may exceed the planned budget: real effort must not be clamped.
+This pure function performs no write and is not an execution/approval request.
+"""
+    report = validate_projection(report)
+    _check(digest(report) == expected_report_sha256, "report_pin_mismatch")
+    require_id(event_id)
+    require_id(question_id)
+    _stamp(now)
+    _check(now >= report["as_of"], "effort_before_projection")
+    _check(type(human_minutes) in (int, float) and 0 < human_minutes <= 1440
+           and math.isfinite(human_minutes), "invalid_observed_human_minutes")
+    session = report.get("decision_session")
+    _check(session is not None and question_id in session["selected_question_ids"],
+           "question_not_in_session")
+    return {"schema": "keel.muse.session-effort.v1", "event_id": event_id, "question_id": question_id,
+            "report_sha256": digest(report), "snapshot_sha256": report["snapshot_sha256"],
+            "recorded_at": now, "human_minutes": human_minutes, "measurement_source": "human_reported",
+            "exceeds_planned_session_minutes": human_minutes > session["minute_budget"],
+            "completed_task_ids": [], "interview_event_ids": [], "completion_inferred": False,
+            "requires_authenticated_host_ingestion": True, "requires_event_id_deduplication": True,
+            "human_identity_authenticated": False, "execution_authorized": False,
+            "canonical_writes": 0, "network_requests": 0}
 
 
 def make_review_request(report, *, application_id, question_id, response, now,

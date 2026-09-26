@@ -160,16 +160,18 @@ def open_directory(path, create=False):
         raise
 
 
-def extract(files, destination, create_parents=False):
+def extract(files, destination, create_parents=False, *, max_files=MAX_FILES):
     """Write validated files under an exclusively created private directory.
 
     Directory descriptors prevent symlink swaps from redirecting writes. An I/O
     failure may leave an incomplete private destination; it is never reused or
     silently replaced. No archive content is executed.
     """
+    if type(max_files) is not int or not 1 <= max_files <= 10000:
+        raise ValueError("invalid extraction file limit")
     files = dict(files)
     validate_paths(files)
-    if not 1 <= len(files) <= MAX_FILES:
+    if not 1 <= len(files) <= max_files:
         raise ValueError("invalid source file count")
     total = 0
     for entry in files.values():

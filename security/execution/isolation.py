@@ -22,6 +22,9 @@ import subprocess
 import time
 from typing import Any
 
+from .resource_limits import CgroupLease, ResourceBlocked, WorkerLimits, doctor as resource_doctor
+from .seccomp_profile import PROFILE, doctor as seccomp_doctor, sealed_fd
+
 
 class IsolationBlocked(ValueError):
     """The required isolation contract could not be established."""
@@ -100,6 +103,8 @@ class IsolationConfig:
     wall_seconds: int = 60
     output_bytes: int = 1048576
     scratch_bytes: int = 16777216
+    resource_limits: dict | None = None
+    seccomp_profile: str | None = None
 
     @classmethod
     def from_dict(cls, raw: dict) -> "IsolationConfig":
@@ -107,7 +112,8 @@ class IsolationConfig:
             raise IsolationBlocked("configuration must be an object")
         required = {"schema", "runtime", "application", "runtime_inventory",
                     "application_inventory", "entrypoint", "worker_uid", "broker_uid"}
-        optional = {"broker_socket", "arguments", "wall_seconds", "output_bytes", "scratch_bytes"}
+        optional = {"broker_socket", "arguments", "wall_seconds", "output_bytes", "scratch_bytes",
+                    "resource_limits", "seccomp_profile"}
         if not required <= raw.keys() or raw.keys() - required - optional:
             raise IsolationBlocked("missing or unknown configuration key")
         if type(raw["schema"]) is not int or raw["schema"] != 1:
@@ -138,11 +144,18 @@ class IsolationConfig:
         app_inventory = _inventory(raw["application_inventory"])
         if entrypoint not in app_inventory:
             raise IsolationBlocked("entrypoint is absent from reviewed inventory")
+        limits = raw.get("resource_limits")
+        if limits is not None:
+            limits = vars(WorkerLimits.from_dict(limits)).copy()
+        profile = raw.get("seccomp_profile") or (PROFILE if limits is not None else None)
+        if raw.get("seccomp_profile") not in (None, PROFILE) or profile not in (None, PROFILE):
+            raise IsolationBlocked("unsupported seccomp profile")
         return cls(str(runtime), str(application), _inventory(raw["runtime_inventory"]),
                    app_inventory, entrypoint, worker, broker, endpoint, tuple(args),
                    _integer(raw.get("wall_seconds", 60), "wall_seconds", 1, 3600),
                    _integer(raw.get("output_bytes", 1048576), "output_bytes", 1024, 16777216),
-                   _integer(raw.get("scratch_bytes", 16777216), "scratch_bytes", 1048576, 268435456))
+                   _integer(raw.get("scratch_bytes", 16777216), "scratch_bytes", 1048576, 268435456),
+                   limits, profile)
 
 
 def _trusted(st, worker_uid, *, probe=False, directory=False):
@@ -280,7 +293,7 @@ def _check_tree(fd, expected, worker_uid, *, runtime=False, probe=False):
                 raise IsolationBlocked("runtime interpreter is not an ELF binary")
 
 
-def _command(config, runtime_fd, app_fd, broker_fd):
+def _command(config, runtime_fd, app_fd, broker_fd, seccomp_fd=None):
     command = ["/usr/bin/bwrap", "--unshare-user", "--unshare-pid", "--unshare-net",
                "--unshare-ipc", "--unshare-uts", "--unshare-cgroup", "--disable-userns",
                "--assert-userns-disabled", "--uid", str(config.worker_uid),
@@ -296,20 +309,31 @@ def _command(config, runtime_fd, app_fd, broker_fd):
                     "--setenv", "KEEL_EXECUTOR_SOCKET", "/run/keel/executor.sock"]
     for name, value in (("PATH", "/usr/bin"), ("HOME", "/work"), ("TMPDIR", "/tmp"), ("LANG", "C.UTF-8")):
         command += ["--setenv", name, value]
+    if seccomp_fd is not None:
+        command += ["--seccomp", str(seccomp_fd)]
     command += ["--chdir", "/work", "--", "/usr/bin/python3", "-I", "-S", "-B",
                 "/app/" + config.entrypoint, *config.arguments]
     return command
 
 
-def _capture(command, fds, executable, config):
+def _capture(command, fds, executable, config, lease=None):
     """Bound host-side output and wall time; killing bwrap tears down its PID tree."""
+    child_fds = list(fds) + ([lease.procs_fd] if lease is not None else [])
     process = subprocess.Popen(command, executable=executable, env={}, stdin=subprocess.DEVNULL,
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                               close_fds=True, pass_fds=tuple(fds), start_new_session=True)
+                               close_fds=True, pass_fds=tuple(child_fds), start_new_session=True,
+                               preexec_fn=lease.attach_before_exec if lease is not None else None)
     chunks = {"stdout": bytearray(), "stderr": bytearray()}
     end = time.monotonic() + config.wall_seconds
     reason = None
+    cleanup_error = None
     def kill():
+        nonlocal cleanup_error
+        if lease is not None:
+            try:
+                lease.kill()
+            except (OSError, ResourceBlocked) as exc:
+                cleanup_error = str(exc)
         try:
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
@@ -351,6 +375,8 @@ def _capture(command, fds, executable, config):
                 process.wait(timeout=5)
             process.stdout.close()
             process.stderr.close()
+    if cleanup_error is not None:
+        raise ResourceBlocked("cgroup kill failed: " + cleanup_error)
     return {"status": "COMPLETED" if code == 0 and reason is None else "BLOCKED",
             "returncode": code, "reason": reason or ("worker_or_sandbox_failed" if code else None),
             **{k: bytes(v).decode("utf-8", "replace") for k, v in chunks.items()}}
@@ -363,6 +389,8 @@ def launch(config: IsolationConfig, *, execute=False, _synthetic_probe=False) ->
     It is absent from the production CLI, and cannot be mixed with broker access.
     This module must remain in the trusted supervisor, outside agent execution.
     """
+    execution_attempted = False
+    result = None
     try:
         # Reparse a private copy to reject mutated dictionaries or manual invalid dataclasses.
         config = IsolationConfig.from_dict({"schema": 1, **{
@@ -376,6 +404,12 @@ def launch(config: IsolationConfig, *, execute=False, _synthetic_probe=False) ->
             raise IsolationBlocked("synthetic probe cannot access an executor socket")
         if not _synthetic_probe and os.getuid() == 0:
             raise IsolationBlocked("production root worker is forbidden")
+        enforcement = {"resources": resource_doctor(config.resource_limits),
+                       "seccomp": seccomp_doctor(config.seccomp_profile) if config.seccomp_profile else
+                           {"status": "NOT_CONFIGURED", "enforced": False}}
+        for control in enforcement.values():
+            if control["status"] == "BLOCKED":
+                raise IsolationBlocked(control["reason"])
         with ExitStack() as stack:
             fds = []
             def pin(path, directory=False, endpoint=False):
@@ -396,14 +430,33 @@ def launch(config: IsolationConfig, *, execute=False, _synthetic_probe=False) ->
                 st = os.fstat(broker_fd)
                 if not stat.S_ISSOCK(st.st_mode) or st.st_uid != config.broker_uid or st.st_gid != os.getgid() or st.st_mode & 0o007:
                     raise IsolationBlocked("executor socket ownership or permissions mismatch")
-            command = _command(config, runtime_fd, app_fd, broker_fd)
+            filter_fd = None
+            if config.seccomp_profile:
+                filter_fd = sealed_fd(config.seccomp_profile)
+                stack.callback(os.close, filter_fd)
+                fds.append(filter_fd)
+            command = _command(config, runtime_fd, app_fd, broker_fd, filter_fd)
             if not execute:
                 return {"status": "PLANNED", "executed": False, "host_uid": os.getuid(),
-                        "argv": command, "descriptor_arguments": "valid only inside this call",
+                        "argv": command, "enforcement": enforcement, "descriptor_arguments": "valid only inside this call",
                         "runtime_sha256": hashlib.sha256(json.dumps(config.runtime_inventory, sort_keys=True).encode()).hexdigest(),
                         "application_sha256": hashlib.sha256(json.dumps(config.application_inventory, sort_keys=True).encode()).hexdigest()}
-            result = _capture(command, fds, f"/proc/self/fd/{binary_fd}", config)
+            lease = stack.enter_context(CgroupLease(WorkerLimits.from_dict(config.resource_limits))) if config.resource_limits else None
+            execution_attempted = True
+            result = _capture(command, fds, f"/proc/self/fd/{binary_fd}", config, lease)
+            if lease is not None:
+                enforcement["resources"].update(status="ENFORCED_FOR_LAUNCH", enforced=True,
+                                                 measurements=lease.measurement())
+                # Check cleanup before reporting success; this kills escaped sessions
+                # and descendants even when the top-level process has already exited.
+                lease.close()
+            if config.seccomp_profile:
+                # Nonzero bwrap exit might precede filter installation. Do not infer it.
+                enforcement["seccomp"].update(status="ENFORCED" if result["status"] == "COMPLETED" else "INSTALLATION_UNCONFIRMED",
+                                               enforced=result["status"] == "COMPLETED")
+            result["enforcement"] = enforcement
             result.update({"executed": True, "host_uid": os.getuid(), "synthetic_probe": _synthetic_probe})
             return result
-    except (IsolationBlocked, OSError, ValueError, TypeError) as exc:
-        return {"status": "BLOCKED", "executed": False, "reason": str(exc)}
+    except (IsolationBlocked, ResourceBlocked, OSError, ValueError, TypeError, subprocess.SubprocessError) as exc:
+        return {"status": "BLOCKED", "executed": True if result is not None else (None if execution_attempted else False),
+                "execution_attempted": execution_attempted, "reason": str(exc)}

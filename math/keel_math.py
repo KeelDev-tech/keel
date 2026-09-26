@@ -27,7 +27,6 @@ No network, no credentials, no persistence, no execution. Pure functions.
 An eligible=True fixture is NOT evidence of permission or factual correctness.
 """
 
-import itertools
 import math
 
 
@@ -222,79 +221,12 @@ def conformal_radius(residuals, alpha=0.1):
 # --------------------------------------------------------------------------
 
 def best_question_bundle(questions, packets, max_questions=16):
-    """Pick the question subset maximizing unlock value minus asking cost.
+    """Compatibility entry point for the bounded reusable question optimizer.
 
-    questions: [{id, cost, resolves: {requirement ids}}]
-    packets:   [{id, value, needs: {requirement ids}}]  (value = e.g. fit or
-               expected downstream value; a packet unlocks only when EVERY
-               requirement in `needs` is resolved)
-    Exact enumeration up to max_questions (default 16); complementary
-    requirements are handled exactly, not by greedy approximation.
-    Returns {selected, cost, unlocked_value, objective, status}.
-    Asking cost is in the same units as packet value (operator minutes
-    converted at the operator's own rate); ties prefer lower cost.
+    This API retains its original inputs and result fields. Operational decision
+    sessions use the same solver with a separate hard human-minute budget.
     """
-    if type(max_questions) is not int or not 1 <= max_questions <= 20:
-        raise ValueError("max_questions must be an integer from 1 to 20")
-    if type(questions) not in (list, tuple) or not questions or len(questions) > max_questions:
-        raise ValueError("supply 1 to %d questions" % max_questions)
-    if type(packets) not in (list, tuple) or len(packets) > 10000:
-        raise ValueError("supply a bounded packet collection")
-    # Bound the actual exponential work as well as the subset dimension.
-    if (1 << len(questions)) * max(1, len(packets)) > 10_000_000:
-        raise ValueError("question/packet model exceeds exact enumeration budget")
-
-    def identifiers(value):
-        if type(value) not in (list, tuple, set, frozenset):
-            raise ValueError("requirements must be a collection of ids")
-        if any(type(item) is not str or not item.strip() for item in value):
-            raise ValueError("requirement ids must be nonblank strings")
-        return set(value)
-
-    qs, pks = [], []
-    seen = set()
-    for q in questions:
-        if type(q) is not dict:
-            raise ValueError("question must be an object")
-        qid = q.get("id")
-        if not isinstance(qid, str) or not qid or qid in seen:
-            raise ValueError("question ids must be unique nonempty strings")
-        seen.add(qid)
-        cost = finite(q.get("cost", 0))
-        if cost < 0:
-            raise ValueError("asking cost cannot be negative")
-        qs.append((qid, cost, identifiers(q.get("resolves", ()))))
-    seen_packets = set()
-    for p in packets:
-        if type(p) is not dict:
-            raise ValueError("packet must be an object")
-        pid = p.get("id")
-        if not isinstance(pid, str) or not pid or pid in seen_packets:
-            raise ValueError("packet ids must be unique nonempty strings")
-        seen_packets.add(pid)
-        value = finite(p.get("value", 0))
-        if value < 0:
-            raise ValueError("unlock value cannot be negative")
-        pks.append((pid, value, identifiers(p.get("needs", ()))))
-    # Reject an unrepresentable aggregate before ranking any subset.
-    try:
-        finite(math.fsum(q[1] for q in qs))
-        finite(math.fsum(p[1] for p in pks))
-    except OverflowError:
-        raise ValueError("aggregate cost or value exceeds finite range") from None
-    best = None
-    for bits in itertools.product((False, True), repeat=len(qs)):
-        subset = [q for q, on in zip(qs, bits) if on]
-        resolved = set().union(*(q[2] for q in subset)) if subset else set()
-        cost = math.fsum(q[1] for q in subset)
-        unlocked = math.fsum(v for _, v, needs in pks
-                             if needs and needs <= resolved)
-        objective = unlocked - cost
-        rank = (objective, -cost, -len(subset))
-        if best is None or rank > best[0]:
-            best = (rank, {"selected": [q[0] for q in subset],
-                           "cost": cost,
-                           "unlocked_value": unlocked,
-                           "objective": objective,
-                           "status": "optimal_for_supplied_toy_model"})
-    return best[1]
+    from keel_loki.decision_sessions import best_question_bundle as solve
+    result = solve(questions, packets, max_questions=max_questions)
+    return {key: result[key] for key in
+            ("selected", "cost", "unlocked_value", "objective", "status")}

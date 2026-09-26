@@ -17,6 +17,24 @@ NOW = 1800000000
 SERIAL = itertools.count()
 
 
+def test_session_effort_cli_exports_only_reported_measurement(tmp_path, capsys, monkeypatch):
+    from keel_muse.review import example_snapshot, project_review
+    snapshot = example_snapshot()
+    monkeypatch.setattr(cli, '_now', lambda: snapshot['captured_at'])
+    report = project_review(snapshot, now=snapshot['captured_at'], session_minutes=5)
+    question = report['decision_session']['selected_question_ids'][0]
+    code, output, _ = invoke(tmp_path, capsys, 'review', 'record_session_effort', {
+        'report': report, 'event_id': 'human-observation-1', 'question_id': question,
+        'human_minutes': 7, 'expected_report_sha256': digest(report)})
+    assert code == 0
+    observed = output['result']
+    assert observed['human_minutes'] == 7
+    assert observed['measurement_source'] == 'human_reported'
+    assert observed['exceeds_planned_session_minutes']
+    assert observed['completed_task_ids'] == []
+    assert observed['execution_authorized'] is False
+
+
 @pytest.fixture(autouse=True)
 def controlled_host(tmp_path, monkeypatch):
     # The predecessor source connector uses descriptor-relative attachment

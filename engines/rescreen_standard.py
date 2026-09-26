@@ -152,7 +152,7 @@ def select(std, min_fit, role_ids):
 #
 # Every posting fetch in this batch -- Greenhouse/Lever/Ashby board APIs via
 # http_cache, generic pages via verify_retry's direct calls -- funnels through
-# urllib.request.urlopen, which RAISES HTTPError on a 429 (it never returns a
+# safe_http.urlopen, which RAISES HTTPError on a 429 (it never returns a
 # 429 response). The canonical fetchers swallow that into "" per their
 # fail-open contract, so this batch wraps the one shared call site with a
 # transparent recorder: it re-raises everything unchanged and only counts
@@ -168,33 +168,46 @@ class _RateLimitObserved(Exception):
 
 @contextlib.contextmanager
 def observe_429s(counter, budget=1):
-    """Patch urllib.request.urlopen for the batch; count real HTTP 429s.
+    """Patch the HTTP transports for the batch; count real HTTP 429s.
 
     counter[0] accumulates observed 429s. When it reaches `budget` the next
     fetch raises _RateLimitObserved instead of proceeding -- the batch then
     aborts fail-closed with zero writes (429 = hard stop). Restores the
     original urlopen on exit.
+
+    Both `safe_http.urlopen` (the single policy-checked transport every
+    bundled engine funnels through since the 2026-09-26 network-boundary
+    routing) and `urllib.request.urlopen` (legacy direct callers) are
+    wrapped, so the 429 budget holds regardless of which transport a fetch
+    uses. Patching the module attributes intercepts all call sites because
+    engines call via the module.
     """
-    real_urlopen = urllib.request.urlopen
+    import safe_http
+    real_safe = safe_http.urlopen
+    real_urllib = urllib.request.urlopen
 
-    def _recording(*args, **kwargs):
-        try:
-            return real_urlopen(*args, **kwargs)
-        except urllib.error.HTTPError as he:
-            if getattr(he, "code", None) == 429:
-                counter[0] += 1
-                if counter[0] >= budget:
-                    raise _RateLimitObserved(
-                        "rescreen-standard: HTTP 429 observed %dx during batch "
-                        "-- aborting fail-closed (hard stop); no writes made."
-                        % counter[0]) from he
-            raise
+    def _recording(real):
+        def _wrapped(*args, **kwargs):
+            try:
+                return real(*args, **kwargs)
+            except urllib.error.HTTPError as he:
+                if getattr(he, "code", None) == 429:
+                    counter[0] += 1
+                    if counter[0] >= budget:
+                        raise _RateLimitObserved(
+                            "rescreen-standard: HTTP 429 observed %dx during batch "
+                            "-- aborting fail-closed (hard stop); no writes made."
+                            % counter[0]) from he
+                raise
+        return _wrapped
 
-    urllib.request.urlopen = _recording
+    safe_http.urlopen = _recording(real_safe)
+    urllib.request.urlopen = _recording(real_urllib)
     try:
         yield counter
     finally:
-        urllib.request.urlopen = real_urlopen
+        safe_http.urlopen = real_safe
+        urllib.request.urlopen = real_urllib
 
 
 def screen_entry(entry, text=None, url=None):

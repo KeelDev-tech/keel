@@ -12,8 +12,8 @@ The mail source is pluggable (see MailSource): the public edition ships a
 MaildirReader that reads .eml files from a local directory — no account
 coupling. Live events carry the message's real receipt date
 (details.message_date, preferred for latency math), a quoted-text excerpt
-for downstream quote-only extraction, and the company's linked fit_score
-so score→conversion becomes measurable.
+for downstream quote-only extraction, and the exact application's fit_score.
+Imported observations remain unverified and unresolved identities remain held.
 
 LinkedIn DMs/InMails and Indeed employer messages are unwatched channels
 (no read API); the listener catches their EMAIL NOTIFICATIONS via
@@ -23,8 +23,14 @@ them so the channel is attributable in outcome analytics.
 import json
 import os
 import re
-import subprocess
 import sys
+import hashlib
+import math
+from pathlib import Path
+from email.utils import parsedate_to_datetime, parseaddr
+from safe_io import atomic_json, read_json, rows, digest, file_lock
+import outcome_analytics as analytics
+from outcome_tracking.receipt_intake import ReceiptStore
 from datetime import datetime, timedelta, timezone
 
 def _load_config():
@@ -69,16 +75,12 @@ INVITE_SCHEDULE = r"schedul|invit|confirm|request|availability|calendar"
 
 
 def classify(subject, body, from_email):
-    """Order matters: ack-subject is decisive; invite needs scheduling language
-    in the subject (ack bodies routinely mention 'interview process')."""
+    """Explicit rejection/offer/invite beats generic application acknowledgments.
+
+    Labels are reviewable observations, not authenticated employer intent.
+    """
     subj = subject or ""
     text = f"{subj} {body or ''}"
-    for p in AUTO_ACK_SUBJECT:
-        if re.search(p, subj, re.IGNORECASE):
-            return "AUTO_ACK", f"subject:{p}"
-    for p in AUTO_ACK_SUBJECT:
-        if re.search(p, body or "", re.IGNORECASE):
-            return "AUTO_ACK", f"body:{p}"
     for p in REJECTION_PATTERNS:
         if re.search(p, text, re.IGNORECASE):
             return "REJECTION", p
@@ -102,6 +104,12 @@ def classify(subject, body, from_email):
               r"\bassessment\b", r"\bhirevue\b"]:
         if re.search(p, text, re.IGNORECASE):
             return "ASSESSMENT", p
+    for p in AUTO_ACK_SUBJECT:
+        if re.search(p, subj, re.IGNORECASE):
+            return "AUTO_ACK", f"subject:{p}"
+    for p in AUTO_ACK_SUBJECT:
+        if re.search(p, body or "", re.IGNORECASE):
+            return "AUTO_ACK", f"body:{p}"
     for p in [r"additional information", r"please provide", r"questionnaire",
               r"could you (share|confirm|clarify)", r"missing information"]:
         if re.search(p, text, re.IGNORECASE):
@@ -123,7 +131,7 @@ def norm_company(name):
 
 
 def load_ledger():
-    entries = json.load(open(LEDGER))
+    entries = rows(read_json(LEDGER))
     idx = {}
     for e in entries:
         key = norm_company(e.get("company", ""))
@@ -152,15 +160,27 @@ class MaildirReader(MailSource):
     """Reads .eml files from a directory (default mail source)."""
 
     def __init__(self, maildir):
-        self.maildir = maildir
+        self.maildir = str(Path(maildir).resolve())
 
     def _parse(self, path):
         import email
         from email import policy
-        with open(path, "rb") as f:
-            msg = email.message_from_binary_file(f, policy=policy.default)
+        candidate = Path(path)
+        if not candidate.is_file() or candidate.is_symlink() or candidate.resolve().parent != Path(self.maildir):
+            raise ValueError("mail path must be a regular file directly inside maildir")
+        with open(candidate, "rb") as f:
+            raw = f.read(2 * 1024 * 1024 + 1)
+        if len(raw) > 2 * 1024 * 1024:
+            raise ValueError("message exceeds 2 MiB")
+        msg = email.message_from_bytes(raw, policy=policy.default)
         body = msg.get_body(preferencelist=("plain",))
         return {
+            "receipt_id": str(msg.get("Message-ID") or hashlib.sha256(raw).hexdigest()),
+            "content_sha256": hashlib.sha256(raw).hexdigest(),
+            "role_id": str(msg.get("X-Keel-Role-ID") or ""),
+            "attempt_id": str(msg.get("X-Keel-Attempt-ID") or ""),
+            "application_id": str(msg.get("X-Keel-Application-ID") or ""),
+            "receipt_ref": str(msg.get("X-Keel-Receipt-Ref") or ""),
             "id": os.path.basename(path),
             "subject": str(msg.get("Subject", "")),
             "from": str(msg.get("From", "")),
@@ -169,21 +189,57 @@ class MaildirReader(MailSource):
         }
 
     def triage(self, lookback_days=14, max_n=100):
-        out = []
+        if lookback_days <= 0 or max_n <= 0:
+            raise ValueError("lookback and message limit must be positive")
+        out, now = [], datetime.now(timezone.utc)
         try:
             names = sorted(os.listdir(self.maildir))
         except FileNotFoundError:
             return []
-        for n in names[:max_n]:
-            if n.lower().endswith((".eml", ".msg")):
-                try:
-                    out.append(self._parse(os.path.join(self.maildir, n)))
-                except Exception:
-                    continue
-        return out
+        for name in names:
+            if not name.lower().endswith(".eml"):
+                continue
+            message = self._parse(os.path.join(self.maildir, name))
+            stamp = message_time(message.get("date"))
+            if stamp is not None and now - timedelta(days=lookback_days) <= stamp <= now:
+                out.append(message)
+        out.sort(key=lambda item: (message_time(item["date"]), item["id"]), reverse=True)
+        return out[:max_n]
 
     def read(self, msg_id):
+        if not isinstance(msg_id, str) or Path(msg_id).name != msg_id:
+            raise ValueError("invalid message file identifier")
         return self._parse(os.path.join(self.maildir, msg_id))
+
+
+def message_time(value):
+    try:
+        stamp = parsedate_to_datetime(value)
+    except (TypeError, ValueError, IndexError):
+        try:
+            stamp = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            return None
+    if stamp is None or stamp.tzinfo is None:
+        return None
+    return stamp.astimezone(timezone.utc)
+
+
+def resolve_message(message, entries, company_key=None):
+    """Exact observed identity only; a company mention never selects a role."""
+    stamp = message_time(message.get("date"))
+    event = {field: message.get(field) or "" for field in
+             ("application_id", "role_id", "attempt_id", "receipt_ref", "posting_url", "ats_job_id")}
+    event.update(ts=stamp.isoformat() if stamp else "", company_key=company_key or "")
+    if stamp is None or stamp > datetime.now(timezone.utc):
+        return None, "held_invalid_or_future_receipt_time"
+    linked, unlinked, held = analytics.link_responses(entries, [event], allow_company_fallback=False)
+    if held:
+        return None, "held_conflicting_or_ambiguous_identity"
+    if not linked:
+        return None, "held_missing_or_unmatched_exact_identity"
+    index = next(iter(linked))
+    return index, linked[index][0]["linkage"]["rule"]
 
 
 def extract_company(msg, ledger_idx):
@@ -222,33 +278,18 @@ def extract_company(msg, ledger_idx):
     return None, "unmatched"
 
 
-def linked_fit_score(company_key, ledger_idx):
-    """Predictive fit_score of the most recent SUBMITTED ledger row for a
-    company, so employer_response events can carry it and score→conversion
-    becomes measurable. Returns None when no SUBMITTED row carries a numeric
-    score — never guessed."""
-    rows = [e for e in ledger_idx.get(company_key, [])
-            if e.get("status") == "SUBMITTED"]
-    if not rows:
+def linked_fit_score(company_key, ledger_idx, *, role_id=None, attempt_id=None, application_id=None):
+    """Score only a unique, explicitly identified application; never latest-company."""
+    if not any((role_id, attempt_id, application_id)):
         return None
-
-    def _datekey(e):
-        ds = e.get("date_submitted") or e.get("submitted_at") or ""
-        try:
-            d = datetime.fromisoformat(
-                str(ds).replace(" PDT", "-07:00").replace(" PST", "-08:00"))
-            if d.tzinfo is None:
-                d = d.replace(tzinfo=timezone.utc)
-            return (1, d)
-        except Exception:
-            return (0, datetime.min.replace(tzinfo=timezone.utc))
-
-    rows.sort(key=_datekey)
-    for e in reversed(rows):
-        fs = e.get("fit_score")
-        if isinstance(fs, (int, float)) and not isinstance(fs, bool):
-            return fs
-    return None
+    candidates = [row for row in ledger_idx.get(company_key, [])
+                  if row.get("status") in analytics.LINKABLE_STATUSES
+                  and all(not value or row.get(field) == value for field, value in
+                          (("role_id", role_id), ("attempt_id", attempt_id), ("application_id", application_id)))]
+    if len(candidates) != 1:
+        return None
+    score = candidates[0].get("fit_score")
+    return score if isinstance(score, (int, float)) and not isinstance(score, bool) and math.isfinite(score) else None
 
 
 # ---------------------------------------------------------------------------
@@ -285,14 +326,20 @@ def _msg_from_email(msg):
     return frm.get("email") if isinstance(frm, dict) else str(frm)
 
 
+def _sender_domain(value, domain):
+    address = parseaddr(value or "")[1]
+    actual = address.rsplit("@", 1)[-1].lower()
+    return actual == domain or actual.endswith("." + domain)
+
+
 def is_linkedin_notification(from_email):
     """True when the message arrived via a LinkedIn notification address."""
-    return bool(_LINKEDIN_SENDER_RE.search(from_email or ""))
+    return _sender_domain(from_email, "linkedin.com")
 
 
 def is_indeed_notification(from_email):
     """True when the message arrived via an Indeed notification address."""
-    return bool(_INDEED_SENDER_RE.search(from_email or ""))
+    return _sender_domain(from_email, "indeed.com")
 
 
 def linkedin_tripwire(msg):
@@ -358,10 +405,10 @@ def main(argv, mail_source=None):
     seen_path = os.path.join(out_dir, "seen-message-ids.json")
     seen = set()
     if os.path.exists(seen_path):
-        try:
-            seen = set(json.load(open(seen_path)))
-        except Exception:
-            seen = set()
+        stored_seen = read_json(seen_path)
+        if not isinstance(stored_seen, list) or any(not isinstance(item, str) for item in stored_seen):
+            raise ValueError("seen-message state malformed")
+        seen = set(stored_seen)
 
     mail_source = mail_source or _default_mail_source()
     entries, ledger_idx, submitted = load_ledger()
@@ -376,13 +423,11 @@ def main(argv, mail_source=None):
         return (re.search(r"thank you for applying|your application|interview",
                           text, re.I)
                 or linkedin_tripwire(m) or indeed_tripwire(m))
-    kw = [m for m in mail_source.triage(lookback_days=lookback) if _kw_hit(m)]
+    kw = [m for m in msgs if _kw_hit(m)]
     merge_triage_dedupe(msgs, kw)
 
     results = []
     for m in msgs:
-        if live and m["id"] in seen:
-            continue
         full = mail_source.read(m["id"])
         frm = full.get("from", {})
         from_email = frm.get("email") if isinstance(frm, dict) else str(frm)
@@ -390,11 +435,23 @@ def main(argv, mail_source=None):
                                   full.get("body_text", "") or full.get("snippet", ""),
                                   from_email)
         company_key, match_how = extract_company(full, ledger_idx)
+        matched_index, attribution = resolve_message(full, entries, company_key)
+        matched_row = entries[matched_index] if matched_index is not None else {}
         pipeline_related = bool(company_key) or any(
-            s in (from_email or "") for s in ATS_SENDERS)
+            _sender_domain(from_email, sender) for sender in ATS_SENDERS)
         frm = full.get("from", {})
         results.append({
             "message_id": m["id"],
+            "receipt_id": full.get("receipt_id") or m["id"],
+            "content_sha256": full.get("content_sha256") or digest(full),
+            "row_index": matched_index,
+            "attribution": attribution,
+            "role_id": matched_row.get("role_id") or "",
+            "attempt_id": matched_row.get("attempt_id") or "",
+            "application_id": matched_row.get("application_id") or "",
+            "evidence_kind": "imported_mail",
+            "observed_identity": {key: full.get(key) or "" for key in ("role_id", "attempt_id", "application_id")},
+            "resolved_identity": {key: matched_row.get(key) or "" for key in ("role_id", "attempt_id", "application_id")},
             "date": full.get("date"),
             "from": from_email,
             "subject": full.get("subject"),
@@ -412,12 +469,45 @@ def main(argv, mail_source=None):
             "body_text": full.get("body_text", "") or full.get("snippet", ""),
         })
 
+    # Validate the complete intake batch before counting outcomes. A conflict
+    # discovered later in the batch also withholds its earlier counterpart.
+    store = ReceiptStore(os.path.join(out_dir, "receipt-observations.json"))
+    for r in results:
+        if r["row_index"] is None or r["classification"] == "OTHER":
+            continue
+        receipt = {"receipt_id": r["receipt_id"], "source": "inbox-listener-import",
+                   "kind": "imported_mail", "outcome": r["classification"],
+                   "received_at": message_time(r["date"]).isoformat(),
+                   "recorded_at": datetime.now(timezone.utc).isoformat(),
+                   "content_sha256": r["content_sha256"],
+                   **r["observed_identity"], "observed_identity": r["observed_identity"],
+                   "resolved_identity": r["resolved_identity"]}
+        intake = store.put(receipt, dry_run=not live)
+        r["receipt_key"], r["receipt_status"] = intake["key"], intake["status"]
+    held_keys = {key for key, _, held in store.snapshot() if held}
+    held_keys.update(r["receipt_key"] for r in results if r.get("receipt_status") == "held_conflict")
+    # Dry-run batches also detect contradictions without persisting them.
+    incoming = {}
+    for r in results:
+        key = r.get("receipt_key")
+        if key:
+            signature = (r["content_sha256"], r["classification"], r["role_id"], r["attempt_id"], r["application_id"])
+            if key in incoming and incoming[key] != signature:
+                held_keys.add(key)
+            incoming[key] = signature
+    for r in results:
+        if r.get("receipt_key") in held_keys:
+            r["attribution"] = "held_conflicting_receipt"
+            r["candidate_row_index"], r["row_index"] = r["row_index"], None
+
     # ack coverage: submitted >24h ago without an AUTO_ACK
-    acked = {r["ledger_company"] for r in results
-             if r["classification"] == "AUTO_ACK" and r["ledger_company"]}
+    acked = {r["row_index"] for r in results
+             if r["classification"] == "AUTO_ACK" and r["row_index"] is not None}
     cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
     missing_acks = []
-    for e in submitted:
+    for row_index, e in enumerate(entries):
+        if e.get("status") != "SUBMITTED":
+            continue
         ds = e.get("date_submitted") or e.get("submitted_at") or ""
         try:
             # ledger dates are "YYYY-MM-DD HH:MM TZ" or ISO; be lenient
@@ -426,7 +516,7 @@ def main(argv, mail_source=None):
                 d = d.replace(tzinfo=timezone.utc)
         except Exception:
             continue
-        if d < cutoff and norm_company(e.get("company", "")) not in acked:
+        if d < cutoff and row_index not in acked:
             missing_acks.append({
                 "company": e.get("company"), "title": e.get("title"),
                 "resume_lane": e.get("resume_lane"),
@@ -436,9 +526,9 @@ def main(argv, mail_source=None):
     # lane breakdown of outcomes
     lane_stats = {}
     for r in results:
-        if not r["ledger_company"]:
+        if r["row_index"] is None:
             continue
-        for e in ledger_idx.get(r["ledger_company"], []):
+        for e in [entries[r["row_index"]]]:
             lane = e.get("resume_lane", "?")
             s = lane_stats.setdefault(lane, {"AUTO_ACK": 0, "REJECTION": 0,
                                              "INTERVIEW_INVITE": 0, "INFO_REQUEST": 0,
@@ -456,59 +546,61 @@ def main(argv, mail_source=None):
         "ack_coverage": f"{len(acked)}/{len(submitted)}",
         "missing_acks_24h": missing_acks,
         "lane_outcome_stats": lane_stats,
-        "unmatched": [r for r in results if not r["ledger_company"]],
+        "unmatched": [r for r in results if r["row_index"] is None],
+        "verification_scope": "Imported mail observations only; no provider authentication",
         "live": live,
     }
 
     if out_dir:
         stamp = datetime.now().strftime("%Y%m%d-%H%M")
         path = os.path.join(out_dir, f"inbox-outcomes-{stamp}.json")
-        json.dump(report, open(path, "w"), indent=2)
+        atomic_json(path, report)
         print(f"report -> {path}")
 
     if live:
+        from log_event import log
         logged = 0
-        for r in results:
-            seen.add(r["message_id"])
-            if r["classification"] in ("OTHER",) or not r["ledger_company"]:
-                continue
-            fs = linked_fit_score(r["ledger_company"], ledger_idx)
-            details = {
-                "outcome": r["classification"],
-                "company_key": r["ledger_company"],
-                "subject": (r["subject"] or "")[:120],
-                "match_how": r["match_how"],
-                "backfilled": False,
-                "message_date": r["date"],          # mail receipt date
-                "message_id": r["message_id"],
-                "source": "inbox-listener-live",
-                # Body excerpt lets the downstream hooks extract terms /
-                # signals from quoted employer text. The hooks treat a
-                # missing excerpt as "not stated" — never invented.
-                "quoted_text": (r.get("body_text") or "")[:2000],
-            }
-            if fs is not None:
-                details["fit_score"] = fs   # score→conversion measurable
-            # Channel attribution for notification tripwires (additive;
-            # the dispatcher only reads `outcome`).
-            if r.get("indeed"):
-                details["channel"] = "indeed-notification"
-            elif r.get("linkedin"):
-                details["channel"] = "linkedin-notification"
-            details = json.dumps(details)
-            subprocess.run(
-                [sys.executable, LOG_EVENT, "employer_response",
-                 "--company", r["ledger_company"],
-                 "--details", details],
-                capture_output=True, timeout=30,
-            )
-            logged += 1
-        json.dump(sorted(seen), open(seen_path, "w"))
+        with file_lock(seen_path + ".lock"):
+            current = read_json(seen_path, missing=[])
+            if not isinstance(current, list) or any(not isinstance(item, str) for item in current):
+                raise ValueError("seen-message state malformed")
+            seen.update(current)
+            for r in results:
+                # Holds are retried after the user supplies exact metadata. A
+                # failed write never consumes a message; stable event IDs make a
+                # crash between telemetry and checkpoint safe to replay.
+                if r["row_index"] is None or r["classification"] == "OTHER":
+                    continue
+                details = {"outcome": r["classification"], "company_key": r["ledger_company"],
+                           "subject": (r["subject"] or "")[:120], "match_how": r["attribution"],
+                           "backfilled": False, "message_date": message_time(r["date"]).isoformat(),
+                           "receipt_key": r["receipt_key"],
+                           "message_id": r["receipt_id"], "source": "inbox-listener-live",
+                           "quoted_text": (r.get("body_text") or "")[:2000],
+                           "evidence_kind": "imported_mail", "verification_status": "UNVERIFIED",
+                           "observed_identity": r["observed_identity"], "resolved_identity": r["resolved_identity"],
+                           **{key: r[key] for key in ("role_id", "attempt_id", "application_id")}}
+                fit = entries[r["row_index"]].get("fit_score")
+                if isinstance(fit, (int, float)) and not isinstance(fit, bool) and math.isfinite(fit):
+                    details["fit_score"] = fit
+                if r.get("indeed"):
+                    details["channel"] = "indeed-notification"
+                elif r.get("linkedin"):
+                    details["channel"] = "linkedin-notification"
+                payload = store.freeze_event(r["receipt_key"], {
+                    "event_type": "employer_response", "role_id": r["role_id"],
+                    "company": entries[r["row_index"]].get("company", ""),
+                    "source": "inbox-listener-import", "details": details,
+                    "event_id": "inbox:" + r["receipt_key"]})
+                log(**payload)
+                seen.add(r["message_id"])
+                atomic_json(seen_path, sorted(seen))
+                logged += 1
         print(f"telemetry: logged {logged} employer_response events; seen-set={len(seen)}")
 
     # console summary
     from collections import Counter
-    print(f"\nscanned={len(msgs)} submitted={len(submitted)} acked_companies={len(acked)}")
+    print(f"\nscanned={len(msgs)} submitted={len(submitted)} acked_applications={len(acked)}")
     print("by_class:", dict(Counter(r["classification"] for r in results)))
     print(f"missing_acks(>24h, no auto-ack): {len(missing_acks)}")
     for m in missing_acks[:15]:
@@ -550,6 +642,11 @@ def main(argv, mail_source=None):
         for r in ind[:15]:
             print(f"  in {r['from']} | {r['subject']} | "
                   f"{r['classification']} | {r['ledger_company']}")
+
+
+    if out_dir:
+        atomic_json(path, report)
+    return report
 
 
 if __name__ == "__main__":

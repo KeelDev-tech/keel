@@ -269,7 +269,8 @@ def _run(options, operation, arguments, source):
         from . import review
         functions = {'project_review': review.project_review, 'validate_projection': review.validate_projection,
                      'make_review_request': review.make_review_request,
-                     'validate_review_request': review.validate_review_request}
+                     'validate_review_request': review.validate_review_request,
+                     'record_session_effort': review.record_session_effort}
         function = _choose(operation, functions)
         return _invoke(function, arguments, **({} if operation == 'validate_projection' else {'now': _now()}))
     if command == 'dashboard':
@@ -340,7 +341,7 @@ def parser():
         'sources': 'head/capture existing registered source store; no approval ingestion.',
         'context': 'compile/validate_cache with a live source head and host policy.',
         'coordinator': 'snapshot only; readonly open, no controller restart.',
-        'review': 'project_review/validate_projection/make_review_request/validate_review_request.',
+        'review': 'project_review/validate_projection/make_review_request/validate_review_request/record_session_effort.',
         'dashboard': 'render a validated review projection to new private --html.',
         'evaluation': 'freeze_plan/run/compare; fixture or unavailable transports only.',
         'repair': 'freeze_fixtures/propose/evaluate/recommend; quarantine, no promotion.',

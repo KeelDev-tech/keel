@@ -38,6 +38,7 @@ URL dedupe and ARM-R1 claim-time dedupe — this guard is the pre-spawn
 gate, those remain the pre-build gates.
 """
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -57,8 +58,15 @@ LEDGER_PATH = os.path.join(DATA, "application-ledger.json")
 
 
 def _lock_path(role_id):
+    # Collision-free naming: the sanitized readable prefix keeps the lock
+    # dir operable (a human can still find the lease for a role), and the
+    # short sha256 of the ORIGINAL role_id guarantees distinct inputs never
+    # share a file — the old pure-sanitization mapped 'a/b' and 'a?b' to
+    # the same 'a_b.json', a duplicate-fire vector (lock for role A could
+    # be read/released as role B's lock).
     safe = re.sub(r"[^A-Za-z0-9_-]", "_", role_id)
-    return os.path.join(LOCK_DIR, safe + ".json")
+    digest = hashlib.sha256(role_id.encode("utf-8")).hexdigest()[:12]
+    return os.path.join(LOCK_DIR, "%s_%s.json" % (safe, digest))
 
 
 def _now():
@@ -230,12 +238,24 @@ def _norm(s):
 
 
 def _load_submitted(ledger_path=LEDGER_PATH):
-    """Return {role_id: (company, title)} for SUBMITTED ledger rows."""
+    """Return {role_id: (company, title)} for SUBMITTED ledger rows.
+
+    Fail closed: a present-but-unparseable ledger raises ValueError — the
+    prelaunch duplicate guard cannot verify against a corrupt ledger, and
+    "no verification possible → no GO" (a silent {} would disable
+    duplicate protection entirely). A missing ledger (FileNotFoundError)
+    is fine: no rows exist yet, so the guard passes.
+    """
     try:
         with open(ledger_path) as f:
             data = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
+    except FileNotFoundError:
         return {}
+    except json.JSONDecodeError as ex:
+        raise ValueError(
+            "refusing duplicate-guard check: ledger at %s is present but "
+            "unparseable (%s); operator reconciliation required — no "
+            "verification possible, no GO" % (ledger_path, ex))
     rows = data if isinstance(data, list) else data.get("rows", data.get("applications", []))
     out = {}
     for r in rows:

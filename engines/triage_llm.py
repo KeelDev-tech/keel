@@ -27,14 +27,16 @@ Config: <keel-home>/hidden_files/tray_polish.json
               "max_tokens": 120, "timeout_s": 20},
    "compare": {"enabled": true, "log": "tray_polish_compare.jsonl",
                "prefer": "gpt"}}
-Missing config == GPT enabled with defaults; a missing "gemini" section ==
-Gemini disabled. Set a provider's "enabled" to false to kill-switch it.
+Missing or malformed config disables both providers. Each provider requires
+its own explicit boolean enabled=true opt-in; local deterministic wording is
+the default. Opting in may incur provider charges. No service is required.
 """
 
 from __future__ import annotations
 
 import datetime
 import json
+import math
 import os
 import re
 import subprocess
@@ -71,19 +73,36 @@ def _config() -> dict:
     try:
         with open(CONFIG, encoding="utf-8") as f:
             cfg = json.load(f)
-        return cfg if isinstance(cfg, dict) else {}
+        if type(cfg) is not dict:
+            return {}
+        for settings in (cfg, cfg.get("gemini", {})):
+            if type(settings) is not dict or type(settings.get("enabled", False)) is not bool:
+                return {}
+            timeout = settings.get("timeout_s", 20)
+            tokens = settings.get("max_tokens", 120)
+            model = settings.get("model", "default")
+            if (type(timeout) not in (int, float) or not math.isfinite(timeout) or not 0 < timeout <= 120
+                    or type(tokens) is not int or not 1 <= tokens <= 4096
+                    or type(model) is not str or not model.strip() or len(model) > 128):
+                return {}
+        compare = cfg.get("compare", {})
+        if (type(compare) is not dict or type(compare.get("enabled", False)) is not bool
+                or type(compare.get("log", "tray_polish_compare.jsonl")) is not str
+                or compare.get("prefer", "gpt") not in ("gpt", "gemini")):
+            return {}
+        return cfg
     except Exception:
         return {}
 
 
 def enabled() -> bool:
-    """GPT master switch. Missing config == enabled (legacy default)."""
-    return bool(_config().get("enabled", True))
+    """External GPT backend requires explicit boolean opt-in."""
+    return _config().get("enabled") is True
 
 
 def gemini_enabled() -> bool:
     """Gemini switch. Missing section == disabled (explicit opt-in)."""
-    return bool(_config().get("gemini", {}).get("enabled", False))
+    return _config().get("gemini", {}).get("enabled") is True
 
 
 def _reset() -> None:
@@ -118,7 +137,7 @@ def _attempt(provider: str, line: str) -> tuple[bool, str, int]:
     """
     cfg = _config()
     if provider == "gpt":
-        if _dead["gpt"] or not enabled() or not os.path.isfile(SKILL_BIN or ""):
+        if _dead["gpt"] or cfg.get("enabled") is not True or not os.path.isfile(SKILL_BIN or ""):
             return (False, "", 0)
         cmd = [
             sys.executable, SKILL_BIN, line,
@@ -128,7 +147,7 @@ def _attempt(provider: str, line: str) -> tuple[bool, str, int]:
         timeout = float(cfg.get("timeout_s", 20))
     elif provider == "gemini":
         g = cfg.get("gemini", {})
-        if _dead["gemini"] or not gemini_enabled() or not os.path.isfile(GEMINI_BIN or ""):
+        if _dead["gemini"] or g.get("enabled") is not True or not os.path.isfile(GEMINI_BIN or ""):
             return (False, "", 0)
         cmd = [
             sys.executable, GEMINI_BIN,

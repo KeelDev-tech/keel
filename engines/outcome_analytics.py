@@ -64,10 +64,12 @@ import json
 import os
 import re
 import sys
+from urllib.parse import urlsplit, urlunsplit
 from datetime import datetime, timezone
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 from keel_paths import HOME as PIPE  # noqa: E402
+from safe_io import loads, digest
 OUT_DIR = os.path.join(PIPE, "hidden_files", "outcome-tracking")
 
 MIN_N = 5            # minimum denominator before a rate is reported
@@ -106,21 +108,54 @@ def load_linkable_rows(ledger_path=None):
     return [r for r in rows if r.get("status") in LINKABLE_STATUSES]
 
 
-def load_responses(events_path=None):
+def load_responses(events_path=None, *, receipts_path=None):
     path = events_path or os.path.join(PIPE, "data", "telemetry", "events.jsonl")
     out = []
+    from outcome_tracking.receipt_intake import ReceiptStore
+    receipt_path = receipts_path or os.path.join(OUT_DIR, "receipt-observations.json")
+    receipt_state = ({key: (receipt, conflict) for key, receipt, conflict in ReceiptStore(receipt_path).snapshot()}
+                     if os.path.isfile(receipt_path) else {})
+    seen = {}
     with open(path) as f:
         for line in f:
             line = line.strip()
             if not line:
                 continue
-            try:
-                e = json.loads(line)
-            except Exception:
-                continue
+            if len(line.encode("utf-8")) > 256 * 1024:
+                raise ValueError("event exceeds 256 KiB")
+            e = loads(line)
+            if not isinstance(e, dict):
+                raise ValueError("event must be an object")
+            eid = e.get("event_id")
+            if eid:
+                fingerprint = digest(e)
+                if eid in seen:
+                    if seen[eid] != fingerprint:
+                        raise ValueError("conflicting event identifier")
+                    continue
+                seen[eid] = fingerprint
             if e.get("event_type") != "employer_response":
                 continue
             d = e.get("details", {}) or {}
+            if not isinstance(d, dict):
+                raise ValueError("event details must be an object")
+            identities, conflicts = {}, []
+            receipt_key = d.get("receipt_key")
+            if receipt_key:
+                stored = receipt_state.get(receipt_key)
+                if stored is None:
+                    conflicts.append("receipt_state_unavailable")
+                elif stored[1]:
+                    conflicts.append("receipt_conflict")
+                elif (stored[0]["receipt_id"] != d.get("message_id")
+                      or any((stored[0].get("resolved_identity") or stored[0]).get(field) != (e.get(field) or d.get(field) or "")
+                             for field in ("role_id", "attempt_id", "application_id"))):
+                    conflicts.append("receipt_binding_mismatch")
+            for field in ("application_id", "attempt_id", "role_id"):
+                outer, inner = e.get(field), d.get(field)
+                if outer and inner and outer != inner:
+                    conflicts.append(field)
+                identities[field] = outer or inner or ""
             outcome = (d.get("outcome") or "").strip().upper()
             if outcome not in VALID_OUTCOMES:
                 legacy = (d.get("response") or "").strip().lower()
@@ -138,7 +173,11 @@ def load_responses(events_path=None):
                 "outcome": outcome,
                 "source": e.get("source") or "",
                 # Linkage evidence (additive; powers deterministic tiers).
-                "role_id": (d.get("role_id") or "").strip(),
+                **identities,
+                "identity_conflict": ",".join(conflicts),
+                "evidence_kind": d.get("evidence_kind") or "legacy_unverified",
+                "observed_identity": d.get("observed_identity"),
+                "resolved_identity": d.get("resolved_identity"),
                 "receipt_ref": (d.get("receipt_ref") or
                                 d.get("submission_ref") or
                                 d.get("confirmation_ref") or "").strip(),
@@ -220,7 +259,7 @@ HOLD_AMBIGUOUS_FOR_REVIEW = True
 # Query version pinned into every report's snapshot block. Bump when the
 # linkage rules, denominators, or metric definitions change so
 # historical reports stay comparable.
-QUERY_VERSION = "outcome-analytics/1"
+QUERY_VERSION = "outcome-analytics/2"
 
 # Plain-language denominator contract, published in every snapshot.
 DENOMINATOR_DEFINITION = (
@@ -235,7 +274,13 @@ def _norm_ref(ref):
 
 def _norm_url(url):
     """Normalize a posting/application URL for identity comparison."""
-    return (url or "").strip().rstrip("/").lower()
+    value = (url or "").strip()
+    try:
+        parsed = urlsplit(value)
+        return urlunsplit((parsed.scheme.lower(), parsed.netloc.lower(),
+                           parsed.path.rstrip("/"), parsed.query, parsed.fragment))
+    except ValueError:
+        return value
 
 
 def _row_refs(r):
@@ -265,175 +310,89 @@ def _row_confirmation_evidence(r):
                                           "confirmation_url")]
 
 
-def link_responses(rows, events):
-    """Attribute each response event to one linkable ledger row.
+def link_responses(rows, events, *, allow_company_fallback=True):
+    """Join all supplied identities conjunctively; hold conflicts and ambiguity.
 
-    Tiered linkage (first hit wins):
-      Tier 1 — deterministic: event details.role_id matches a linkable
-        row's role_id.
-      Tier 2 — receipt: event details.receipt_ref (or submission_ref /
-        confirmation_ref) matches the row's submission_ref / receipt_ref
-        / confirmation_ref exactly, or appears inside the row's
-        confirmation_text / confirmation_url evidence.
-      Tier 3 — provider identity: event details.posting_url matches the
-        row's posting_url / application_url exactly (normalized), or the
-        event's ats_job_id appears inside a row posting URL.
-      Tier 4 — company-name fallback: normalized company match; among
-        matching linkable rows, the latest-date<=ts rule applies.
-        If the company name matches more than one distinct linkable row,
-        the event is NOT attributed — it is held for review when
-        HOLD_AMBIGUOUS_FOR_REVIEW is True (fail-closed; ambiguous matches
-        are never silently resolved).
-
-    All tiers require a parseable submission date no later than the
-    response date. An explicit role identity that cannot match stays
-    unlinked; it must not fall back to another application at the company.
-    Only rows whose status is in LINKABLE_STATUSES are indexed at any
-    tier (dead rows stay unlinked even if a caller passes them unfiltered
-    — fail-closed). The listener's raw company_key is normalized the same
-    way as ledger names before matching.
-
-    Every linked or held event is a COPY of the input event with a
-    "linkage" provenance dict {"tier", "rule", "basis"} attached; the
-    original event dicts are never mutated. Unlinked events pass through
-    unchanged (no company match at any tier).
-
-    Returns (linked, unlinked, held_for_review): linked is row-index ->
-    [event copies] into the `rows` list passed in; unlinked is the list
-    of events with no match; held_for_review is the list of ambiguous
-    tier-4 event copies. Held events are neither linked nor unlinked and
-    must stay OUT of rate denominators.
+    Chronology is mandatory. Company-only inference is available for legacy
+    reports, explicitly tier 4; intake can disable it. No ID tier silently wins
+    over contradictory evidence, and duplicate role IDs never select a first row.
     """
-    linkable_idx = [i for i, r in enumerate(rows)
-                    if r.get("status") in LINKABLE_STATUSES]
-    by_company = collections.defaultdict(list)
-    by_role_id = {}
-    by_ref = collections.defaultdict(list)
-    by_url = collections.defaultdict(list)
-    for i in linkable_idx:
-        r = rows[i]
-        key = norm_company(r.get("company"))
-        if key:
-            by_company[key].append(i)
-        rid = (r.get("role_id") or "").strip()
-        if rid and rid not in by_role_id:
-            by_role_id[rid] = i
-        for ref in _row_refs(r):
-            by_ref[ref].append(i)
-        for u in _row_urls(r):
-            by_url[u].append(i)
+    linkable = [i for i, row in enumerate(rows)
+                if row.get("status") in LINKABLE_STATUSES]
+    linked, unlinked, held = collections.defaultdict(list), [], []
 
-    linked = collections.defaultdict(list)
-    unlinked = []
-    held = []
+    def attach(event, tier, rule, basis):
+        return {**event, "linkage": {"tier": tier, "rule": rule, "basis": basis}}
 
-    def attach(e, tier, rule, basis):
-        """Copy the event and attach tier provenance (never mutates e)."""
-        c = dict(e)
-        c["linkage"] = {"tier": tier, "rule": rule, "basis": basis}
-        return c
-
-    for e in events:
-        ets = parse_ts(e.get("ts"))
-        eligible = {i for i in linkable_idx
-                    if ets is not None
-                    and (sts := parse_ts(rows[i].get("date_submitted"))) is not None
-                    and sts <= ets}
-        if not eligible:
-            unlinked.append(e)
+    for event in events:
+        if event.get("identity_conflict"):
+            held.append(attach(event, 1, "conflicting event identities held for review",
+                               str(event["identity_conflict"])))
             continue
-        # --- Tier 1: deterministic role_id match ---------------------
-        rid = (e.get("role_id") or "").strip()
-        if rid:
-            i = by_role_id.get(rid)
-            if i in eligible:
-                linked[i].append(attach(e, 1, "role_id match",
-                                        f"event role_id={rid!r} == row "
-                                        f"role_id (row idx {i})"))
-            else:
-                unlinked.append(e)
-            continue
-        # --- Tier 2: receipt / submission ref -------------------------
-        ref = _norm_ref(e.get("receipt_ref") or e.get("submission_ref"))
-        tier2 = None
-        ref_candidates = sorted(set(by_ref.get(ref, [])) & eligible)
-        if ref and ref_candidates:
-            i = ref_candidates[0]
-            tier2 = (i, f"event receipt_ref={ref!r} == row ref (row idx {i})")
-        if tier2 is None and ref:
-            for i in sorted(eligible):  # reference inside confirmation evidence
-                ev = [x for x in _row_confirmation_evidence(rows[i])
-                      if re.search(r"(?<![a-z0-9_-])" + re.escape(ref)
-                                   + r"(?![a-z0-9_-])", x.lower())]
-                if ev:
-                    tier2 = (i, f"event receipt_ref={ref!r} inside row "
-                                f"confirmation evidence (row idx {i})")
-                    break
-        if tier2 is not None:
-            i, basis = tier2
-            linked[i].append(attach(e, 2, "receipt_ref match", basis))
-            continue
+        stamp = parse_ts(event.get("ts"))
+        eligible = {i for i in linkable if stamp is not None
+                    and (submitted := parse_ts(rows[i].get("date_submitted")
+                                               or rows[i].get("submitted_at"))) is not None
+                    and submitted <= stamp}
+        facets = []
+        for field in ("application_id", "attempt_id", "role_id"):
+            value = event.get(field)
+            if value not in (None, ""):
+                if not isinstance(value, str) or value != value.strip():
+                    facets.append((1, field, set()))
+                else:
+                    facets.append((1, field, {i for i in linkable
+                                             if rows[i].get(field) == value}))
+        ref = _norm_ref(event.get("receipt_ref") or event.get("submission_ref"))
         if ref:
-            unlinked.append(e)
+            facets.append((2, "receipt_ref", {i for i in linkable
+                if ref in _row_refs(rows[i]) or any(
+                    re.search(r"(?<![a-z0-9_-])" + re.escape(ref) + r"(?![a-z0-9_-])", text.lower())
+                    for text in _row_confirmation_evidence(rows[i]))}))
+        url = _norm_url(event.get("posting_url"))
+        if url:
+            facets.append((3, "posting_url", {i for i in linkable if url in _row_urls(rows[i])}))
+        job = str(event.get("ats_job_id") or "").strip().lower()
+        if job:
+            facets.append((3, "ats_job_id", {i for i in linkable
+                if str(rows[i].get("ats_job_id") or "").lower() == job or any(
+                    re.search(r"(?<![a-z0-9_-])" + re.escape(job) + r"(?![a-z0-9_-])", u)
+                    for u in _row_urls(rows[i]))}))
+        if facets:
+            common = set.intersection(*(candidates for _, _, candidates in facets))
+            candidates = common & eligible
+            tier = min(t for t, _, _ in facets)
+            basis = ", ".join(name for _, name, _ in facets)
+            if len(candidates) == 1:
+                i = next(iter(candidates))
+                linked[i].append(attach(event, tier, basis + " match", f"all identities agree (row idx {i})"))
+            elif len(candidates) > 1 or (not common and len(facets) > 1 and any(c for _, _, c in facets)):
+                held.append(attach(event, tier, "ambiguous or conflicting identity held for review", basis))
+            else:
+                unlinked.append(event)
             continue
-        # --- Tier 3: posting / ATS job identity -----------------------
-        eurl = _norm_url(e.get("posting_url"))
-        jobid = (e.get("ats_job_id") or "").strip().lower()
-        tier3 = None
-        url_candidates = sorted(set(by_url.get(eurl, [])) & eligible)
-        if eurl and url_candidates:
-            i = url_candidates[0]
-            tier3 = (i, f"event posting_url == row posting_url (row idx {i})")
-        if tier3 is None and jobid:
-            for i in sorted(eligible):
-                if any(re.search(r"(?<![a-z0-9_-])" + re.escape(jobid)
-                                 + r"(?![a-z0-9_-])", u)
-                       for u in _row_urls(rows[i])):
-                    tier3 = (i, f"event ats_job_id={jobid!r} inside row "
-                                f"posting_url (row idx {i})")
-                    break
-        if tier3 is not None:
-            i, basis = tier3
-            linked[i].append(attach(e, 3, "posting/ats identity match",
-                                    basis))
+        if not allow_company_fallback:
+            unlinked.append(event)
             continue
-        if eurl or jobid:
-            unlinked.append(e)
-            continue
-        # --- Tier 4: company-name fallback ------------------------------
-        keys = {norm_company(e.get("company")),
-                norm_company(e.get("company_key"))}
-        keys.discard("")
-        cand = []
-        for k in keys:
-            cand.extend(by_company.get(k, []))
-        cand = sorted(set(cand) & eligible)
-        if not cand:
-            unlinked.append(e)
-            continue
-        identities = {_row_id_key(rows[i]) for i in cand}
-        if len(identities) > 1 and HOLD_AMBIGUOUS_FOR_REVIEW:
-            held.append(attach(
-                e, 4, "ambiguous company match held for review",
-                f"company {e.get('company')!r} matched "
-                f"{len(identities)} distinct linkable rows; not attributed"))
-            continue
-        best, best_sub = None, None
-        for i in cand:
-            sts = parse_ts(rows[i].get("date_submitted"))
-            if ets and sts and sts <= ets and (best_sub is None or sts > best_sub):
-                best, best_sub = i, sts
-        i = best
-        linked[i].append(attach(
-            e, 4, "company-name fallback (latest-date<=ts rule)",
-            f"company {e.get('company')!r} matched 1 row; latest "
-            f"date_submitted<=ts attributed (row idx {i})"))
+        keys = {norm_company(event.get("company")), norm_company(event.get("company_key"))} - {""}
+        candidates = [i for i in sorted(eligible) if norm_company(rows[i].get("company")) in keys]
+        if not candidates:
+            unlinked.append(event)
+        elif len(candidates) > 1 and HOLD_AMBIGUOUS_FOR_REVIEW:
+            held.append(attach(event, 4, "ambiguous company match held for review",
+                               f"matched {len(candidates)} rows; not attributed"))
+        else:
+            i = max(candidates, key=lambda index: parse_ts(rows[index].get("date_submitted")
+                                                          or rows[index].get("submitted_at")))
+            linked[i].append(attach(event, 4, "company-name fallback (latest-date<=ts rule)",
+                                   f"legacy inference only (row idx {i})"))
     return linked, unlinked, held
 
 
 def _row_id(r):
     """Stable identity for cross-list index mapping."""
-    return r.get("role_id") or (r.get("company"), r.get("title"))
+    return (r.get("application_id"), r.get("role_id"), r.get("attempt_id"),
+            r.get("date_submitted"), r.get("company"), r.get("title"))
 
 
 def _row_id_key(r):
@@ -687,15 +646,11 @@ def build_report(rows, events, link_rows=None):
                    "unlinked_rate": round(unlinked_rate, 3),
                    "events_held_for_review": len(held),
                    "held_rate": round(held_rate, 3)},
-        "linking_rule": ("tiered linkage: (1) deterministic role_id "
-                         "match; (2) receipt/submission-ref match; "
-                         "(3) posting_url / ats_job_id identity match; "
-                         "(4) normalized company-name fallback "
-                         "attributed to the most recent linkable ledger "
-                         "row (SUBMITTED / INTERVIEW_INVITED / WAITLISTED / "
-                         "ASSESSMENT) at-or-before the event ts. "
-                         "Ambiguous company matches are held for review, "
-                         "never silently resolved"),
+        "linking_rule": ("All supplied application/attempt/role IDs, normalized receipt references "
+                         "and posting identities must agree on one chronological row. "
+                         "Conflicts and ambiguous matches are held for review. Legacy "
+                         "company-only single-candidate links remain labeled tier-4 inference; "
+                         "inbox intake requires an exact identity."),
         "min_n_for_rates": MIN_N,
         "snapshot": _snapshot(rows, events, held, unlinked, linked),
         "data_gaps": gaps,
@@ -837,14 +792,17 @@ def threshold_crossings(prev, report):
 
 def main(argv):
     out_dir = OUT_DIR
+    receipts_path = None
     for i, a in enumerate(argv):
         if a == "--out" and i + 1 < len(argv):
             out_dir = argv[i + 1]
+        if a == "--receipts" and i + 1 < len(argv):
+            receipts_path = argv[i + 1]
     os.makedirs(out_dir, exist_ok=True)
 
     rows = load_submitted()
     link_rows = load_linkable_rows()
-    events = load_responses()
+    events = load_responses(receipts_path=receipts_path)
     report = build_report(rows, events, link_rows)
 
     stamp = datetime.now().strftime("%Y%m%d-%H%M")

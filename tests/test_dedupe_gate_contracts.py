@@ -63,6 +63,12 @@ def _write_ledger(tmp_path, rows):
     return str(p)
 
 
+def _write_queue(tmp_path):
+    p = tmp_path / "queue.json"
+    p.write_text("[]")
+    return str(p)
+
+
 # ---------------------------------------------------------------------------
 # FIX 1 — ledger path unification
 # ---------------------------------------------------------------------------
@@ -93,7 +99,7 @@ def test_fix1_default_path_reads_data_convention_ledger(tmp_path, monkeypatch):
     monkeypatch.setattr(dedupe_gate, "LEDGER",
                         _write_ledger(tmp_path, [_submitted_row()]))
     monkeypatch.setattr(dedupe_gate, "STANDARD_QUEUE",
-                        str(tmp_path / "missing-queue.json"))
+                        _write_queue(tmp_path))
     verdict, evidence = dedupe_gate.check_candidate(
         COMPANY, TITLE, "https://ledger.example.com/applied/1")
     assert verdict == "duplicate"
@@ -144,11 +150,10 @@ def test_fix2_mixed_rows_only_submitted_blocks():
     verdict, evidence = dedupe_gate.check_candidate(
         COMPANY, TITLE, FRESH_URL,
         ledger_rows=rows, queue_entries=[])
-    # The REJECTED row matches the URL but is filtered; the SUBMITTED row
-    # matches on employer+title instead.
-    assert verdict == "duplicate"
-    assert evidence["kind"] == "duplicate_of_submitted"
-    assert evidence["match"] == "employer_title"
+    # Exact REJECTED URL is filtered. Similar title is advisory only.
+    assert verdict == "suspect"
+    assert evidence["kind"] == "possible_duplicate"
+    assert evidence["match"] == "name_or_title"
 
 
 # ---------------------------------------------------------------------------
@@ -168,29 +173,29 @@ def test_fix3_urls_of_collects_all_fields_in_order():
 
 def test_fix3_secondary_url_field_match_dupes_via_filter_batch():
     """Reproduced case: ats_url fresh, application_url matches SUBMITTED."""
-    row = _submitted_row(posting_url="https://ledger.example.com/applied/1")
+    row = _submitted_row(posting_url="https://jobs.lever.co/acme/applied-1")
     entry = {"role_id": "SYN-E-1", "company": COMPANY, "title": TITLE,
              "ats_url": FRESH_URL,
-             "application_url": "https://ledger.example.com/applied/1"}
+             "application_url": "https://jobs.lever.co/acme/applied-1"}
     fresh, dupes = dedupe_gate.filter_batch(
         [entry], ledger_rows=[row], queue_entries=[])
     assert fresh == []
     assert len(dupes) == 1
     assert dupes[0]["dedupe_evidence"]["kind"] == "duplicate_of_submitted"
-    assert dupes[0]["dedupe_evidence"]["match"] == "posting_url"
+    assert dupes[0]["dedupe_evidence"]["match"] == "posting_identity"
 
 
 def test_fix3_check_candidate_urls_param_and_single_url_fallback():
-    row = _submitted_row(posting_url="https://ledger.example.com/applied/1")
+    row = _submitted_row(posting_url="https://jobs.lever.co/acme/applied-1")
     # urls= given: second field matches -> duplicate
     verdict, _ = dedupe_gate.check_candidate(
         COMPANY, TITLE, FRESH_URL,
         ledger_rows=[row], queue_entries=[],
-        urls=[FRESH_URL, "https://ledger.example.com/applied/1"])
+        urls=[FRESH_URL, "https://jobs.lever.co/acme/applied-1"])
     assert verdict == "duplicate"
     # urls=None: falls back to the single url arg (legacy shape)
     verdict, _ = dedupe_gate.check_candidate(
-        COMPANY, TITLE, "https://ledger.example.com/applied/1",
+        COMPANY, TITLE, "https://jobs.lever.co/acme/applied-1",
         ledger_rows=[row], queue_entries=[])
     assert verdict == "duplicate"
     # urls=None: falls back to the single url arg (legacy shape). Use a
@@ -206,7 +211,7 @@ def test_fix3_single_url_main_shape_unaffected(tmp_path, monkeypatch):
     monkeypatch.setattr(dedupe_gate, "LEDGER",
                         _write_ledger(tmp_path, [_submitted_row()]))
     monkeypatch.setattr(dedupe_gate, "STANDARD_QUEUE",
-                        str(tmp_path / "missing-queue.json"))
+                        _write_queue(tmp_path))
     verdict, _ = dedupe_gate.check_candidate(
         COMPANY, TITLE, "https://ledger.example.com/applied/1")
     assert verdict == "duplicate"
@@ -224,7 +229,7 @@ def _remote_suffix_ledger(tmp_path, monkeypatch):
                     "title": "Backend Engineer", "status": "SUBMITTED",
                     "posting_url": "https://ledger.example.com/applied/9"}]))
     monkeypatch.setattr(dedupe_gate, "STANDARD_QUEUE",
-                        str(tmp_path / "missing-queue.json"))
+                        _write_queue(tmp_path))
 
 
 def test_fix4_ashby_enumerator_strips_remote_suffix_before_gate(
@@ -244,10 +249,9 @@ def test_fix4_ashby_enumerator_strips_remote_suffix_before_gate(
 
     monkeypatch.setattr(ashby, "fetch_board_json", fake_fetch)
     out = ashby.enumerate_boards([("ashby", "acme", "Acme Corp")], live=False)
-    # Both the Remote-suffixed and the plain title must hit the SUBMITTED
-    # row identically. Pre-fix the suffixed one verified "suspect"/"fresh".
-    assert out["per_board"]["ashby:acme"]["duplicates_skipped"] == 2
-    assert out["entries"] == []
+    # Normalized titles are similar, but distinct posting URLs must survive.
+    assert out["per_board"]["ashby:acme"]["duplicates_skipped"] == 0
+    assert len(out["entries"]) == 2
 
 
 def test_fix4_greenhouse_enumerator_strips_remote_suffix_before_gate(
@@ -267,8 +271,8 @@ def test_fix4_greenhouse_enumerator_strips_remote_suffix_before_gate(
 
     monkeypatch.setattr(gh, "fetch_board_json", fake_fetch)
     out = gh.enumerate_boards(["acme"], live=False)
-    assert out["per_board"]["acme"]["duplicates_skipped"] == 2
-    assert out["entries"] == []
+    assert out["per_board"]["acme"]["duplicates_skipped"] == 0
+    assert len(out["entries"]) == 2
 
 
 def test_fix4_role_id_still_built_from_raw_title(tmp_path, monkeypatch):
@@ -279,7 +283,7 @@ def test_fix4_role_id_still_built_from_raw_title(tmp_path, monkeypatch):
     monkeypatch.setattr(dedupe_gate, "LEDGER",
                         _write_ledger(tmp_path, []))
     monkeypatch.setattr(dedupe_gate, "STANDARD_QUEUE",
-                        str(tmp_path / "missing-queue.json"))
+                        _write_queue(tmp_path))
 
     def fake_fetch(platform, board):
         return {"jobs": [

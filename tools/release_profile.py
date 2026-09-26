@@ -106,6 +106,8 @@ def capability_report(workspace, code_root=ROOT):
         'local_machine_runtime': present('keel_machine/runtime.py', 'keel_muse/coordinator.py',
                                          'keel_agent/state.py'),
         'offline_pipeline_benchmark': present('keel_next/benchmark.py'),
+        'guarded_evolution_engine': present('keel_evolve/core.py', 'keel_evolve/demo.py',
+                                            'keel_eval/reliability.py'),
     }
     return {
         'schema_version': 1,

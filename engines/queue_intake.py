@@ -186,11 +186,11 @@ def validate_batch(entries, dedupe=True):
 
     dedupe (default True, ARM 51): run the discovery dedupe gate on every
     entry — hard "duplicate" verdicts (normalized posting URL already
-    SUBMITTED in the ledger or already in the standard queue, or
-    employer containment + title equality) become errors, so the entry
+    SUBMITTED in the ledger or already in an explicitly configured queue)
+    become errors, so the entry
     must be logged as `gate_encountered` (duplicate_of_submitted) instead
-    of `lead_discovered`. "suspect" verdicts (name or title matched
-    alone) become warnings and never block intake. Pass dedupe=False only
+    of `lead_discovered`. "suspect" verdicts (similarity or incomplete identity coverage)
+    become warnings and never block intake. Pass dedupe=False only
     for historical re-validation sweeps that must not re-judge.
     """
     from dedupe_gate import check_candidate, _company, _url_of
@@ -207,7 +207,7 @@ def validate_batch(entries, dedupe=True):
                 seen[rid] = i
         if dedupe and isinstance(e, dict):
             verdict, evidence = check_candidate(
-                _company(e), e.get("title"), _url_of(e))
+                _company(e), e.get("title"), _url_of(e), urls=e)
             if verdict == "duplicate":
                 errors.append(
                     f"duplicate_of_submitted: {evidence.get('match')} "
@@ -216,8 +216,8 @@ def validate_batch(entries, dedupe=True):
                     f"not lead_discovered")
             elif verdict == "suspect":
                 warnings.append(
-                    f"possible_duplicate: {evidence.get('ledger_role_id')} "
-                    f"matched on name-or-title alone — human judgment")
+                    f"dedupe_advisory: {evidence.get('kind')} — "
+                    f"identity or coverage needs review")
         if errors or warnings:
             bad[rid or f"index-{i}"] = (errors, warnings)
     return bad

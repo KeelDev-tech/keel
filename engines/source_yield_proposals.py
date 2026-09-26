@@ -13,8 +13,8 @@ Safety model (standing doctrine):
   with status `proposed`; the weekly charter-evaluator triage owns verdicts.
 - Hard guard: never propose demoting a source that produced a submission in
   the trailing submission window. The recency check is evidence-backed
-  (telemetry `submitted` events attributed by role_id prefix). A source that
-  still converts is never decayed by this module.
+  (explicit source IDs on telemetry submission observations). Unattributed
+  submissions hold demotions for reconciliation; a prefix is not attribution.
 
 Wiring: the dev-support-deep-sweep Sweep arm runs this with `--check-open`
 at the start of its source-yield judgment and publishes emitted proposals
@@ -24,23 +24,27 @@ as `proposed` instead of hand-detecting decay.
 import argparse
 import datetime as dt
 import json
+import math
 import os
 import re
 import subprocess
 import sys
 from collections import defaultdict
 
-HOME = os.path.expanduser("~")
+_TASK_HOME = os.path.expanduser("~")
 # Private-host data layout. The host may point at its own data tree via
 # KEEL_JOB_PIPELINE_DIR; the default matches this host's layout and is not
-# part of the public contract. Readers below fail soft (OSError -> empty)
-# so a foreign host degrades to no-data, never to a crash.
+# part of the public contract. Missing or malformed inputs produce HOLD,
+# never an empty-success report or a proposal based on partial evidence.
 _JOB_PIPE = os.environ.get("KEEL_JOB_PIPELINE_DIR",
-                           os.path.join(HOME, "workspace/job-pipeline"))
+                           os.path.join(_TASK_HOME, "workspace/job-pipeline"))
 TELEMETRY = os.path.join(_JOB_PIPE, "telemetry/events.jsonl")
 ROSTER = os.path.join(_JOB_PIPE, "discovery/source-roster.md")
 # Repo-local tooling: resolved from this checkout, never from a home dir.
 _KEEL = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _KEEL not in sys.path:
+    sys.path.insert(0, _KEEL)
+from engines.safe_io import loads as strict_loads, canonical, aware_time
 BLACKBOARD = os.path.join(_KEEL, "monitors", "blackboard.py")
 
 # Bars (2026-09-17; change only via human-approved proposal / Trent directive)
@@ -107,11 +111,7 @@ CADENCE_DAYS = {
 
 
 def family_of(role_id):
-    """Longest-prefix match on role_id; None for unmapped prefixes.
-
-    Kept for the submission-recency guard and as the fallback attribution
-    signal; staging-file matching (family_of_event) takes precedence.
-    """
+    """Legacy display hint only. Never used to attribute measured yield."""
     rid = (role_id or "").upper()
     for prefix in sorted(PREFIX_TO_FAMILY, key=len, reverse=True):
         if rid.startswith(prefix + "-") or rid == prefix:
@@ -120,59 +120,94 @@ def family_of(role_id):
 
 
 def family_of_event(e):
-    """Attribution for a staged event: staging-file substring first
-    (names the sweep), role_id prefix as fallback. None -> not ranked,
-    never proposed on."""
-    sf = ((e.get("details") or {}).get("staging_file") or "").lower()
-    for needle, fam in STAGING_FILE_TO_FAMILY:
-        if needle in sf:
-            return fam
-    return family_of(e.get("role_id", ""))
+    """Only an explicit, nonconflicting source_id can own measured yield."""
+    if not isinstance(e, dict) or not isinstance(e.get("details", {}), dict):
+        return None
+    values = [v for v in (e.get("source_id"), e.get("details", {}).get("source_id")) if v is not None]
+    if not values or any(type(v) is not str or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}", v)
+                         for v in values) or len(set(values)) != 1:
+        return None
+    return values[0]
 
 
 def parse_ts(s):
     try:
-        return dt.datetime.fromisoformat(str(s).replace("Z", "+00:00"))
-    except Exception:
+        return aware_time(s)
+    except (ValueError, TypeError, OverflowError):
         return None
 
 
-def load_events(since):
-    events = []
-    try:
-        with open(TELEMETRY) as f:
-            for line in f:
-                try:
-                    e = json.loads(line)
-                except Exception:
-                    continue
-                ts = parse_ts(e.get("ts", ""))
-                if ts and ts >= since:
-                    events.append(e)
-    except OSError:
-        pass
-    return events
+def _checked_events(events, now):
+    if not isinstance(now, dt.datetime) or now.utcoffset() is None:
+        raise ValueError("aware_now_required")
+    seen, result = {}, []
+    for e in events:
+        if (type(e) is not dict or type(e.get("details", {})) is not dict
+                or type(e.get("event_type")) is not str):
+            raise ValueError("invalid_telemetry_event")
+        stamp = parse_ts(e.get("ts"))
+        if stamp is None or stamp > now:
+            raise ValueError("invalid_or_future_event_timestamp")
+        if e.get("synthetic_test") or e.get("details", {}).get("synthetic_test"):
+            continue
+        encoded = canonical(e)
+        eid = e.get("event_id")
+        if eid is not None and (type(eid) is not str or not eid.strip()):
+            raise ValueError("invalid_event_id")
+        key = ("id", eid) if eid is not None else ("content", encoded)
+        if key in seen:
+            if seen[key] != encoded:
+                raise ValueError("conflicting_event_id")
+            continue
+        seen[key] = encoded
+        result.append(e)
+        if len(result) > 100000:
+            raise ValueError("telemetry_event_limit")
+    return result
+
+
+def load_events(since, *, now=None):
+    now = now or dt.datetime.now(dt.timezone.utc)
+    if not isinstance(since, dt.datetime) or since.utcoffset() is None or since > now:
+        raise ValueError("invalid_window_start")
+    events, size = [], 0
+    with open(TELEMETRY, "rb") as stream:
+        while True:
+            raw = stream.readline(256 * 1024 + 1)
+            if not raw:
+                break
+            size += len(raw)
+            if len(raw) > 256 * 1024 or size > 32 * 1024 * 1024:
+                raise ValueError("telemetry_size_limit")
+            if raw.strip():
+                events.append(strict_loads(raw))
+    return [e for e in _checked_events(events, now) if parse_ts(e["ts"]) >= since]
 
 
 def parse_roster():
-    """heading -> {cadence_label, ceiling_days, last_swept(date)}. Best effort."""
+    """Read each level-two section independently; unknown cadence stays unknown."""
     roster = {}
-    try:
-        text = open(ROSTER).read()
-    except OSError:
-        return roster
-    for m in re.finditer(r"^## (.+)$", text, re.M):
+    with open(ROSTER) as stream:
+        text = stream.read(1024 * 1024 + 1)
+    if len(text) > 1024 * 1024:
+        raise ValueError("roster_size_limit")
+    headings = list(re.finditer(r"^#{1,2} (.+)$", text, re.M))
+    for index, m in enumerate(headings):
+        if not m.group(0).startswith("## "):
+            continue
         heading = m.group(1).strip()
         fam = HEADING_TO_FAMILY.get(heading)
         if not fam:
             continue
-        chunk = text[m.end(): m.end() + 4000]
+        if fam in roster:
+            raise ValueError("duplicate_roster_source")
+        chunk = text[m.end(): headings[index + 1].start() if index + 1 < len(headings) else len(text)]
         cad = re.search(r"^-\s*Cadence:\s*(.+?)\s*$", chunk, re.M)
         last = re.search(r"^-\s*Last swept:\s*(\d{4}-\d{2}-\d{2})", chunk, re.M)
         cadence_label = cad.group(1).strip() if cad else ""
         ceiling = None
-        for label, days in CADENCE_DAYS.items():
-            if label.upper() in cadence_label.upper():
+        for label, days in sorted(CADENCE_DAYS.items(), key=lambda item: -len(item[0])):
+            if re.search(r"(?<![A-Za-z])" + re.escape(label) + r"(?![A-Za-z])", cadence_label, re.I):
                 ceiling = days
                 break
         roster[fam] = {
@@ -187,62 +222,109 @@ def parse_roster():
 def batch_date(e):
     """Date of the staging batch (evidence), falling back to event date."""
     d = (e.get("details") or {}).get("batch", "")
+    if type(d) is not str:
+        raise ValueError("invalid_batch")
     m = re.search(r"(\d{4}-\d{2}-\d{2})", d)
     if m:
-        return m.group(1)
+        day = dt.date.fromisoformat(m.group(1))
+        stamp = parse_ts(e.get("ts"))
+        if stamp is None or day > stamp.date():
+            raise ValueError("future_batch_date")
+        return day.isoformat()
     ts = parse_ts(e.get("ts", ""))
     return ts.strftime("%Y-%m-%d") if ts else ""
 
 
-def rank_sources(events):
-    """Per-family yield stats from staged_ingested / staged_rejected events."""
-    stats = defaultdict(lambda: {
-        "ingested": 0, "dup_rejected": 0, "sweep_dates": set(),
-        "fits": [], "submitted": 0,
-    })
-    for e in events:
-        et = e.get("event_type")
+def _candidate_rows(event):
+    details = event.get("details", {})
+    if details.get("aggregate") is not True:
+        if type(event.get("role_id")) is not str or not event["role_id"].strip():
+            raise ValueError("candidate_identity_missing")
+        return [event]
+    reasons = details.get("reason_role_ids")
+    if (event["event_type"] != "staged_rejected" or type(reasons) is not dict
+            or not reasons or type(details.get("count")) is not int):
+        raise ValueError("aggregate_rejection_invalid")
+    rows, ids = [], []
+    for reason, members in sorted(reasons.items()):
+        if type(reason) is not str or type(members) is not list:
+            raise ValueError("aggregate_rejection_invalid")
+        for rid in members:
+            if type(rid) is not str or not rid.strip():
+                raise ValueError("candidate_identity_missing")
+            ids.append(rid)
+            rows.append({**event, "role_id": rid,
+                         "details": {**details, "reason": reason}})
+    if (len(ids) != details["count"] or len(ids) != len(set(ids))
+            or sorted(ids) != sorted(details.get("role_ids", []))
+            or details.get("reasons") != {reason: len(members) for reason, members in reasons.items()}):
+        raise ValueError("aggregate_rejection_count_mismatch")
+    return rows
+
+
+def rank_sources(events, *, now=None):
+    """Unique attributed candidate checks, with explicit duplicate reasons only."""
+    stats = defaultdict(lambda: {"ingested": 0, "dup_rejected": 0,
+        "other_rejected": 0, "sweep_dates": set(), "fits": {}, "new_ids": set(), "unscored": set()})
+    seen = {}
+    for event in _checked_events(events, now or dt.datetime.now(dt.timezone.utc)):
+        et = event["event_type"]
         if et not in ("staged_ingested", "staged_rejected"):
             continue
-        fam = family_of_event(e)
+        fam = family_of_event(event)
         if not fam:
             continue
-        s = stats[fam]
-        d = batch_date(e)
-        if d:
-            s["sweep_dates"].add(d)
-        if et == "staged_ingested":
-            s["ingested"] += 1
-            fit = (e.get("details") or {}).get("fit_score")
-            if isinstance(fit, (int, float)):
-                s["fits"].append(fit)
-        else:
-            s["dup_rejected"] += 1
+        for e in _candidate_rows(event):
+            details = e.get("details", {})
+            batch = details.get("batch") or e["ts"]
+            if type(batch) is not str:
+                raise ValueError("invalid_batch")
+            key = (fam, e["role_id"], batch)
+            reason = details.get("reason", "")
+            if type(reason) is not str:
+                raise ValueError("invalid_rejection_reason")
+            duplicate = (details.get("reason_code") == "DUPLICATE" or
+                         bool(re.match(r"^(?:precheck: )?duplicate(?:[: ]|$)", reason, re.I)))
+            semantic = (et, duplicate, details.get("fit_score"))
+            if key in seen:
+                if seen[key] != semantic:
+                    raise ValueError("conflicting_candidate_observation")
+                continue
+            seen[key] = semantic
+            st = stats[fam]
+            st["sweep_dates"].add(batch_date(e))
+            if et == "staged_ingested":
+                st["ingested"] += 1
+                st["new_ids"].add(e["role_id"])
+                fit = details.get("fit_score")
+                if type(fit) in (int, float) and math.isfinite(fit) and 0 <= fit <= 100:
+                    old = st["fits"].get(e["role_id"])
+                    measured = (parse_ts(e["ts"]), fit)
+                    if old is None or measured[0] > old[0]:
+                        st["fits"][e["role_id"]] = measured
+                    elif measured[0] == old[0] and fit != old[1]:
+                        raise ValueError("conflicting_fit_measurement")
+                else:
+                    st["unscored"].add(e["role_id"])
+            else:
+                st["dup_rejected" if duplicate else "other_rejected"] += 1
     out = {}
-    for fam, s in stats.items():
-        staged = s["ingested"] + s["dup_rejected"]
-        fits = sorted(s["fits"])
-        out[fam] = {
-            "ingested": s["ingested"],
-            "dup_rejected": s["dup_rejected"],
-            "net_new": s["ingested"],
-            "dup_rate": round(s["dup_rejected"] / staged, 4) if staged else 0.0,
-            "staged_total": staged,
-            "sweep_dates": sorted(s["sweep_dates"]),
-            "fit_median": fits[len(fits) // 2] if fits else None,
-        }
+    for fam, st in stats.items():
+        staged = st["ingested"] + st["dup_rejected"] + st["other_rejected"]
+        out[fam] = {"ingested": st["ingested"], "dup_rejected": st["dup_rejected"],
+                    "other_rejected": st["other_rejected"], "net_new": len(st["new_ids"]),
+                    "dup_rate": round(st["dup_rejected"] / staged, 4) if staged else 0.0,
+                    "staged_total": staged, "sweep_dates": sorted(st["sweep_dates"]),
+                    "fit_median": median([fit for _, fit in st["fits"].values()]),
+                    "fit_coverage_complete": bool(st["new_ids"]) and not st["unscored"]
+                                             and set(st["fits"]) == st["new_ids"]}
     return out
 
 
 def recent_submitter_families(events):
-    """Families with at least one `submitted` event (the demotion guard)."""
-    fams = set()
-    for e in events:
-        if e.get("event_type") == "submitted":
-            fam = family_of(e.get("role_id", ""))
-            if fam:
-                fams.add(fam)
-    return fams
+    """Protect explicit sources with a submission claim; '*' means unknown owner."""
+    return {family_of_event(e) or "*" for e in events
+            if e.get("event_type") in ("submitted", "submission_claimed", "submission_observed")}
 
 
 def open_proposal_families(loop):
@@ -254,9 +336,13 @@ def open_proposal_families(loop):
                 [sys.executable, BLACKBOARD, "show",
                  "--domain", "source-yield", "--status", status],
                 capture_output=True, text=True, timeout=30)
-            data = json.loads(out.stdout or "{}")
-        except Exception:
-            continue
+            if out.returncode != 0:
+                raise ValueError("blackboard_read_failed")
+            data = strict_loads(out.stdout)
+            if type(data) is not dict or type(data.get("entries")) is not list:
+                raise ValueError("blackboard_response_invalid")
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            raise ValueError("open_proposals_unverified") from None
         for ent in data.get("entries", []):
             title = (ent.get("title") or "").lower()
             for fam in set(PREFIX_TO_FAMILY.values()):
@@ -268,7 +354,10 @@ def open_proposal_families(loop):
 
 def median(xs):
     xs = sorted(xs)
-    return xs[len(xs) // 2] if xs else None
+    if not xs:
+        return None
+    middle = len(xs) // 2
+    return xs[middle] if len(xs) % 2 else (xs[middle - 1] + xs[middle]) / 2
 
 
 def build_demotion(fam, st, roster, window_hours):
@@ -303,9 +392,8 @@ def build_demotion(fam, st, roster, window_hours):
             "to delta-gated cadence — re-sweep only when a new roster cycle "
             "exists (e.g. new monthly thread) or the delta detector finds "
             "un-KEY'd board IDs; kills the intra-week delta sweep pattern. "
-            "Roster file is untouched by this module. COST: ~15-30 compute-min "
-            "for one dev arm to draft the roster change (no HTTP, no "
-            "browser); 0 Trent taps; 0 queue writes; risk LOW (proposal only)."
+            "Review effort is unmeasured; operator approval is required. "
+            "No queue, roster, or schedule changes are performed."
         ) % (fam, cadence),
     }
 
@@ -330,9 +418,9 @@ def build_promotion(fam, st, roster, window_hours):
         "proposal_or_fix": (
             "EXACT CHANGE (draft, needs human approval): raise %s cadence "
             "one step (e.g. WEEKLY->2x-weekly probe) or widen its sweep scope; "
-            "measure next-cycle yield against this baseline. COST: ~15-30 "
-            "compute-min for one dev arm (no HTTP); 0 Trent taps; 0 queue "
-            "writes; risk LOW (proposal only)."
+            "measure next-cycle yield against this baseline. Review effort "
+            "is unmeasured; operator approval is required. No queue, roster, "
+            "or schedule changes are performed."
         ) % fam,
     }
 
@@ -364,12 +452,30 @@ def intra_cadence_resweep(fam, st, roster):
     return False, ""
 
 
+def measured_resweep(st, roster_entry):
+    """Two dates prove a re-sweep only when their gap violates known cadence."""
+    ceiling = roster_entry.get("ceiling_days")
+    if type(ceiling) not in (int, float) or isinstance(ceiling, bool) or not math.isfinite(ceiling) or ceiling <= 0:
+        return False
+    dates = sorted(dt.date.fromisoformat(d) for d in st["sweep_dates"])
+    return any(0 < (b - a).days < ceiling for a, b in zip(dates, dates[1:]))
+
+
 def generate(events, roster, window_hours, guard_events,
-             skip_families=frozenset()):
+             skip_families=frozenset(), *, now=None):
     """Return (proposals, suppressed, healthy). Proposals only — nothing applied."""
-    stats = rank_sources(events)
+    now = now or dt.datetime.now(dt.timezone.utc)
+    if type(window_hours) is not int or not 1 <= window_hours <= 4320:
+        raise ValueError("invalid_window_hours")
+    events = _checked_events(events, now)
+    guard_events = _checked_events(guard_events, now)
+    if any(e["event_type"] in ("staged_ingested", "staged_rejected") and not family_of_event(e) for e in events):
+        return [], [{"family": None, "kind": "hold", "reason": "ATTRIBUTION_INCOMPLETE: explicit source IDs required"}], []
+    stats = rank_sources(events, now=now)
     submitters = recent_submitter_families(guard_events)
     proposals, suppressed, healthy = [], [], []
+    if not stats:
+        return [], [{"family": None, "kind": "hold", "reason": "NO_MEASURED_SOURCE_OBSERVATIONS"}], []
 
     for fam, st in sorted(stats.items()):
         if fam in skip_families:
@@ -380,24 +486,25 @@ def generate(events, roster, window_hours, guard_events,
         if (st["net_new"] >= PROMOTE_NET_NEW_MIN
                 and st["dup_rate"] < DUP_RATE_HEALTHY
                 and (st["fit_median"] or 0) >= PROMOTE_FIT_MEDIAN
+                and st["fit_coverage_complete"]
                 and (roster.get(fam, {}) or {}).get("ceiling_days")):
             proposals.append(build_promotion(fam, st, roster, window_hours))
             continue
         # --- decay bar: dup rate over bar on an intra-cadence re-sweep ---
         resweep, resweep_ev = intra_cadence_resweep(fam, st, roster)
-        resweep_in_window = len(st["sweep_dates"]) >= DECAY_SWEEP_DATES_MIN
+        resweep_in_window = measured_resweep(st, roster.get(fam, {}))
         if st["dup_rate"] >= DUP_RATE_DECAY and (resweep or resweep_in_window):
             if resweep_ev:
                 st = dict(st, resweep_note=resweep_ev)
-            if fam in submitters:
+            if fam in submitters or "*" in submitters:
                 suppressed.append({
                     "family": fam,
                     "kind": "demotion",
                     "reason": (
-                        "GUARD: %s produced a submission in the trailing "
-                        "submission window — decay bar met (%.1f%% dup%s) "
-                        "but the source still converts; no demotion "
-                        "proposed."
+                        "GUARD: %s has a submission observation, or an observation "
+                        "has unknown source ownership in the trailing window. "
+                        "Decay bar met (%.1f%% dup%s); reconcile before demotion. "
+                        "Provider acceptance is not authenticated here."
                     ) % (fam, st["dup_rate"] * 100,
                          (", " + st.get("resweep_note", "")) if st.get("resweep_note") else ""),
                 })
@@ -430,16 +537,44 @@ def main(argv=None):
     ap.add_argument("--publish", action="store_true",
                     help="publish proposals to the blackboard as `proposed` "
                          "(dry-run prints JSON by default)")
+    ap.add_argument("--feedback-input", help="bounded local measured-feedback JSON; proposal only")
+    ap.add_argument("--budget-minutes", type=int, help="whole human-minute budget, 0 through 240")
+    ap.add_argument("--now", help="explicit timezone-aware analysis time for reproducible replay")
     args = ap.parse_args(argv)
 
-    now = dt.datetime.now(dt.timezone.utc)
-    events = load_events(now - dt.timedelta(hours=args.window_hours))
-    guard_events = load_events(
-        now - dt.timedelta(days=args.submission_window_days))
-    roster = parse_roster()
-    skip = open_proposal_families(args.loop) if args.check_open else frozenset()
-    proposals, suppressed, healthy = generate(
-        events, roster, args.window_hours, guard_events, skip)
+    if bool(args.feedback_input) != (args.budget_minutes is not None):
+        ap.error("--feedback-input and --budget-minutes are required together")
+    if args.feedback_input and (args.publish or args.check_open):
+        ap.error("feedback budgets are local review proposals; --publish/--check-open do not apply")
+    try:
+        now = parse_ts(args.now) if args.now else dt.datetime.now(dt.timezone.utc)
+        if now is None:
+            raise ValueError("invalid_analysis_time")
+        if args.feedback_input:
+            from engines.source_feedback import propose
+            with open(args.feedback_input, "rb") as stream:
+                raw = stream.read(8 * 1024 * 1024 + 1)
+            if len(raw) > 8 * 1024 * 1024:
+                raise ValueError("feedback_size_limit")
+            result = propose(strict_loads(raw), budget_minutes=args.budget_minutes, now=now)
+            print(json.dumps(result, indent=1, allow_nan=False))
+            return 0 if result["status"] == "PROPOSAL_ONLY" else 2
+        if not 1 <= args.window_hours <= 4320 or not 1 <= args.submission_window_days <= 180:
+            raise ValueError("invalid_window")
+        # Read once, so ranking and submission protection share one snapshot.
+        oldest = now - dt.timedelta(hours=max(args.window_hours, args.submission_window_days * 24))
+        all_events = load_events(oldest, now=now)
+        events = [e for e in all_events if parse_ts(e["ts"]) >= now - dt.timedelta(hours=args.window_hours)]
+        guard_events = [e for e in all_events if parse_ts(e["ts"]) >= now - dt.timedelta(days=args.submission_window_days)]
+        roster = parse_roster()
+        skip = open_proposal_families(args.loop) if args.check_open else frozenset()
+        proposals, suppressed, healthy = generate(
+            events, roster, args.window_hours, guard_events, skip, now=now)
+    except (OSError, ValueError, TypeError, OverflowError, UnicodeError):
+        print(json.dumps({"status": "HOLD", "input_status": "UNVERIFIED",
+                          "reason": "Input missing, malformed, stale, contradictory, or outside its contract; review local measurements.",
+                          "proposals": [], "execution_authorized": False, "schedule_writes": 0}))
+        return 2
 
     result = {
         "generated_at": now.isoformat(),
@@ -448,6 +583,9 @@ def main(argv=None):
         "proposals": proposals,
         "suppressed": suppressed,
         "healthy": healthy,
+        "status": "HOLD" if any(p.get("kind") == "hold" for p in suppressed) else "PROPOSAL_ONLY",
+        "execution_authorized": False,
+        "schedule_writes": 0,
     }
 
     if args.publish:
@@ -468,7 +606,7 @@ def main(argv=None):
         result["published"] = published
 
     print(json.dumps(result, indent=1))
-    return 0
+    return 2 if result["status"] == "HOLD" else 0
 
 
 if __name__ == "__main__":

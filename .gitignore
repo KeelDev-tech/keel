@@ -1,4 +1,4 @@
-data/
+/data/
 __pycache__/
 *.pyc
 *.pyo
@@ -23,6 +23,9 @@ launch/instagram/
 # Marketing/pulse internals — never public
 hidden_files/
 monitors/
+!monitors/
+monitors/*
+!monitors/formation_writer.py
 
 # Internal launch-verification artifact (regenerable; embeds private paths)
 launch/proof-points.json

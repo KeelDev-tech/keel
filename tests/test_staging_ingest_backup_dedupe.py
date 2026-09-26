@@ -18,6 +18,7 @@ unittest style (no pytest on this VM), run with:
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -85,8 +86,8 @@ class TestBackupDedupe(BackupDedupeFixture):
                          f"backup-only duplicate must not reject: {rejected}")
         self.assertEqual(len(ingested), 1)
 
-    def test_triage_rejects_live_employer_title_duplicate(self):
-        """Live-queue employer+title duplicates still reject."""
+    def test_triage_preserves_distinct_id_with_same_employer_title(self):
+        """Name and title alone cannot establish posting identity."""
         json.dump([{"role_id": "LIVE-1", "company": "Landed",
                     "title": "Business Operations Manager", "status": "READY"}],
                   open(os.path.join(self.qdir, "standard-queue.json"), "w"))
@@ -94,9 +95,67 @@ class TestBackupDedupe(BackupDedupeFixture):
         ingested, rejected = si.triage([_lead("LANDED-BIZOPS-REMOTE-20260922")],
                                        queue_ids, queue_keys, set(),
                                        index=None)
-        self.assertEqual(len(ingested), 0)
-        self.assertEqual([r for r, _ in rejected],
-                         ["LANDED-BIZOPS-REMOTE-20260922"])
+        self.assertEqual(len(ingested), 1)
+        self.assertEqual(rejected, [])
+
+
+class TestBackupIntegrity(unittest.TestCase):
+    def test_corrupt_backup_aborts_before_queue_write_under_python_optimized(self):
+        """An actual damaged backup must stop real run_ingest even under -O."""
+        script = r'''
+import contextlib
+import os
+from pathlib import Path
+import sys
+
+root = Path(sys.argv[1])
+os.environ["KEEL_HOME"] = str(root)
+sys.path.insert(0, sys.argv[2])
+import staging_ingest as si
+
+queue = root / "data/queues/standard-queue.json"
+queue.parent.mkdir(parents=True)
+original = b"[]\n"
+queue.write_bytes(original)
+si.get_index = None
+si.materials_intake_gate = lambda entries, pipe: []
+events = []
+@contextlib.contextmanager
+def lock():
+    events.append("locked")
+    try:
+        yield
+    finally:
+        events.append("released")
+si.queue_io.queue_lock = lock
+real_copy = si.shutil.copy2
+def corrupt_backup(source, destination, *args, **kwargs):
+    result = real_copy(source, destination, *args, **kwargs)
+    Path(destination).write_bytes(b"corrupted backup")
+    return result
+si.shutil.copy2 = corrupt_backup
+try:
+    si.run_ingest([], "synthetic-integrity", dry_run=False, pipe=str(root))
+except RuntimeError as exc:
+    if str(exc) != "backup hash mismatch":
+        raise
+else:
+    raise RuntimeError("corrupt backup did not abort ingestion")
+if queue.read_bytes() != original:
+    raise RuntimeError("queue changed after backup corruption")
+if events != ["locked", "released"]:
+    raise RuntimeError("queue lock was not released after abort")
+if not sys.flags.optimize:
+    raise RuntimeError("test was not run with optimizations")
+print("optimized backup integrity check passed")
+'''
+        with tempfile.TemporaryDirectory(prefix="si-integrity-test-") as root:
+            result = subprocess.run(
+                [sys.executable, "-O", "-B", "-c", script, root,
+                 os.path.abspath(os.path.join(BASE, "..", "engines"))],
+                capture_output=True, text=True, timeout=30, check=False)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("optimized backup integrity check passed", result.stdout)
 
 
 if __name__ == "__main__":

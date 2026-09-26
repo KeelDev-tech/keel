@@ -44,7 +44,7 @@ def test_snapshot_block_present_with_all_fields():
     snap = report["snapshot"]
     assert set(snap) == {"cutoff_utc", "cohort_id", "query_version",
                          "denominator_definition", "missingness"}
-    assert snap["query_version"] == oa.QUERY_VERSION == "outcome-analytics/1"
+    assert snap["query_version"] == oa.QUERY_VERSION == "outcome-analytics/2"
     assert "distinct applications" in snap["denominator_definition"]
     assert set(snap["missingness"]) == {
         "rows_missing_or_unparseable_date_submitted",
@@ -129,5 +129,5 @@ def test_render_markdown_has_snapshot_section():
     md = oa.render_markdown(report)
     assert "## Snapshot (data cut)" in md
     assert report["snapshot"]["cohort_id"] in md
-    assert "outcome-analytics/1" in md
+    assert "outcome-analytics/2" in md
     assert "review queue" in md
