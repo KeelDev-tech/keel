@@ -1,4 +1,4 @@
-# Show HN — FINAL (package ready; posting on Trent's launch-day tap)
+# Show HN — FINAL (package ready; posting on the maintainer's launch-day tap)
 
 ## Title
 Show HN: Keel — automated job applications that refuse to lie

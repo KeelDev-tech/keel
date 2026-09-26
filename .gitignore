@@ -29,7 +29,7 @@ launch/proof-points.json
 # Funding working material lives in the funding goal workspace, never the public repo
 funding/
 
-# Identity boundary (Trent standing rule): worker-charter learning-proposal
+# Identity boundary (maintainer rule): worker-charter learning-proposal
 # copies can embed real applicant identifiers — the canonical file lives
 # privately at job-pipeline/worker-charter/. Never commit keel-tree copies.
 worker-charter/learning-proposals.md*

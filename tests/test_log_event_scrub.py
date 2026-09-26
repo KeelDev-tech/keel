@@ -123,7 +123,7 @@ class TestLogEventScrub(unittest.TestCase):
     def test_secret_patterns_inside_strings(self):
         """Bearer tokens and key=value secret patterns inside strings are redacted."""
         cleaned = log_event.scrub(
-            {"header": "Bearer abcDEF123", "dsn": "user=trent&password=hunter2 ok"}
+            {"header": "Bearer abcDEF123", "dsn": "user=demo&password=hunter2 ok"}
         )
         self.assertEqual(cleaned["header"], "Bearer [REDACTED]")
         self.assertIn("password=[REDACTED]", cleaned["dsn"])

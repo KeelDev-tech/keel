@@ -139,7 +139,7 @@ _COUNTRY_LOCATION_PATTERNS = {
 }
 
 # US-location detection, checked BEFORE country resolution so a US postal
-# abbreviation never misfires as a foreign country ("Napa, CA" is Napa,
+# abbreviation never misfires as a foreign country ("Fresno, CA" is Fresno,
 # California — not Canada). Fixed lists only; no inference.
 _US_STATE_ABBR = frozenset(
     "AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI "
@@ -165,7 +165,7 @@ def _is_us_location(loc):
     """True when the location string explicitly marks the US.
 
     Matches "United States"/"USA"/"U.S.", a trailing ", XX" postal
-    abbreviation in the fixed 50-state+DC list ("Napa, CA"), or a full
+    abbreviation in the fixed 50-state+DC list ("Fresno, CA"), or a full
     state name ("Austin, Texas"). Anything else -> False (never-infer).
     """
     if not loc:

@@ -27,7 +27,7 @@ Plus `keel_ping` (health check), the `keel://doctrine/*` resources, and a `triag
 
 - **Read-only / analysis-only.** No tool submits applications, creates accounts, or contacts anyone.
 - **Sample data only.** The server reads from a bundled `sample_data/` directory.
-  It refuses to resolve paths under Trent's live pipeline tree, `credentials/`, or any real
+  It refuses to resolve paths under the operator's live pipeline tree, `credentials/`, or any real
   answer bank / queue. See `safety.py`; the refusals are covered by `tests/test_safety.py`.
 
 ## Setup & run
