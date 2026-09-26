@@ -289,7 +289,7 @@ class FanoutGateCase(unittest.TestCase):
 
 
 class ReadyFloorCase(unittest.TestCase):
-    """READY floor (Trent P0, 2026-09-17): the launchable pool must never
+    """READY floor (maintainer P0, 2026-09-17): the launchable pool must never
     starve. Regression for the 2026-09-17 19:42Z incident — the digest
     showed "zero cushion" (READY 3 vs 17 launches/2h) and nothing acted on
     it, because the content-hash pre-filter QUIETed the "nothing changed"

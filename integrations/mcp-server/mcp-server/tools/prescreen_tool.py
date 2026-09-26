@@ -30,7 +30,7 @@ def keel_prescreen_packet(packet_brief: str, company: str = "") -> dict:
     bank = keel_bridge.load_fixture("answer_bank.example.json")
     packet = {"brief": packet_brief or "", "company": company or ""}
     # Explicit empty patterns: the production employer-pattern file lives in
-    # Trent's private pipeline tree and is never loaded here.
+    # the operator's private pipeline tree and is never loaded here.
     result = keel_bridge.prescreen_mod.screen_packet(packet, bank, employer_patterns={})
     result["answer_bank"] = "example-fixture"
     return result

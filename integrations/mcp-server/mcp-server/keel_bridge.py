@@ -3,7 +3,7 @@
 Imports are read-only and side-effect free: every engine module used here is
 stdlib-only and does no I/O at import time. KEEL_HOME is pointed at this
 package's work tree so any default path resolution can never land on
-Trent's live pipeline.
+the operator's live pipeline.
 """
 from __future__ import annotations
 
