@@ -1,0 +1,29 @@
+import unittest
+from keel_maint.contracts import *
+
+class ContractsTests(unittest.TestCase):
+    def test_canonical_order(self):self.assertEqual(canonical({"b":2,"a":1}),canonical({"a":1,"b":2}))
+    def test_duplicate_keys(self):
+        with self.assertRaises(ContractError):strict_json('{"a":1,"a":2}')
+    def test_nested_duplicate(self):
+        with self.assertRaises(ContractError):strict_json('{"a":{"b":1,"b":2}}')
+    def test_nan(self):
+        with self.assertRaises(ContractError):strict_json('{"a":NaN}')
+    def test_overflow_float(self):
+        with self.assertRaises(ContractError):strict_json('1e999')
+    def test_bool_not_integer(self):
+        with self.assertRaises(ContractError):integer(True)
+    def test_version_bool(self):
+        with self.assertRaises(ContractError):version({"schema_version":True})
+    def test_unknown_version(self):
+        with self.assertRaises(ContractError):version({"schema_version":2})
+    def test_non_string_key(self):
+        with self.assertRaises(ContractError):canonical({1:"a"})
+    def test_surrogate(self):
+        with self.assertRaises(ContractError):canonical("\ud800")
+    def test_deep_input(self):
+        with self.assertRaises(ContractError):strict_json('['*60+'0'+']'*60)
+    def test_unknown_field(self):
+        with self.assertRaises(ContractError):keys({"a":1,"approve":True},{"a"})
+    def test_digest_shape(self):self.assertEqual(len(digest({"a":1})),64)
+    def test_hash_does_not_coerce(self):self.assertNotEqual(digest(True),digest(1))

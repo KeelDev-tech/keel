@@ -1,0 +1,16 @@
+{
+  "scope": "this delivery only; allowlisted new source, minimal patch context, synthetic fixtures and selected evidence",
+  "scanned_content_files": 37,
+  "secret_pattern_findings": [],
+  "detectors": [
+    "private_key",
+    "openai_key",
+    "github_token",
+    "aws_access_key"
+  ],
+  "old_full_source_included": false,
+  "runtime_database_included": false,
+  "production_state_included": false,
+  "independent_privacy_certification": false,
+  "note": "This is a limited pattern/path scan, not proof that all possible sensitive information is absent."
+}

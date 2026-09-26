@@ -1,0 +1,16 @@
+{
+  "tests_run": 122,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "passed": true,
+  "neighboring_queue_tests": 16,
+  "seconds": 10.141,
+  "python": "3.12.14",
+  "scope": "LOCAL_REVIEW_ONLY",
+  "production_deployed": false,
+  "engine_patch_tests_executed": true,
+  "live_provider_tests": "NOT_RUN",
+  "network_and_subprocess_guard": "enabled",
+  "third_party_dependencies": []
+}

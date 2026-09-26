@@ -1,0 +1,10 @@
+{
+  "jobs": [
+    {
+      "id": 1,
+      "title": "Synthetic Operations Example",
+      "absolute_url": "https://example.org/jobs/1",
+      "content": "<p>Office attendance 5 days a week. Up to 50% travel.</p>"
+    }
+  ]
+}

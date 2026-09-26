@@ -1,0 +1,49 @@
+{
+  "schema": "keel.machine.graph.v1",
+  "run_id": "document-compare-1",
+  "account_id": "local-owner",
+  "scope": "local-analysis",
+  "purpose": "analysis",
+  "max_compute_nodes": 3,
+  "max_seconds": 30,
+  "nodes": [
+    {
+      "id": "left",
+      "operation": "tokenize_text",
+      "arguments": {
+        "text": "Local source reconciliation and audit evidence."
+      },
+      "config": {},
+      "needs": [],
+      "revisions": {
+        "document": "14a0c7df7226cabf0552e885e6ae236f41ae20dffc848268517ca273d8dc0e98"
+      }
+    },
+    {
+      "id": "right",
+      "operation": "tokenize_text",
+      "arguments": {
+        "text": "Synthetic reconciliation documentation."
+      },
+      "config": {},
+      "needs": [],
+      "revisions": {
+        "document": "989fe23db4e814b5310f75b4204ae3650d92556f0e085e4c6eabcbb9c6d946f8"
+      }
+    },
+    {
+      "id": "summary",
+      "operation": "summarize_terms",
+      "arguments": {},
+      "config": {},
+      "needs": [
+        "left",
+        "right"
+      ],
+      "revisions": {}
+    }
+  ],
+  "outputs": [
+    "summary"
+  ]
+}

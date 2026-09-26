@@ -1,0 +1,195 @@
+{
+  "schema_version": 1,
+  "files": [
+    {
+      "path": "MUSE_HANDOFF.md",
+      "size_bytes": 8651,
+      "sha256": "dddb692a25b756efc78e9ba4229fcb8b314f9a2b240580913953d1a89074c584"
+    },
+    {
+      "path": "README.md",
+      "size_bytes": 3968,
+      "sha256": "a31d45f7cbc1a4de19cd2da25fd89662fd2f29f9dc283a8983002df9a0778b34"
+    },
+    {
+      "path": "REMEDIATION_STATUS.md",
+      "size_bytes": 30351,
+      "sha256": "899c9f41ff29fc51e2018f3595f074f016825d06c4d2675049554c5fa00545c6"
+    },
+    {
+      "path": "SOURCES.md",
+      "size_bytes": 1481,
+      "sha256": "8dfd9061bec8f191bec15ec823d671096c675cd88e531847391fae8684ae2f6e"
+    },
+    {
+      "path": "build-info.json",
+      "size_bytes": 615,
+      "sha256": "4093f57e811ff788240d1d30b22ecbc4cb3a7c4504bc51f1549c0dc7ded47e9f"
+    },
+    {
+      "path": "evidence/current/summary.json",
+      "size_bytes": 384,
+      "sha256": "6cb41a0e2ef6f5dc885f3c87a81d479ab0f4a8032afd797f8da6159075eb5ccc"
+    },
+    {
+      "path": "evidence/current/tests.log",
+      "size_bytes": 14874,
+      "sha256": "05fb214d70b3ccffc48d6b9ec4ce61719db74fd49f6c394908c7bf50115206a3"
+    },
+    {
+      "path": "evidence/discovery-demo.json",
+      "size_bytes": 493,
+      "sha256": "f7cdfe21d37419cc5c2254db6ea323c3da431578d3cd69f399285b6eefc4100b"
+    },
+    {
+      "path": "evidence/export-audit.json",
+      "size_bytes": 559,
+      "sha256": "8d3ad7417231d6175f86a1edd86fcd57af935c55c824f797ced1c886a34819c9"
+    },
+    {
+      "path": "evidence/prior-build-reproduction.json",
+      "size_bytes": 1515,
+      "sha256": "10699edb14de98f95f04d7547a1471cabc1331f84cf6b1b84aab4437d7a56dbe"
+    },
+    {
+      "path": "evidence/readiness-demo.json",
+      "size_bytes": 1343,
+      "sha256": "88973995c419e13995c0bbe891f164465d49f07da392623000735470f399485b"
+    },
+    {
+      "path": "evidence/refill-demo.json",
+      "size_bytes": 202,
+      "sha256": "ae42158363d503447ed73935b6077c9ef9e9cdcf33257f59f381400e44502f22"
+    },
+    {
+      "path": "examples/greenhouse.json",
+      "size_bytes": 223,
+      "sha256": "e88ba08d8813061e39809f828e7533c0666119ffa27fe4ccb083b4ebfe1e2a49"
+    },
+    {
+      "path": "examples/readiness.json",
+      "size_bytes": 3566,
+      "sha256": "ae198a68aa5d1fceaaac032096626e51c81d6ebb981da84b8b75270b95c22cc3"
+    },
+    {
+      "path": "examples/refill.json",
+      "size_bytes": 226,
+      "sha256": "b651646b677b114f4e81046c4fd9cf18a075f7eb8d65fc2e72e6f5c06d06fd7d"
+    },
+    {
+      "path": "keel_local/__init__.py",
+      "size_bytes": 105,
+      "sha256": "f9879f00814b5bfda3f8527028eb17ba66bf229c20d7aaa3dfd99bc51871eec5"
+    },
+    {
+      "path": "keel_local/__main__.py",
+      "size_bytes": 2326,
+      "sha256": "3b283acf55274ec443042d197965a5ad3bd1b81652a9c2ac6daa97be47ca0de1"
+    },
+    {
+      "path": "keel_local/answers.py",
+      "size_bytes": 4442,
+      "sha256": "4d290b6830dc4400741e996d420558564a54435b71d7eeee52db382ef5e7d868"
+    },
+    {
+      "path": "keel_local/contracts.py",
+      "size_bytes": 6627,
+      "sha256": "4a149d64da20b60273bdbe3ababd3c8f48f6865a9e37ce77d180e1dac33f252f"
+    },
+    {
+      "path": "keel_local/discovery.py",
+      "size_bytes": 6518,
+      "sha256": "56e4d3c77bb7e761eb644c2610fd823925919c49bb00ac44733439364c0baa13"
+    },
+    {
+      "path": "keel_local/journal.py",
+      "size_bytes": 8515,
+      "sha256": "bcdc5798de0111fe3071841581883c2e4ffa81eefef1dc98c67174bd7dbabe8c"
+    },
+    {
+      "path": "keel_local/measurement.py",
+      "size_bytes": 4007,
+      "sha256": "9fc732e340d59150588c6177da178614753b72904a510e1cd7d8b87cf30d22c5"
+    },
+    {
+      "path": "keel_local/operations.py",
+      "size_bytes": 5611,
+      "sha256": "fd51a52af71c003b010c1af1d1284bffc37adcf118bd0ae08593dbb2392763ee"
+    },
+    {
+      "path": "keel_local/readiness.py",
+      "size_bytes": 7186,
+      "sha256": "b3201d922bb92c96ac6713a640b2aaeddb254f2b44bf153aed0ebef8a909309f"
+    },
+    {
+      "path": "patches/api_direct_loop.py.patch",
+      "size_bytes": 13746,
+      "sha256": "0a09d83a1f4b54d3380cb72c3d34638eb6ab7a13f2046d5960267ddb639b7dbe"
+    },
+    {
+      "path": "patches/api_fastlane.py.patch",
+      "size_bytes": 1679,
+      "sha256": "aef659a61b65965b7851efd80c135f26216b09f00824d988744045b1f095fd94"
+    },
+    {
+      "path": "patches/launch_lock.py.patch",
+      "size_bytes": 2869,
+      "sha256": "dc6b4878c17d7166fb61ab979cbb7d04132c597310d177fc286ca62bd68bd841"
+    },
+    {
+      "path": "patches/manifest.json",
+      "size_bytes": 1484,
+      "sha256": "553ddfcf92e4d75c96f0a88324f25c8497df59efbf0023799b0808fffe34e723"
+    },
+    {
+      "path": "patches/parking_schema.py.patch",
+      "size_bytes": 1077,
+      "sha256": "c5dc5dbd6560427b28201a008188724a575daef4e9670514f4a6c6eb1ab8eada"
+    },
+    {
+      "path": "patches/queue_io.py.patch",
+      "size_bytes": 5702,
+      "sha256": "54e97da5ec9990c64c4ee9a585c59a6a309a17ab2ef2fd0a489d5047caeb940a"
+    },
+    {
+      "path": "remediation-status.json",
+      "size_bytes": 59504,
+      "sha256": "7cdc0cf6e361ca149a6a0aa5c418d9355e54ea448debf60152f8c83f6b41e2ff"
+    },
+    {
+      "path": "run_tests.py",
+      "size_bytes": 3186,
+      "sha256": "eee964921087b3d86ee4325e6e8e8920f651b8cdf3b29c34386cbe80e5503089"
+    },
+    {
+      "path": "stage_patches.py",
+      "size_bytes": 3629,
+      "sha256": "14f8f62b62100a3855bfbd407b99403a999122302fe5f83e7ad9eb613022cd93"
+    },
+    {
+      "path": "tests/test_contracts_answers.py",
+      "size_bytes": 7295,
+      "sha256": "ebad6d858bbbb4c52d1529fc68ae2347b6a2b73410e3142ae75f71b7e51715a7"
+    },
+    {
+      "path": "tests/test_engine_patches.py",
+      "size_bytes": 10063,
+      "sha256": "5fbf79420bf643a9abdf5a83079b0103ee1525c4ac1333d748a4106d2663ebdc"
+    },
+    {
+      "path": "tests/test_journal_discovery_measurement.py",
+      "size_bytes": 9688,
+      "sha256": "04e6b55f43a71d47b77b4f3c2f4729e5862f35ba1a30d6eda5c3c36db83fdda7"
+    },
+    {
+      "path": "tests/test_readiness_operations.py",
+      "size_bytes": 8113,
+      "sha256": "6db052336af64a75c5fd701255ed255fd817e28f1fb9b5ff7a55aba2d59011d6"
+    },
+    {
+      "path": "unpack_transfer.py",
+      "size_bytes": 1932,
+      "sha256": "a2f4dac883d524d3c0c339b01c5ad68c29b995e154054f73c3e78fcc7062f3ad"
+    }
+  ]
+}

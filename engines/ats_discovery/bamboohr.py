@@ -19,7 +19,7 @@ Live-validated 2026-09-15.
 import json
 
 try:
-    from ats_discovery.fetcher import RateLimited
+    from .fetcher import RateLimited
 except ImportError:  # ats_discovery/http.py ships separately; local fail-safe
     class RateLimited(Exception):
         """Raised when the board endpoint answers HTTP 429."""

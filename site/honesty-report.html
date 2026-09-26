@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Keel — Honesty report: how the 210 verified submissions are counted</title>
+<title>Keel — Honesty report: how the 208 verified submissions are counted</title>
 <meta name="description" content="Evidence-graded methodology behind Keel's submission count: what counts as evidence, how the ledger is recounted, and what you cannot independently verify.">
 <meta property="og:title" content="Keel — Honesty report">
-<meta property="og:description" content="210 verified submissions, counted not estimated: evidence grades, recount methodology, and the limits of what a public reader can verify.">
+<meta property="og:description" content="208 verified submissions, counted not estimated: evidence grades, recount methodology, and the limits of what a public reader can verify.">
 <meta property="og:type" content="website">
 <link rel="stylesheet" href="style.css">
 <style>
@@ -22,9 +22,9 @@
 <header class="hero">
   <div class="wrap">
     <div class="kicker">Honesty Report</div>
-    <h1>210</h1>
+    <h1>208</h1>
     <p class="positioning">Verified submissions, counted — never estimated.</p>
-    <p class="lede">210 verified submissions (recounted 2026-09-22; 200 with quoted confirmation evidence, 3 with pointer evidence, 1 URL-only, 6 unevidenced — counted, never estimated). This page documents exactly what that sentence means, how it is produced, and where it stops being checkable by you.</p>
+    <p class="lede">208 verified submissions (recounted 2026-09-23; 201 with quoted confirmation evidence, 1 with pointer evidence, 0 URL-only, 6 unevidenced — counted, never estimated). This page documents exactly what that sentence means, how it is produced, and where it stops being checkable by you.</p>
     <div class="cta-row">
       <a class="btn ghost" href="index.html">Back to Keel</a>
       <a class="btn ghost" href="spot-the-ai-resume-lie.html">Take the honesty quiz</a>
@@ -38,27 +38,27 @@
     <div class="wrap">
       <div class="kicker">The Count</div>
       <h2>What the number is</h2>
-      <p>A private production pipeline — the one Keel's discipline was built to run — holds <strong>210 rows</strong> in its application ledger in canonical SUBMITTED status, as counted on 2026-09-22. "Verified submissions" has exactly one definition here: <strong>ledger rows whose status is SUBMITTED</strong>, and the pipeline's own reporting rule records that status only on <strong>explicit page-confirmation evidence</strong> — the confirmation the application page itself shows. Nothing counts because a worker said it tried; nothing counts on a 200 OK; nothing is projected, extrapolated, or rounded up.</p>
+      <p>A private production pipeline — the one Keel's discipline was built to run — holds <strong>208 rows</strong> in its application ledger in canonical SUBMITTED status, as counted on 2026-09-23. "Verified submissions" has exactly one definition here: <strong>ledger rows whose status is SUBMITTED</strong>, and the pipeline's own reporting rule records that status only on <strong>explicit page-confirmation evidence</strong> — the confirmation the application page itself shows. Nothing counts because a worker said it tried; nothing counts on a 200 OK; nothing is projected, extrapolated, or rounded up.</p>
       <table class="evidence-table">
         <tr><th>Evidence grade</th><th>Count</th><th>What it means</th></tr>
         <tr>
-          <td>Quoted confirmation</td><td class="num">202</td>
+          <td>Quoted confirmation</td><td class="num">201</td>
           <td><p>The page's confirmation text was quoted into the record at submit time — the words the ATS showed (e.g. an "application submitted" confirmation together with its reference number), not a worker's claim.</p></td>
         </tr>
         <tr>
-          <td>Pointer evidence</td><td class="num">3</td>
+          <td>Pointer evidence</td><td class="num">1</td>
           <td><p>A pointer to a retained confirmation artifact rather than the full quoted text — a reference to evidence held elsewhere in the pipeline's records.</p></td>
         </tr>
         <tr>
-          <td>URL-only</td><td class="num">1</td>
+          <td>URL-only</td><td class="num">0</td>
           <td><p>The job posting URL is on record; no confirmation text was retained. Counted, graded, and disclosed — not quietly dropped and not upgraded.</p></td>
         </tr>
         <tr>
-          <td>Unevidenced</td><td class="num">3</td>
+          <td>Unevidenced</td><td class="num">6</td>
           <td><p>The ledger marks the row submitted with no retained evidence. Also counted, also disclosed. A count that hid its weakest rows would not be a count.</p></td>
         </tr>
       </table>
-      <p class="fineprint">The split comes from the canonical audit reader (engines/outcome-tracking/evidence_gate.py, `audit` CLI). The figures above are published 2026-09-22 and move only when the ledger moves.</p>
+      <p class="fineprint">The split comes from the canonical audit reader (engines/outcome-tracking/evidence_gate.py, `audit` CLI). The figures above are published 2026-09-23 and move only when the ledger moves.</p>
     </div>
   </section>
 
@@ -81,9 +81,9 @@
       <div class="kicker">Limits</div>
       <h2>What you cannot independently verify</h2>
       <p>Honesty requires stating the checkability boundary plainly:</p>
-      <p><strong>You cannot rerun the private pipeline.</strong> The ledger rows, the confirmation artifacts, and the execution layer that submitted them stay private by design — publishing submission fingerprints would get the pipeline blocked by ATS vendors (<a href="https://github.com/KeelDev-tech/keel/blob/main/SPLIT.md">SPLIT.md</a>). A reader of this repo cannot independently replay the 210 submissions or re-inspect the quoted confirmations. The recount script is public; its inputs are not.</p>
-      <p><strong>The public repo makes no submission claims of its own.</strong> Keel the public project is the tools, the gates, and the telemetry discipline — the machinery that made "only ever claims what you tell it is true" operational. The 210 figure belongs to the private production pipeline that used this exact discipline; the public repo did not produce it.</p>
-      <p><strong>The weakest rows are named on purpose.</strong> The 6 unevidenced and 1 URL-only rows are part of the 210, disclosed here rather than silently excluded. If that bothers you, it should — that discomfort is the grade working as designed.</p>
+      <p><strong>You cannot rerun the private pipeline.</strong> The ledger rows, the confirmation artifacts, and the execution layer that submitted them stay private by design — publishing submission fingerprints would get the pipeline blocked by ATS vendors (<a href="https://github.com/KeelDev-tech/keel/blob/main/SPLIT.md">SPLIT.md</a>). A reader of this repo cannot independently replay the 208 submissions or re-inspect the quoted confirmations. The recount script is public; its inputs are not.</p>
+      <p><strong>The public repo makes no submission claims of its own.</strong> Keel the public project is the tools, the gates, and the telemetry discipline — the machinery that made "only ever claims what you tell it is true" operational. The 208 figure belongs to the private production pipeline that used this exact discipline; the public repo did not produce it.</p>
+      <p><strong>The weakest rows are named on purpose.</strong> The 6 unevidenced rows are part of the 208, disclosed here rather than silently excluded. If that bothers you, it should — that discomfort is the grade working as designed.</p>
       <p class="fineprint">Eligibility is not claimed either: Keel is free and open source (Apache-2.0), ships no accounts, no quotas, and no paid tiers. Anything that would cost money or misrepresent eligibility is outside its contract — see the <a href="index.html#contract">truthfulness contract</a>.</p>
     </div>
   </section>

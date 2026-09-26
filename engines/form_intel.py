@@ -31,6 +31,7 @@ Rendered-option workflow (agent turn, uses browser.open):
 """
 import copy
 import json, os, re, sys, time
+from urllib.parse import urlsplit, parse_qs
 
 import http_cache  # shared short-TTL GET cache (pre-request admission +
                    # durable 429 cooldowns, same semantics as verify)
@@ -125,15 +126,25 @@ def lever_intel(org, posting_id):
 
 
 def _probe_url_uncached(url):
-    m = re.search(r"job-boards\.greenhouse\.io/embed/job_app\?for=([^&]+)&token=(\d+)", url)
-    if m:
-        return greenhouse_embed_intel(m.group(1), m.group(2))
-    m = re.search(r"boards\.greenhouse\.io/([^/]+)/jobs/(\d+)", url)
-    if m:
+    parsed = urlsplit(url)
+    if (parsed.scheme != 'https' or parsed.username is not None or
+            parsed.password is not None or parsed.port not in (None, 443)):
+        raise ValueError('public HTTPS form URL required')
+    greenhouse_host = parsed.hostname in {'job-boards.greenhouse.io', 'boards.greenhouse.io'}
+    if greenhouse_host and parsed.path == '/embed/job_app':
+        query = parse_qs(parsed.query)
+        boards, tokens = query.get('for', []), query.get('token', [])
+        if (len(boards) != 1 or len(tokens) != 1 or
+                not re.fullmatch(r'[A-Za-z0-9_-]+', boards[0]) or
+                not re.fullmatch(r'[0-9]+', tokens[0])):
+            raise ValueError('unambiguous Greenhouse board and token required')
+        return greenhouse_embed_intel(boards[0], tokens[0])
+    m = re.fullmatch(r'/([A-Za-z0-9_-]+)/jobs/([0-9]+)/?', parsed.path)
+    if greenhouse_host and m:
         # resolve board -> embed token form
         return greenhouse_embed_intel(m.group(1), m.group(2))
-    m = re.search(r"lever\.co/([^/]+)/([a-f0-9-]+)", url)
-    if m:
+    m = re.fullmatch(r'/([A-Za-z0-9_-]+)/([a-f0-9-]+)(?:/apply)?/?', parsed.path)
+    if parsed.hostname == 'jobs.lever.co' and m:
         return lever_intel(m.group(1), m.group(2))
     if re.search(r"[?&]gh_jid=\d+", url or ""):
         # gh_jid branch: employer career URLs carry the Greenhouse job id
@@ -151,33 +162,29 @@ def _probe_url_uncached(url):
             guesses = []
         if guesses:
             return greenhouse_embed_intel(guesses[0][0], guesses[0][1])
+    from html_form import inspect_html
+    passive = inspect_html(fetch(url), url)
     return {"ats": "unknown", "form_url": url, "questions": [],
             "rendered_option_fetch_needed": [],
-            "note": "No HTTP-level extraction for this ATS; agent must read the rendered form with browser.open."}
+            "source": "passive_html_inspection", "advisory": True,
+            "extraction_complete": False, "passive_intel": passive,
+            "note": "Passive HTML hints are advisory only; inspect the rendered form before use."}
 
 
-# Process-memory form-intel memoization. Repeated probes for the same
-# (board, employer) pair — e.g. screening many roles at one employer —
-# refetch the same form on every packet build. This in-process cache
-# dedupes those within a conservative TTL. Keyed by (board, employer),
-# NOT by URL: one employer's postings on a board share the same form
-# template, and a URL-keyed cache would miss across postings. TTL is
-# conservative (600s, aligned with http_cache's short-TTL HTTP behavior):
-# forms change, and this cache lives only for the life of one process.
+# Process-memory memoization is scoped to the exact URL and employer.
+# Different postings may have different required questions on the same board;
+# one role's form must never substitute for another's. TTL is 600 seconds.
 # Cache-internal errors always fail OPEN to a fresh normal probe — a
 # broken cache must never block or poison a packet build. Callers that
 # mutate the returned intel get a deep copy, so caller mutation can
-# never poison the cached entry. NOTE: intel is pre-launch advisory
-# (the brief's Step 0 re-enumerates the live form at task time); within
-# the TTL window the cached payload reflects the first-probed posting,
-# including its form_url — no pipeline consumer reads intel["form_url"],
-# so that staleness is cosmetic.
+# never poison the cached entry. A cached observation is still not proof of
+# current rendered-form completeness or a grant to submit an application.
 _FORM_INTEL_MEMO_TTL = 600
-_form_intel_memo = {}  # (board, employer) -> (expires_epoch, intel_dict)
+_form_intel_memo = {}  # (exact_url, employer) -> (expires_monotonic, intel_dict)
 
 
 def _memo_board_key(url):
-    """Board token for the memo key, mirroring _probe_url_uncached's dispatch."""
+    """Legacy diagnostic grouping only; never an authorization or cache key."""
     try:
         u = url or ""
         m = re.search(r"job-boards\.greenhouse\.io/embed/job_app\?for=([^&]+)&token=(\d+)", u)
@@ -206,11 +213,10 @@ def _memo_board_key(url):
 
 
 def probe_url(url, employer=None):
-    """Probe a posting's form; results memoized per (board, employer).
+    """Probe a posting's form; results memoized per exact (URL, employer).
 
-    employer: the caller's employer string. Combined with the board token
-    derived from the URL it forms the memo key. When employer is omitted
-    or blank there is no (board, employer) pair to key on, so the memo is
+    employer: the caller's employer string. Combined with the exact URL
+    it forms the memo key. When employer is omitted or blank the memo is
     bypassed entirely and the call behaves exactly as the pre-memo
     probe_url(url) — this keeps ad-hoc/CLI callers on the legacy path.
     Signature is backward compatible: probe_url(url) behaves exactly as
@@ -219,16 +225,18 @@ def probe_url(url, employer=None):
     employer_key = (employer or "").strip().lower()
     if not employer_key:
         return _probe_url_uncached(url)
-    memo_key = (_memo_board_key(url), employer_key)
+    memo_key = (url, employer_key)
     try:
         hit = _form_intel_memo.get(memo_key)
-        if hit is not None and hit[0] > time.time():
+        if hit is not None and hit[0] > time.monotonic():
             return copy.deepcopy(hit[1])
     except Exception:
         pass  # cache-internal error: fail open to a fresh probe
     intel = _probe_url_uncached(url)
     try:
-        _form_intel_memo[memo_key] = (time.time() + _FORM_INTEL_MEMO_TTL,
+        if len(_form_intel_memo) >= 512:
+            _form_intel_memo.pop(next(iter(_form_intel_memo)))
+        _form_intel_memo[memo_key] = (time.monotonic() + _FORM_INTEL_MEMO_TTL,
                                       copy.deepcopy(intel))
     except Exception:
         pass  # fail open: a broken cache never blocks the build

@@ -1,0 +1,1 @@
+{"additionalProperties":false,"properties":{"sample_id":{"minLength":1,"type":"string"}},"required":["sample_id"],"type":"object"}

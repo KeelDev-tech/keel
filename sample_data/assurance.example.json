@@ -1,0 +1,770 @@
+{
+  "schema_version": 1,
+  "source_revision": "SYNTHETIC-DEMO-NOT-LIVE",
+  "export_sha256": "a79e7af830dbca17fdc68c936f3010c217f0552878c0ef2054f22ddb134680fe",
+  "observed_at": "2026-09-18T12:00:00+00:00",
+  "complete": true,
+  "evidence": [
+    {
+      "id": "synthetic-profile-v1",
+      "revision": "1",
+      "expected_revision": "1",
+      "status": "CURRENT",
+      "observed_at": "2026-09-18T12:00:00+00:00",
+      "expires_at": "2026-09-18T13:00:00+00:00",
+      "parents": []
+    }
+  ],
+  "facts": [
+    {
+      "fact_id": "synthetic-fact",
+      "subject": "SYNTHETIC-PERSON",
+      "field": "demonstration_skill",
+      "value_sha256": "ba14bb1c9e2490b59de30e8dc40ff238c454515059e4bbb58209785df7f1afbf",
+      "purposes": [
+        "application-preparation"
+      ],
+      "targets": [
+        "role-1",
+        "role-2",
+        "role-3",
+        "role-4",
+        "role-5",
+        "synthetic-backlog:0",
+        "synthetic-backlog:1",
+        "synthetic-backlog:2",
+        "synthetic-backlog:3"
+      ],
+      "evidence_roots": [
+        "synthetic-profile-v1"
+      ]
+    }
+  ],
+  "reviewers": [
+    {
+      "reviewer_id": "synthetic-source-check",
+      "method": "source-comparison",
+      "family": "fixture-rule-check",
+      "independence_group": "synthetic-a"
+    },
+    {
+      "reviewer_id": "synthetic-adversarial-check",
+      "method": "counterexample-review",
+      "family": "fixture-adversarial-check",
+      "independence_group": "synthetic-b"
+    }
+  ],
+  "actions": [
+    {
+      "role_id": "role-1",
+      "application_id": "9e33bfaed10adca53ece8f4ef9cd11b1fe0b9f50a976f9650f99624773fe57ad",
+      "lead_sha256": "925d53241b651c4b22520425dbc02dcec04dcce4ee1a1758c00f1c12bc4f3195",
+      "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+      "proposal": {
+        "subject": "SYNTHETIC-PERSON",
+        "purpose": "application-preparation",
+        "target": "role-1",
+        "payload_sha256": "afcf349e97c2ee151daa3b9f16158459fde1c1645f47d6399b2a3542b3607c0f",
+        "claims": [
+          {
+            "claim_id": "claim-1",
+            "field": "demonstration_skill",
+            "value_sha256": "ba14bb1c9e2490b59de30e8dc40ff238c454515059e4bbb58209785df7f1afbf",
+            "fact_id": "synthetic-fact",
+            "evidence_roots": [
+              "synthetic-profile-v1"
+            ]
+          }
+        ]
+      },
+      "risk": {
+        "accountability": 3,
+        "sensitivity": 2,
+        "complexity": 2,
+        "irreversibility": 2,
+        "external_impact": 3
+      },
+      "authority": {
+        "status": "GRANTED",
+        "receipt_ref": "SYNTHETIC-NOT-AUTHORITY",
+        "scope_sha256": "ab4044bb7a7d4dd361703ba9fca857c1b096dc185f2dedd25ebd8274ccf883dc",
+        "observed_at": "2026-09-18T12:00:00+00:00",
+        "expires_at": "2026-09-18T13:00:00+00:00",
+        "revision": "1"
+      },
+      "human_review": {
+        "status": "APPROVE",
+        "receipt_ref": "SYNTHETIC-NOT-HUMAN-APPROVAL",
+        "scope_sha256": "ab4044bb7a7d4dd361703ba9fca857c1b096dc185f2dedd25ebd8274ccf883dc",
+        "observed_at": "2026-09-18T12:00:00+00:00",
+        "expires_at": "2026-09-18T13:00:00+00:00",
+        "revision": "1"
+      },
+      "iteration": 0,
+      "reviews": [
+        {
+          "reviewer_id": "synthetic-source-check",
+          "subject_sha256": "43bf253a8a04a4dc2888e96bbda0c44785848d47fa30af009de4d4c9ea9c97b9",
+          "verdict": "PASS",
+          "confidence": null,
+          "covered_claim_ids": [
+            "claim-1"
+          ],
+          "evidence_roots": [
+            "synthetic-profile-v1"
+          ],
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "expires_at": "2026-09-18T12:15:00+00:00",
+          "findings": []
+        },
+        {
+          "reviewer_id": "synthetic-adversarial-check",
+          "subject_sha256": "43bf253a8a04a4dc2888e96bbda0c44785848d47fa30af009de4d4c9ea9c97b9",
+          "verdict": "PASS",
+          "confidence": null,
+          "covered_claim_ids": [
+            "claim-1"
+          ],
+          "evidence_roots": [
+            "synthetic-profile-v1"
+          ],
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "expires_at": "2026-09-18T12:15:00+00:00",
+          "findings": []
+        }
+      ]
+    },
+    {
+      "role_id": "role-2",
+      "application_id": "0f206b5c606cb807428cf6c45ccdc4ed57f2b49a0b753688037b33e4360b7094",
+      "lead_sha256": "a9eb6cd037fcc1d7a438b0738aa563a9a99cd0488293dd9bf2ea858c57e77869",
+      "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+      "proposal": {
+        "subject": "SYNTHETIC-PERSON",
+        "purpose": "application-preparation",
+        "target": "role-2",
+        "payload_sha256": "cd76ec8e6f900361d85d1d7c7722f4088d1255596536e694301e54be16f0ea13",
+        "claims": [
+          {
+            "claim_id": "claim-1",
+            "field": "demonstration_skill",
+            "value_sha256": "ba14bb1c9e2490b59de30e8dc40ff238c454515059e4bbb58209785df7f1afbf",
+            "fact_id": "synthetic-fact",
+            "evidence_roots": [
+              "synthetic-profile-v1"
+            ]
+          }
+        ]
+      },
+      "risk": {
+        "accountability": 3,
+        "sensitivity": 2,
+        "complexity": 2,
+        "irreversibility": 2,
+        "external_impact": 3
+      },
+      "authority": {
+        "status": "GRANTED",
+        "receipt_ref": "SYNTHETIC-NOT-AUTHORITY",
+        "scope_sha256": "e0de6aaf7862297f7f9f7fe2e8f619aa06a8301aa461b1d3c7b7f689504afd75",
+        "observed_at": "2026-09-18T12:00:00+00:00",
+        "expires_at": "2026-09-18T13:00:00+00:00",
+        "revision": "1"
+      },
+      "human_review": {
+        "status": "APPROVE",
+        "receipt_ref": "SYNTHETIC-NOT-HUMAN-APPROVAL",
+        "scope_sha256": "e0de6aaf7862297f7f9f7fe2e8f619aa06a8301aa461b1d3c7b7f689504afd75",
+        "observed_at": "2026-09-18T12:00:00+00:00",
+        "expires_at": "2026-09-18T13:00:00+00:00",
+        "revision": "1"
+      },
+      "iteration": 0,
+      "reviews": [
+        {
+          "reviewer_id": "synthetic-source-check",
+          "subject_sha256": "f0a87b9e04973e2dcf776af3292e8932b5ccc9e31e38f5f6fd8b768de8c4cd7c",
+          "verdict": "PASS",
+          "confidence": null,
+          "covered_claim_ids": [
+            "claim-1"
+          ],
+          "evidence_roots": [
+            "synthetic-profile-v1"
+          ],
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "expires_at": "2026-09-18T12:15:00+00:00",
+          "findings": []
+        },
+        {
+          "reviewer_id": "synthetic-adversarial-check",
+          "subject_sha256": "f0a87b9e04973e2dcf776af3292e8932b5ccc9e31e38f5f6fd8b768de8c4cd7c",
+          "verdict": "PASS",
+          "confidence": null,
+          "covered_claim_ids": [
+            "claim-1"
+          ],
+          "evidence_roots": [
+            "synthetic-profile-v1"
+          ],
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "expires_at": "2026-09-18T12:15:00+00:00",
+          "findings": []
+        }
+      ]
+    },
+    {
+      "role_id": "role-3",
+      "application_id": "8b52adf317819fbe6e00923eaae871920e97f1a26dd471b5eef1aae6ad2b8395",
+      "lead_sha256": "50cb44d69a5df7785ce7a46a86dac4323cef2a9fee3c4cec0ed5eefdaac5be68",
+      "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+      "proposal": {
+        "subject": "SYNTHETIC-PERSON",
+        "purpose": "application-preparation",
+        "target": "role-3",
+        "payload_sha256": "5ab8cdbcb1c064b5211498b7a87e9edcbeb2db008a62baeab54f7fbac661a23b",
+        "claims": [
+          {
+            "claim_id": "claim-1",
+            "field": "demonstration_skill",
+            "value_sha256": "ba14bb1c9e2490b59de30e8dc40ff238c454515059e4bbb58209785df7f1afbf",
+            "fact_id": "synthetic-fact",
+            "evidence_roots": [
+              "synthetic-profile-v1"
+            ]
+          }
+        ]
+      },
+      "risk": {
+        "accountability": 3,
+        "sensitivity": 2,
+        "complexity": 2,
+        "irreversibility": 2,
+        "external_impact": 3
+      },
+      "authority": {
+        "status": "GRANTED",
+        "receipt_ref": "SYNTHETIC-NOT-AUTHORITY",
+        "scope_sha256": "d0984611422b2a4a5100ed98c4c09900af12928e6eb0947fe00de29990e008a9",
+        "observed_at": "2026-09-18T12:00:00+00:00",
+        "expires_at": "2026-09-18T13:00:00+00:00",
+        "revision": "1"
+      },
+      "human_review": {
+        "status": "APPROVE",
+        "receipt_ref": "SYNTHETIC-NOT-HUMAN-APPROVAL",
+        "scope_sha256": "d0984611422b2a4a5100ed98c4c09900af12928e6eb0947fe00de29990e008a9",
+        "observed_at": "2026-09-18T12:00:00+00:00",
+        "expires_at": "2026-09-18T13:00:00+00:00",
+        "revision": "1"
+      },
+      "iteration": 0,
+      "reviews": [
+        {
+          "reviewer_id": "synthetic-source-check",
+          "subject_sha256": "7e10e38422e058248c1107325c4391aa59946458670ab2915772f6cbb0b8f1ad",
+          "verdict": "PASS",
+          "confidence": null,
+          "covered_claim_ids": [
+            "claim-1"
+          ],
+          "evidence_roots": [
+            "synthetic-profile-v1"
+          ],
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "expires_at": "2026-09-18T12:15:00+00:00",
+          "findings": []
+        },
+        {
+          "reviewer_id": "synthetic-adversarial-check",
+          "subject_sha256": "7e10e38422e058248c1107325c4391aa59946458670ab2915772f6cbb0b8f1ad",
+          "verdict": "PASS",
+          "confidence": null,
+          "covered_claim_ids": [
+            "claim-1"
+          ],
+          "evidence_roots": [
+            "synthetic-profile-v1"
+          ],
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "expires_at": "2026-09-18T12:15:00+00:00",
+          "findings": []
+        }
+      ]
+    },
+    {
+      "role_id": "role-4",
+      "application_id": "8e7220abc59d4eb4690258dd4483a4c323f10ff5d0b77446ac196f8c21922106",
+      "lead_sha256": "0a590c1c3acb0be9900ff4e1224afaa8b1cb8be44b6d48acc344bdc7466f2343",
+      "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+      "proposal": {
+        "subject": "SYNTHETIC-PERSON",
+        "purpose": "application-preparation",
+        "target": "role-4",
+        "payload_sha256": "4c013c23fa815d91f4163758b6da15346d16c5d62c19cf4119df2040293f8548",
+        "claims": [
+          {
+            "claim_id": "claim-1",
+            "field": "demonstration_skill",
+            "value_sha256": "ba14bb1c9e2490b59de30e8dc40ff238c454515059e4bbb58209785df7f1afbf",
+            "fact_id": "synthetic-fact",
+            "evidence_roots": [
+              "synthetic-profile-v1"
+            ]
+          }
+        ]
+      },
+      "risk": {
+        "accountability": 3,
+        "sensitivity": 2,
+        "complexity": 2,
+        "irreversibility": 2,
+        "external_impact": 3
+      },
+      "authority": {
+        "status": "GRANTED",
+        "receipt_ref": "SYNTHETIC-NOT-AUTHORITY",
+        "scope_sha256": "d42ae5f065fafd3b523b8c717183927f0cbd145ad83f967764e913bd42f79b02",
+        "observed_at": "2026-09-18T12:00:00+00:00",
+        "expires_at": "2026-09-18T13:00:00+00:00",
+        "revision": "1"
+      },
+      "human_review": {
+        "status": "APPROVE",
+        "receipt_ref": "SYNTHETIC-NOT-HUMAN-APPROVAL",
+        "scope_sha256": "d42ae5f065fafd3b523b8c717183927f0cbd145ad83f967764e913bd42f79b02",
+        "observed_at": "2026-09-18T12:00:00+00:00",
+        "expires_at": "2026-09-18T13:00:00+00:00",
+        "revision": "1"
+      },
+      "iteration": 0,
+      "reviews": [
+        {
+          "reviewer_id": "synthetic-source-check",
+          "subject_sha256": "b8570290e6d53726501e99e172d073bf1d2405ba79e9d171cab015ae4328459f",
+          "verdict": "PASS",
+          "confidence": null,
+          "covered_claim_ids": [
+            "claim-1"
+          ],
+          "evidence_roots": [
+            "synthetic-profile-v1"
+          ],
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "expires_at": "2026-09-18T12:15:00+00:00",
+          "findings": []
+        },
+        {
+          "reviewer_id": "synthetic-adversarial-check",
+          "subject_sha256": "b8570290e6d53726501e99e172d073bf1d2405ba79e9d171cab015ae4328459f",
+          "verdict": "PASS",
+          "confidence": null,
+          "covered_claim_ids": [
+            "claim-1"
+          ],
+          "evidence_roots": [
+            "synthetic-profile-v1"
+          ],
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "expires_at": "2026-09-18T12:15:00+00:00",
+          "findings": []
+        }
+      ]
+    },
+    {
+      "role_id": "role-5",
+      "application_id": "57585159809ae6d3ba8e18f27f999efce628b6c5bdd50dc7a04642d74e602bbc",
+      "lead_sha256": "43128bdbb408ac2d94ebc0ce10bb1846e538cfc6a536325cbc379d2d1645a7c0",
+      "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+      "proposal": {
+        "subject": "SYNTHETIC-PERSON",
+        "purpose": "application-preparation",
+        "target": "role-5",
+        "payload_sha256": "94b33413cc736e8ebbd7f531abfb62344b06cdfdbda5008f92e4837e0075d85a",
+        "claims": [
+          {
+            "claim_id": "claim-1",
+            "field": "demonstration_skill",
+            "value_sha256": "ba14bb1c9e2490b59de30e8dc40ff238c454515059e4bbb58209785df7f1afbf",
+            "fact_id": "synthetic-fact",
+            "evidence_roots": [
+              "synthetic-profile-v1"
+            ]
+          }
+        ]
+      },
+      "risk": {
+        "accountability": 3,
+        "sensitivity": 2,
+        "complexity": 2,
+        "irreversibility": 2,
+        "external_impact": 3
+      },
+      "authority": {
+        "status": "GRANTED",
+        "receipt_ref": "SYNTHETIC-NOT-AUTHORITY",
+        "scope_sha256": "4242b2c63dfd8808c2c7eaccd2dfe671877421a22f81134936909aaff9dbceed",
+        "observed_at": "2026-09-18T12:00:00+00:00",
+        "expires_at": "2026-09-18T13:00:00+00:00",
+        "revision": "1"
+      },
+      "human_review": {
+        "status": "APPROVE",
+        "receipt_ref": "SYNTHETIC-NOT-HUMAN-APPROVAL",
+        "scope_sha256": "4242b2c63dfd8808c2c7eaccd2dfe671877421a22f81134936909aaff9dbceed",
+        "observed_at": "2026-09-18T12:00:00+00:00",
+        "expires_at": "2026-09-18T13:00:00+00:00",
+        "revision": "1"
+      },
+      "iteration": 0,
+      "reviews": [
+        {
+          "reviewer_id": "synthetic-source-check",
+          "subject_sha256": "0c5bc470d1f6ab3cc5017b9c266a58a74db8b56ad6564e69f8eb5d58a1adc260",
+          "verdict": "PASS",
+          "confidence": null,
+          "covered_claim_ids": [
+            "claim-1"
+          ],
+          "evidence_roots": [
+            "synthetic-profile-v1"
+          ],
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "expires_at": "2026-09-18T12:15:00+00:00",
+          "findings": []
+        },
+        {
+          "reviewer_id": "synthetic-adversarial-check",
+          "subject_sha256": "0c5bc470d1f6ab3cc5017b9c266a58a74db8b56ad6564e69f8eb5d58a1adc260",
+          "verdict": "PASS",
+          "confidence": null,
+          "covered_claim_ids": [
+            "claim-1"
+          ],
+          "evidence_roots": [
+            "synthetic-profile-v1"
+          ],
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "expires_at": "2026-09-18T12:15:00+00:00",
+          "findings": []
+        }
+      ]
+    },
+    {
+      "role_id": "synthetic-backlog:0",
+      "application_id": "dca84de1dd69baa74deeb98b137188d78262625deaa1ad736bcb82862e822b6f",
+      "lead_sha256": "075fc66b072541781d4b0a3be0f634ff26213ac951c8850ee8b8824aaa110077",
+      "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+      "proposal": {
+        "subject": "SYNTHETIC-PERSON",
+        "purpose": "application-preparation",
+        "target": "synthetic-backlog:0",
+        "payload_sha256": "4101024382c80b608e79fa0b7bfdbd34ebcddbff0fcf143408c5c97d80a352d0",
+        "claims": [
+          {
+            "claim_id": "claim-1",
+            "field": "demonstration_skill",
+            "value_sha256": "ba14bb1c9e2490b59de30e8dc40ff238c454515059e4bbb58209785df7f1afbf",
+            "fact_id": "synthetic-fact",
+            "evidence_roots": [
+              "synthetic-profile-v1"
+            ]
+          }
+        ]
+      },
+      "risk": {
+        "accountability": 3,
+        "sensitivity": 2,
+        "complexity": 2,
+        "irreversibility": 2,
+        "external_impact": 3
+      },
+      "authority": {
+        "status": "GRANTED",
+        "receipt_ref": "SYNTHETIC-NOT-AUTHORITY",
+        "scope_sha256": "abf45be5f1777d2c6737f019ec133b0c30a4f2d99d03dca61c5c8f1b0bb8acff",
+        "observed_at": "2026-09-18T12:00:00+00:00",
+        "expires_at": "2026-09-18T13:00:00+00:00",
+        "revision": "1"
+      },
+      "human_review": {
+        "status": "APPROVE",
+        "receipt_ref": "SYNTHETIC-NOT-HUMAN-APPROVAL",
+        "scope_sha256": "abf45be5f1777d2c6737f019ec133b0c30a4f2d99d03dca61c5c8f1b0bb8acff",
+        "observed_at": "2026-09-18T12:00:00+00:00",
+        "expires_at": "2026-09-18T13:00:00+00:00",
+        "revision": "1"
+      },
+      "iteration": 0,
+      "reviews": [
+        {
+          "reviewer_id": "synthetic-source-check",
+          "subject_sha256": "0df2a1a11e5fd66ecb8266b71fc8fd87faea619527464a7d0482d4f32d410549",
+          "verdict": "PASS",
+          "confidence": null,
+          "covered_claim_ids": [
+            "claim-1"
+          ],
+          "evidence_roots": [
+            "synthetic-profile-v1"
+          ],
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "expires_at": "2026-09-18T12:15:00+00:00",
+          "findings": []
+        },
+        {
+          "reviewer_id": "synthetic-adversarial-check",
+          "subject_sha256": "0df2a1a11e5fd66ecb8266b71fc8fd87faea619527464a7d0482d4f32d410549",
+          "verdict": "PASS",
+          "confidence": null,
+          "covered_claim_ids": [
+            "claim-1"
+          ],
+          "evidence_roots": [
+            "synthetic-profile-v1"
+          ],
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "expires_at": "2026-09-18T12:15:00+00:00",
+          "findings": []
+        }
+      ]
+    },
+    {
+      "role_id": "synthetic-backlog:1",
+      "application_id": "f6ab3fd87797c4da8f5e337a9c191edbf10a1f62d6977b8391c9f62031b8fb60",
+      "lead_sha256": "b5d5376563a35b20237762ad2fe17bb9e29b077424ed7cb9b5c0c643b712d194",
+      "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+      "proposal": {
+        "subject": "SYNTHETIC-PERSON",
+        "purpose": "application-preparation",
+        "target": "synthetic-backlog:1",
+        "payload_sha256": "61b561510f7633b4a1b5e963dac0419925a61e30c742830adcd655bd94902b5d",
+        "claims": [
+          {
+            "claim_id": "claim-1",
+            "field": "demonstration_skill",
+            "value_sha256": "ba14bb1c9e2490b59de30e8dc40ff238c454515059e4bbb58209785df7f1afbf",
+            "fact_id": "synthetic-fact",
+            "evidence_roots": [
+              "synthetic-profile-v1"
+            ]
+          }
+        ]
+      },
+      "risk": {
+        "accountability": 3,
+        "sensitivity": 2,
+        "complexity": 2,
+        "irreversibility": 2,
+        "external_impact": 3
+      },
+      "authority": {
+        "status": "GRANTED",
+        "receipt_ref": "SYNTHETIC-NOT-AUTHORITY",
+        "scope_sha256": "59a1289339fccf068b94b610e5ebddcdfcd74eb9117456be51d529a9cd51c862",
+        "observed_at": "2026-09-18T12:00:00+00:00",
+        "expires_at": "2026-09-18T13:00:00+00:00",
+        "revision": "1"
+      },
+      "human_review": {
+        "status": "APPROVE",
+        "receipt_ref": "SYNTHETIC-NOT-HUMAN-APPROVAL",
+        "scope_sha256": "59a1289339fccf068b94b610e5ebddcdfcd74eb9117456be51d529a9cd51c862",
+        "observed_at": "2026-09-18T12:00:00+00:00",
+        "expires_at": "2026-09-18T13:00:00+00:00",
+        "revision": "1"
+      },
+      "iteration": 0,
+      "reviews": [
+        {
+          "reviewer_id": "synthetic-source-check",
+          "subject_sha256": "c561d4995df6c0ab7bf39a2df828e096803ba67ff9d402247741a08b448dbc2b",
+          "verdict": "PASS",
+          "confidence": null,
+          "covered_claim_ids": [
+            "claim-1"
+          ],
+          "evidence_roots": [
+            "synthetic-profile-v1"
+          ],
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "expires_at": "2026-09-18T12:15:00+00:00",
+          "findings": []
+        },
+        {
+          "reviewer_id": "synthetic-adversarial-check",
+          "subject_sha256": "c561d4995df6c0ab7bf39a2df828e096803ba67ff9d402247741a08b448dbc2b",
+          "verdict": "PASS",
+          "confidence": null,
+          "covered_claim_ids": [
+            "claim-1"
+          ],
+          "evidence_roots": [
+            "synthetic-profile-v1"
+          ],
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "expires_at": "2026-09-18T12:15:00+00:00",
+          "findings": []
+        }
+      ]
+    },
+    {
+      "role_id": "synthetic-backlog:2",
+      "application_id": "93c29f7a03c3a94bf8d768d5ccd8879677d8b06ae079af2e20f2f3ade5d6b0d5",
+      "lead_sha256": "d28a1cdc0fd9e6c28103b43d706a196c198017e2e9f25bfeb8b2b0fb83a6a2ae",
+      "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+      "proposal": {
+        "subject": "SYNTHETIC-PERSON",
+        "purpose": "application-preparation",
+        "target": "synthetic-backlog:2",
+        "payload_sha256": "54bbf8986a24ea9762e1b1fd9e3f8500d5c409216ee23fb537ceac0e34a94551",
+        "claims": [
+          {
+            "claim_id": "claim-1",
+            "field": "demonstration_skill",
+            "value_sha256": "ba14bb1c9e2490b59de30e8dc40ff238c454515059e4bbb58209785df7f1afbf",
+            "fact_id": "synthetic-fact",
+            "evidence_roots": [
+              "synthetic-profile-v1"
+            ]
+          }
+        ]
+      },
+      "risk": {
+        "accountability": 3,
+        "sensitivity": 2,
+        "complexity": 2,
+        "irreversibility": 2,
+        "external_impact": 3
+      },
+      "authority": {
+        "status": "GRANTED",
+        "receipt_ref": "SYNTHETIC-NOT-AUTHORITY",
+        "scope_sha256": "30f6daa908826c54818944cc9a4c9a1bce5f79e3dbf3e6c58ef2078a8268fd63",
+        "observed_at": "2026-09-18T12:00:00+00:00",
+        "expires_at": "2026-09-18T13:00:00+00:00",
+        "revision": "1"
+      },
+      "human_review": {
+        "status": "APPROVE",
+        "receipt_ref": "SYNTHETIC-NOT-HUMAN-APPROVAL",
+        "scope_sha256": "30f6daa908826c54818944cc9a4c9a1bce5f79e3dbf3e6c58ef2078a8268fd63",
+        "observed_at": "2026-09-18T12:00:00+00:00",
+        "expires_at": "2026-09-18T13:00:00+00:00",
+        "revision": "1"
+      },
+      "iteration": 0,
+      "reviews": [
+        {
+          "reviewer_id": "synthetic-source-check",
+          "subject_sha256": "62d6a1be86bfe9e35e1356bbbbdd132d4b86fcd3dfffef0ce9ba24fef0d39acd",
+          "verdict": "PASS",
+          "confidence": null,
+          "covered_claim_ids": [
+            "claim-1"
+          ],
+          "evidence_roots": [
+            "synthetic-profile-v1"
+          ],
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "expires_at": "2026-09-18T12:15:00+00:00",
+          "findings": []
+        },
+        {
+          "reviewer_id": "synthetic-adversarial-check",
+          "subject_sha256": "62d6a1be86bfe9e35e1356bbbbdd132d4b86fcd3dfffef0ce9ba24fef0d39acd",
+          "verdict": "PASS",
+          "confidence": null,
+          "covered_claim_ids": [
+            "claim-1"
+          ],
+          "evidence_roots": [
+            "synthetic-profile-v1"
+          ],
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "expires_at": "2026-09-18T12:15:00+00:00",
+          "findings": []
+        }
+      ]
+    },
+    {
+      "role_id": "synthetic-backlog:3",
+      "application_id": "654449a5a97ccaaf1d3b5c4b178ff716d1a5228d317e4e2ee1257e07f9c0fcba",
+      "lead_sha256": "30d8d587567d7ed2a152fd4e439a2f9de331aebfec6ee9157b0c13652e681c0a",
+      "packet_dependency_hash": "9794db7cc90f6b62a53e7068e2210ac7912d4e0b055011a033de346514d59987",
+      "proposal": {
+        "subject": "SYNTHETIC-PERSON",
+        "purpose": "application-preparation",
+        "target": "synthetic-backlog:3",
+        "payload_sha256": "482dd89bd862f00acbe5ab3a490d7bcadb55f025f5cdfb454c436c70674271c2",
+        "claims": [
+          {
+            "claim_id": "claim-1",
+            "field": "demonstration_skill",
+            "value_sha256": "ba14bb1c9e2490b59de30e8dc40ff238c454515059e4bbb58209785df7f1afbf",
+            "fact_id": "synthetic-fact",
+            "evidence_roots": [
+              "synthetic-profile-v1"
+            ]
+          }
+        ]
+      },
+      "risk": {
+        "accountability": 3,
+        "sensitivity": 2,
+        "complexity": 2,
+        "irreversibility": 2,
+        "external_impact": 3
+      },
+      "authority": {
+        "status": "GRANTED",
+        "receipt_ref": "SYNTHETIC-NOT-AUTHORITY",
+        "scope_sha256": "191a3e87865f24d94f8aa6f8a573400c70e3ae778a49e4b09dcf8eec33958fd1",
+        "observed_at": "2026-09-18T12:00:00+00:00",
+        "expires_at": "2026-09-18T13:00:00+00:00",
+        "revision": "1"
+      },
+      "human_review": {
+        "status": "APPROVE",
+        "receipt_ref": "SYNTHETIC-NOT-HUMAN-APPROVAL",
+        "scope_sha256": "191a3e87865f24d94f8aa6f8a573400c70e3ae778a49e4b09dcf8eec33958fd1",
+        "observed_at": "2026-09-18T12:00:00+00:00",
+        "expires_at": "2026-09-18T13:00:00+00:00",
+        "revision": "1"
+      },
+      "iteration": 0,
+      "reviews": [
+        {
+          "reviewer_id": "synthetic-source-check",
+          "subject_sha256": "8c882969dc7b6fc750418cc0d70e00bfad241e56fe29dbe7072974fd5d46940c",
+          "verdict": "PASS",
+          "confidence": null,
+          "covered_claim_ids": [
+            "claim-1"
+          ],
+          "evidence_roots": [
+            "synthetic-profile-v1"
+          ],
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "expires_at": "2026-09-18T12:15:00+00:00",
+          "findings": []
+        },
+        {
+          "reviewer_id": "synthetic-adversarial-check",
+          "subject_sha256": "8c882969dc7b6fc750418cc0d70e00bfad241e56fe29dbe7072974fd5d46940c",
+          "verdict": "PASS",
+          "confidence": null,
+          "covered_claim_ids": [
+            "claim-1"
+          ],
+          "evidence_roots": [
+            "synthetic-profile-v1"
+          ],
+          "observed_at": "2026-09-18T12:00:00+00:00",
+          "expires_at": "2026-09-18T12:15:00+00:00",
+          "findings": []
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,71 @@
+{
+  "version": "1.0.0",
+  "source": "KEEL-BLOCKER-RESOLUTION-DIRECTIVE-2026-09-18",
+  "policies": [
+    {
+      "id": "api_direct_write",
+      "effect": "DENY",
+      "scope": "direct writes to provider APIs outside the approved engine path",
+      "conditions": [],
+      "description": "Deny direct API writes. All provider-API mutations must flow through the approved engine path; ad-hoc direct writes are never permitted.",
+      "version": "1.0.0",
+      "source": "KEEL-BLOCKER-RESOLUTION-DIRECTIVE-2026-09-18"
+    },
+    {
+      "id": "external_egress",
+      "effect": "CONDITIONAL_DENY",
+      "scope": "any data egress to an external system or party",
+      "conditions": [
+        "exact_g1_authorization_exists == true"
+      ],
+      "description": "Deny external egress unless an exact G1 authorization exists for the specific payload and destination. No standing or implied authorization suffices.",
+      "version": "1.0.0",
+      "source": "KEEL-BLOCKER-RESOLUTION-DIRECTIVE-2026-09-18"
+    },
+    {
+      "id": "synthetic_to_live",
+      "effect": "DENY_ALWAYS",
+      "scope": "promotion of synthetic or sandbox-generated artifacts into any live pipeline, queue, or ledger",
+      "conditions": [],
+      "description": "Deny promotion of synthetic-to-live data under all circumstances. Sandbox output never enters live state; no authorization can override this.",
+      "version": "1.0.0",
+      "source": "KEEL-BLOCKER-RESOLUTION-DIRECTIVE-2026-09-18"
+    },
+    {
+      "id": "human_decision_impersonation",
+      "effect": "DENY_ALWAYS",
+      "scope": "any machine representation of a human decision, signature, approval, or attestation",
+      "conditions": [],
+      "description": "Deny machine impersonation of human decisions. Approvals, signatures, and attestations must come from the human; the machine records, never asserts.",
+      "version": "1.0.0",
+      "source": "KEEL-BLOCKER-RESOLUTION-DIRECTIVE-2026-09-18"
+    },
+    {
+      "id": "publication",
+      "effect": "CONDITIONAL_DENY",
+      "scope": "publication or external release of any artifact, payload, or document",
+      "conditions": [
+        "exact_release_hash_authorized == true"
+      ],
+      "description": "Deny publication unless the exact release hash (of the byte-identical artifact) is authorized. Authorization for a similar or prior artifact does not transfer.",
+      "version": "1.0.0",
+      "source": "KEEL-BLOCKER-RESOLUTION-DIRECTIVE-2026-09-18"
+    },
+    {
+      "id": "keel_0_8_promotion",
+      "effect": "CONDITIONAL_DENY",
+      "scope": "promotion of the keel_0_8 build / pilot candidate to live or gated status",
+      "conditions": [
+        "authentic_sources == 6",
+        "cross_record_validation == PASS",
+        "genuine_operator_decision == PRESENT",
+        "assurance == PASS",
+        "trust == PASS",
+        "consent == PASS"
+      ],
+      "description": "Deny keel_0_8 promotion unless ALL six predicates hold simultaneously: six authentic sources, cross-record validation PASS, genuine operator decision PRESENT, assurance PASS, trust PASS, consent PASS. Partial satisfaction is a deny.",
+      "version": "1.0.0",
+      "source": "KEEL-BLOCKER-RESOLUTION-DIRECTIVE-2026-09-18"
+    }
+  ]
+}

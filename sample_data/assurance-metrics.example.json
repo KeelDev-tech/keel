@@ -1,0 +1,15 @@
+{
+  "source_grounding": 0.75,
+  "predictions": [
+    {"id": "SYNTHETIC-1", "probability": 0.9, "outcome": true, "abstained": false},
+    {"id": "SYNTHETIC-2", "probability": 0.8, "outcome": false, "abstained": false},
+    {"id": "SYNTHETIC-3", "probability": 0.5, "outcome": false, "abstained": true},
+    {"id": "SYNTHETIC-4", "probability": 0.6, "outcome": null, "abstained": true}
+  ],
+  "challenges": [
+    {"id": "SYNTHETIC-C1", "challenged": true, "revised": true, "before_correct": false, "after_correct": true, "ground_truth_ref": "SYNTHETIC-LABEL-1"},
+    {"id": "SYNTHETIC-C2", "challenged": true, "revised": true, "before_correct": true, "after_correct": false, "ground_truth_ref": "SYNTHETIC-LABEL-2"},
+    {"id": "SYNTHETIC-C3", "challenged": true, "revised": false, "before_correct": false, "after_correct": false, "ground_truth_ref": "SYNTHETIC-LABEL-3"},
+    {"id": "SYNTHETIC-C4", "challenged": true, "revised": true, "before_correct": null, "after_correct": null, "ground_truth_ref": null}
+  ]
+}

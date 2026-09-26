@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light"><title>Keel · Material review</title>
+  <link rel="stylesheet" href="/review.css"><script src="/review.js" defer></script>
+</head>
+<body>
+  <a href="#main" class="skip">Skip to review</a>
+  <header><a href="/" id="workbench" class="brand">keel <span>MATERIAL REVIEW</span></a><button id="refresh" type="button">Refresh evidence</button></header>
+  <main id="main">
+    <section id="login" class="card narrow">
+      <p class="eyebrow">PRIVATE LOCAL SESSION</p><h1>Open your review desk.</h1>
+      <p>Use your private session link, or paste the token printed by your Keel host.</p>
+      <form id="login-form"><label for="token">Session token</label><input id="token" type="password" autocomplete="off" minlength="32" required><button type="submit">Connect</button></form>
+    </section>
+    <section id="workspace" hidden>
+      <p class="eyebrow">EVIDENCE BEFORE ACTION</p><h1>Review the exact materials.</h1>
+      <p class="intro">Check the source records, inspect the packet, then record your decision.</p>
+      <div id="mode" class="notice" role="status"></div>
+      <section class="card"><div class="split"><div><label for="scope">Opportunity</label><select id="scope"></select></div><div class="operator"><span>Host-bound operator</span><strong id="actor"></strong></div></div><p id="identity" class="mono"></p></section>
+      <section class="card"><div class="split"><h2>Current source checks</h2><span id="readiness" class="pill"></span></div><div id="diagnostics" class="diagnostics"></div><p id="semantic" class="notice"></p></section>
+      <section class="card" id="request-card"><h2>Create a review packet</h2><p>This records a pending request from the six current source records. It does not approve them.</p><label for="minutes">Request valid for (minutes)</label><input id="minutes" type="number" min="1" max="1440" value="10" required><label class="check"><input id="request-confirm" type="checkbox"> I want to create a request for this opportunity’s current materials.</label><button id="request" type="button">Create review request</button></section>
+      <section class="card" id="decision-card" hidden><div class="split"><h2>Recorded review packet</h2><span id="request-state" class="pill"></span></div><p id="request-meta"></p><label for="review-digest">Exact review SHA-256</label><input id="review-digest" class="mono" readonly><p id="request-warning" class="notice"></p><p id="decision-expiry"></p><div id="materials" class="materials"></div><details><summary>Complete review packet and current validation</summary><pre id="packet-json"></pre></details><label class="check"><input id="decision-confirm" type="checkbox"> I have reviewed the displayed packet and its exact hash for this opportunity.</label><div class="actions"><button id="approve" type="button">Approve this packet</button><button id="reject" type="button" class="secondary">Reject this packet</button></div><div class="revoke"><h3>Revoke a recorded approval</h3><label for="reason">Reason</label><input id="reason" maxlength="512"><label class="check"><input id="revoke-confirm" type="checkbox"> I explicitly want to revoke this request’s approval.</label><button id="revoke" type="button" class="secondary">Revoke approval</button></div></section>
+      <section class="card" id="current-card"><h2>Current captured materials</h2><p>These are the current source descriptors. A decision uses the immutable packet above.</p><div id="current-materials" class="materials"></div></section>
+      <section class="card"><div class="split"><h2>End-to-end checks</h2><button id="proof" type="button" class="secondary">Run local checks</button></div><pre id="proof-json" hidden></pre></section>
+      <p class="boundary">Approval records a source review. Existing assurance, trust, consent and execution checks remain in force. This desk does not submit applications.</p>
+    </section>
+    <p id="message" role="status" aria-live="polite"></p>
+  </main>
+  <footer>Keel Live · local source review · no model calls</footer>
+</body>
+</html>

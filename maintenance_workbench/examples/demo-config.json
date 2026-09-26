@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "workspace": "synthetic-demo",
+  "files": [
+    {
+      "path": "engine.py",
+      "kind": "python"
+    },
+    {
+      "path": "helpers.py",
+      "kind": "python"
+    },
+    {
+      "path": "contracts/request.json",
+      "kind": "json"
+    },
+    {
+      "path": "adapter-map.json",
+      "kind": "json"
+    },
+    {
+      "path": "fixtures/input.json",
+      "kind": "json"
+    },
+    {
+      "path": "docs/adapter.md",
+      "kind": "text"
+    },
+    {
+      "path": "policies/fixture-policy.json",
+      "kind": "json"
+    }
+  ],
+  "protected_paths": [
+    "fixtures/",
+    "policies/"
+  ],
+  "dependencies": [
+    [
+      "adapter-map.json",
+      "contracts/request.json"
+    ],
+    [
+      "engine.py",
+      "adapter-map.json"
+    ]
+  ]
+}

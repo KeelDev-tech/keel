@@ -1,0 +1,1 @@
+{"checks":{"baseline_fixture_passes":true,"changed_contract_detected":true,"policy_unchanged":true,"protected_input_unchanged":true,"repaired_mapping_passes":true},"external_actions":0,"production_deployed":false,"runtime_tests":"NOT_RUN","schema_version":1,"status":"DEMO_EXPECTATIONS_MET","target_source_executed":false}

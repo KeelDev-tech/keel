@@ -34,3 +34,26 @@ def test_probe_form_unknown_ats_graceful():
     # example.invalid never resolves; probe_url must degrade, not raise.
     out = honesty.keel_probe_form("https://example.invalid/jobs/123")
     assert isinstance(out, dict)
+    assert out['status'] == 'UNAVAILABLE'
+    assert out['questions'] is None
+    assert out['execution_authorized'] is False
+
+
+def test_probe_failure_does_not_leak_transport_details(monkeypatch):
+    from urllib.error import URLError
+    def unavailable(*args, **kwargs):
+        raise URLError('secret=synthetic_private_token')
+    monkeypatch.setattr(honesty.keel_bridge.form_intel_mod, 'probe_url', unavailable)
+    out = honesty.keel_probe_form('https://example.invalid/')
+    assert out['status'] == 'UNAVAILABLE'
+    assert 'synthetic_private_token' not in str(out)
+
+
+def test_probe_rate_limit_stays_explicit(monkeypatch):
+    from urllib.error import HTTPError
+    def limited(*args, **kwargs):
+        raise HTTPError('https://example.invalid/', 429, 'limited', {}, None)
+    monkeypatch.setattr(honesty.keel_bridge.form_intel_mod, 'probe_url', limited)
+    out = honesty.keel_probe_form('https://example.invalid/')
+    assert out['status'] == 'RATE_LIMITED'
+    assert out['questions'] is None

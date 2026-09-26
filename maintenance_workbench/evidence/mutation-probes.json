@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "scope": "six_selected_mutations_not_exhaustive",
+  "probes": [
+    {
+      "probe": "workspace_filter",
+      "status": "DETECTED",
+      "failures": 1,
+      "errors": 0,
+      "failed_test_ids": [
+        "tests.test_analysis_retrieval.RetrievalTests.test_namespace_mismatch"
+      ]
+    },
+    {
+      "probe": "boolean_integer",
+      "status": "DETECTED",
+      "failures": 2,
+      "errors": 0,
+      "failed_test_ids": [
+        "tests.test_contracts.ContractsTests.test_bool_not_integer",
+        "tests.test_monitoring.SupplyTests.test_bool_count_rejected"
+      ]
+    },
+    {
+      "probe": "supply_starvation",
+      "status": "DETECTED",
+      "failures": 3,
+      "errors": 0,
+      "failed_test_ids": [
+        "tests.test_monitoring.SupplyTests.test_exact_reported_regression",
+        "tests.test_monitoring.SupplyTests.test_low_and_starved",
+        "tests.test_monitoring.SupplyTests.test_property_starved_never_present"
+      ]
+    },
+    {
+      "probe": "protected_candidate",
+      "status": "DETECTED",
+      "failures": 2,
+      "errors": 0,
+      "failed_test_ids": [
+        "tests.test_schema_recipe_proposal.ProposalTests.test_protected_fixture",
+        "tests.test_schema_recipe_proposal.ProposalTests.test_protected_policy"
+      ]
+    },
+    {
+      "probe": "snapshot_object_hash",
+      "status": "DETECTED",
+      "failures": 1,
+      "errors": 0,
+      "failed_test_ids": [
+        "tests.test_files_snapshots.SnapshotTests.test_tampered_object"
+      ]
+    },
+    {
+      "probe": "recipe_false_pass",
+      "status": "DETECTED",
+      "failures": 6,
+      "errors": 0,
+      "failed_test_ids": [
+        "tests.test_extra_regressions.ExtraRegressions.test_no_python_recipe_cannot_satisfy_syntax",
+        "tests.test_schema_recipe_proposal.RecipeTests.test_invalid_python_blocks_dependent",
+        "tests.test_schema_recipe_proposal.RecipeTests.test_missing_document_no_pass",
+        "tests.test_schema_recipe_proposal.RecipeTests.test_required_contract_failure_not_hidden",
+        "tests.test_schema_recipe_proposal.RecipeTests.test_unknown_args_fail",
+        "tests.test_transfer_cli_demo.CliDemoTests.test_demo"
+      ]
+    }
+  ],
+  "detected": 6,
+  "total": 6,
+  "production_deployed": false
+}

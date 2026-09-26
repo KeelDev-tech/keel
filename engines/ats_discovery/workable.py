@@ -18,7 +18,7 @@ import json
 import re
 
 try:
-    from ats_discovery.fetcher import RateLimited
+    from .fetcher import RateLimited
 except ImportError:  # http.py not provisioned yet; keep the module importable
     class RateLimited(Exception):
         """Raised when the board API returns HTTP 429."""

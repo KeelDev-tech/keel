@@ -247,8 +247,40 @@ def _load_submitted(ledger_path=LEDGER_PATH):
     return out
 
 
+def _telemetry_submitted_match(company, title, telemetry_path=None):
+    """Raw-telemetry submitted evidence for (company, title), or None.
+
+    2026-09-22: the canonical ledger lags raw telemetry — a browser
+    submission can be fully confirmed in telemetry/events.jsonl while
+    the ledger has no SUBMITTED row yet. This consults the raw submitted /
+    submission_claimed events via parked_task_sweep's authoritative matcher
+    (both aliases, company+normalized-title, never role_id alone).
+    Fail-closed: any read/parse problem yields no match (guard then behaves
+    as before — ledger-only — rather than refusing everything).
+
+    Lazy-imports parked_task_sweep (module-level coupling is avoided so the
+    lock file stays importable from minimal contexts; the matcher caches
+    by file mtime so repeated guard calls stay cheap).
+    """
+    nco, nti = _norm(company), _norm(title)
+    if not nco or not nti:
+        return None
+    try:
+        import parked_task_sweep as pts
+    except ImportError:
+        return None
+    path = telemetry_path or getattr(pts, "EVENTS_JSONL", None)
+    try:
+        by_company = pts._telemetry_submitted_by_company(path)
+        matched = pts._entry_telemetry_submitted(
+            {"company": company, "title": title}, by_company)
+    except Exception:
+        return None
+    return matched
+
+
 def prelaunch_guard(role_id, task_id, company="", title="", owner="",
-                    ledger_path=LEDGER_PATH):
+                    ledger_path=LEDGER_PATH, telemetry_path=None):
     """Pre-spawn duplicate guard. Returns (ok: bool, info: dict).
 
     Verdicts:
@@ -257,6 +289,8 @@ def prelaunch_guard(role_id, task_id, company="", title="", owner="",
       ALREADY_SUBMITTED — ledger already has SUBMITTED for this role_id.
       TWIN_SUBMITTED    — ledger has SUBMITTED for the same normalized
                           company+title under a different role_id.
+      TELEMETRY_SUBMITTED — raw telemetry shows a submitted event for
+                          company+title with no ledger row yet (ledger lag).
     Only GO proceeds to browser-task spawn. The ledger read + atomic
     acquire happen in one call so lanes cannot interleave a duplicate.
     """
@@ -274,6 +308,16 @@ def prelaunch_guard(role_id, task_id, company="", title="", owner="",
                                "twin_company": co, "twin_title": ti,
                                "note": "same company+title already SUBMITTED "
                                        "under a different role_id"}
+        tel_match = _telemetry_submitted_match(company, title, telemetry_path)
+        if tel_match:
+            return False, {"status": "TELEMETRY_SUBMITTED", "verdict": "REFUSE",
+                           "role_id": role_id,
+                           "telemetry_match_title": tel_match,
+                           "note": "raw telemetry shows a submitted event "
+                                   "for this company+title with no ledger "
+                                   "SUBMITTED row yet (ledger lag) — "
+                                   "relaunch would risk a duplicate "
+                                   "submission; no lock acquired"}
     ok, info = acquire(role_id, task_id, owner)
     if not ok:
         return False, {"status": "HELD", "verdict": "STAND_DOWN",
@@ -293,6 +337,9 @@ def main():
     ap.add_argument("--title", default="")
     ap.add_argument("--owner", default="")
     ap.add_argument("--ledger", default=LEDGER_PATH)
+    ap.add_argument("--events", default=None,
+                    help="telemetry events.jsonl path for the --guard "
+                         "TELEMETRY_SUBMITTED check (default: repo data/telemetry)")
     args = ap.parse_args()
 
     if args.acquire:
@@ -306,7 +353,7 @@ def main():
     elif args.guard:
         ok, info = prelaunch_guard(args.guard[0], args.guard[1],
                                    args.company, args.title, args.owner,
-                                   args.ledger)
+                                   args.ledger, args.events)
     else:
         ap.print_help()
         return 2

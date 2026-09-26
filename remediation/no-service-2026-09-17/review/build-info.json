@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-17",
+  "delivery": "keel-no-service-0.1.0",
+  "production_deployed": false,
+  "runtime": "Python 3.10+; Linux/POSIX for engine locks and directory fsync",
+  "new_third_party_dependencies": [],
+  "paid_service_required": false,
+  "source_hashes": {
+    "limitations-register.md": "4843b5f91bfc02695af5c7827a787ac118dcfa61484de3d87dd5c82a322c8020",
+    "Keel_Gap_Build_2026-09-17.zip": "05416fafefcf1aa56efcde3ee1b1a3118fffbcb1fb9ed9f1392cfd256ed9f4a5",
+    "Keel_MUSE_Code_Transfer_2026-09-17.txt": "f378b5fccb103ebde2b0462374c52e1d66f7f2340194ec36cc43f635477a22ef"
+  }
+}

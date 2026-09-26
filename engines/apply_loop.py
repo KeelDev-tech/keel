@@ -101,6 +101,7 @@ from zoneinfo import ZoneInfo
 BASE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE)
 from keel_paths import HOME, DATA, TELEMETRY  # noqa: E402 — repo path convention
+from safe_io import read_json  # noqa: E402 — bounded JSON reads
 
 import form_intel
 import log_event  # noqa: E402 — telemetry: additive event logging only
@@ -150,6 +151,13 @@ def load_answer_bank():
         if os.path.exists(p):
             return json.load(open(p))
     return {"answers": {}, "banded_questions": {}, "gates": {}}
+
+
+def load_policy():
+    # Keel Advance port (2026-09-26): pipeline_service.prepare_role calls
+    # apply_loop.load_policy() — the live tree never had it, so prepare_role
+    # raised AttributeError on any invocation (pre-existing on live main).
+    return read_json(os.path.join(HOME, "data", "policy.json"))
 
 
 def load_queue():

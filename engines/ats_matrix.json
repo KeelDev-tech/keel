@@ -1,0 +1,579 @@
+{
+  "_readme": "ATS capability matrix \u2014 machine-readable registry of tested ATS boards/platforms. Populated from EVIDENCE ONLY (code paths, HTTP probes, tests, and docs listed per entry). Boards with no evidence carry status 'unverified' with no guessed flags. This registry records CAPABILITY FLAGS only (what is reachable/verifiable, what walls exist) \u2014 it carries no submission mechanics, request fingerprints, bypass techniques, or payload details. Evidence paths are relative to the repo root.",
+  "aliases": {
+    "jazzhr": "applytojob",
+    "lever_embed": "lever",
+    "workatastartup": "workatastartup",
+    "yc": "workatastartup",
+    "ycombinator": "workatastartup"
+  },
+  "boards": {
+    "adp": {
+      "api_direct_supported": false,
+      "display_name": "ADP",
+      "evidence": [],
+      "form_probe_ok": false,
+      "guest_discovery": false,
+      "known_blockers": [],
+      "last_verified": null,
+      "notes": "No evidence on file.",
+      "rate_limit_notes": null,
+      "status": "unverified",
+      "verification_method": null
+    },
+    "applytojob": {
+      "api_direct_supported": false,
+      "display_name": "JazzHR (applytojob.com)",
+      "evidence": [
+        "engines/application-executor/edge_case_registry.json",
+        "engines/application-executor/ats.py"
+      ],
+      "form_probe_ok": true,
+      "guest_discovery": true,
+      "known_blockers": [
+        "captcha_recaptcha_v2"
+      ],
+      "last_verified": "2026-09-16",
+      "notes": "Application form is server-rendered with a known multipart POST action, but Google reCAPTCHA v2 is wired into submit (pure HTTP cannot mint a token).",
+      "rate_limit_notes": null,
+      "status": "verified",
+      "verification_method": "HTTP probe 2026-09-14 (monetizem sample: 200, full server-rendered form, 39 inputs, known POST action) + supervised re-verification 2026-09-16 confirming reCAPTCHA v2 wired into submit; edge_probe http_render_check protocol"
+    },
+    "ashby": {
+      "api_direct_supported": false,
+      "display_name": "Ashby",
+      "evidence": [
+        "engines/application-executor/edge_case_registry.json",
+        "engines/application-executor/employer_form_patterns.json",
+        "engines/application-executor/ats.py"
+      ],
+      "form_probe_ok": false,
+      "guest_discovery": true,
+      "known_blockers": [
+        "js_challenge"
+      ],
+      "last_verified": "2026-09-15",
+      "notes": "jobs.ashbyhq.com posting pages are a JS app shell not renderable over plain HTTP fetch. Board listings available via the public posting API (api.ashbyhq.com/posting-api/job-board/<board>).",
+      "rate_limit_notes": "Ashby flags repeated automated submit attempts as possible spam (employer_form_patterns.json platform_priors 'ashby': flagged sessions complete the form but cannot submit; retries recover only ~1/3)",
+      "status": "verified",
+      "verification_method": "HTTP probe 2026-09-15 (Hims & Hers, Thumbtack pages not HTTP-renderable); browser submission proven live (Sierra via browser path); edge_probe http_render_check protocol; prescreen blind-ATS priors"
+    },
+    "bamboohr": {
+      "api_direct_supported": false,
+      "display_name": "BambooHR",
+      "evidence": [],
+      "form_probe_ok": false,
+      "guest_discovery": false,
+      "known_blockers": [],
+      "last_verified": null,
+      "notes": "Detection pattern exists in ats.py but no probe evidence is on file.",
+      "rate_limit_notes": null,
+      "status": "unverified",
+      "verification_method": null
+    },
+    "breezy": {
+      "api_direct_supported": false,
+      "display_name": "Breezy HR",
+      "evidence": [
+        "engines/application-executor/breezy_preflight.py",
+        "engines/application-executor/tests/test_breezy_preflight.py",
+        "engines/application-executor/edge_case_registry.json",
+        "engines/application-executor/ats.py"
+      ],
+      "form_probe_ok": true,
+      "guest_discovery": true,
+      "known_blockers": [],
+      "last_verified": "2026-09-15",
+      "notes": "No captcha/auth wall observed on sampled pages (no recaptcha/hcaptcha/turnstile/enterprise markers, no API key, no login gate). The pre-flight is dry-run question-mapping validation only \u2014 live HTTP submit is not wired; transport verdict browser_only.",
+      "rate_limit_notes": "13 HTTP reqs across 9 boards during the 2026-09-15 alt-ATS trial, zero 429s",
+      "status": "verified",
+      "verification_method": "read-only HTTP probe 2026-09-15 (ARM 100): server-rendered AngularJS apply page with a real form + honeypot, platform REST client defining POST /apply/<positionId>; breezy_preflight.py dry-run validation; edge_probe http_render_check protocol"
+    },
+    "careerpuck": {
+      "api_direct_supported": false,
+      "display_name": "CareerPuck",
+      "evidence": [
+        "engines/application-executor/edge_case_registry.json",
+        "engines/application-executor/api_direct_detect.py",
+        "engines/application-executor/ats.py"
+      ],
+      "form_probe_ok": false,
+      "guest_discovery": true,
+      "is_aggregator": true,
+      "known_blockers": [
+        "aggregator"
+      ],
+      "last_verified": "2026-09-15",
+      "notes": "Third-party career-board host, often proxying Greenhouse embeds (e.g. Udemy, Lyft, Domino). Resolve the proxied ATS per posting. is_aggregator=true.",
+      "rate_limit_notes": null,
+      "status": "verified",
+      "verification_method": "live HTTP probe 2026-09-15 (Vite React app shell, 0 <form>; CSP frame-ancestors explicitly allow greenhouse.io / lever.co / ashbyhq.com / applytojob.com / pinpointhq.com \u2014 embeds underlying ATS boards); edge_probe http_render_check protocol"
+    },
+    "comeet": {
+      "api_direct_supported": false,
+      "display_name": "Comeet",
+      "evidence": [
+        "engines/application-executor/edge_case_registry.json",
+        "engines/application-executor/api_direct_detect.py",
+        "engines/application-executor/ats.py"
+      ],
+      "form_probe_ok": false,
+      "guest_discovery": true,
+      "known_blockers": [
+        "js_challenge"
+      ],
+      "last_verified": "2026-09-15",
+      "notes": "",
+      "rate_limit_notes": null,
+      "status": "verified",
+      "verification_method": "HTTP probe 2026-09-15 (JS-rendered apply form embedded on employer domains via comeet-applyform script); edge_probe http_render_check protocol"
+    },
+    "eightfold": {
+      "api_direct_supported": false,
+      "display_name": "Eightfold",
+      "evidence": [],
+      "form_probe_ok": false,
+      "guest_discovery": false,
+      "known_blockers": [],
+      "last_verified": null,
+      "notes": "Registry entry exists (edge_case_registry.json) but the verdict is 'unknown' with no probe evidence on file \u2014 carries no capabilities.",
+      "rate_limit_notes": null,
+      "status": "unverified",
+      "verification_method": null
+    },
+    "greenhouse": {
+      "api_direct_supported": false,
+      "api_direct_write_lifecycle": "RETIRED_WRITE_PATH",
+      "display_name": "Greenhouse",
+      "evidence": [
+        "engines/application-executor/api_submit.py",
+        "engines/application-executor/api_direct_detect.py",
+        "engines/application-executor/form_intel.py",
+        "engines/application-executor/edge_case_registry.json",
+        "engines/application-executor/clean_board_watch.py",
+        "engines/application-executor/ats.py"
+      ],
+      "form_probe_ok": true,
+      "guest_discovery": true,
+      "known_blockers": [
+        "captcha_recaptcha_enterprise"
+      ],
+      "last_verified": "2026-09-16",
+      "notes": "RETIRED 2026-09-18 (Keel Blocker Resolution Directive \u00a71, Workstream A): API-direct is retired as a write transport (lifecycle RETIRED_WRITE_PATH). api_direct_supported now reports False by policy via ats_matrix.capability() and engines/api_direct_policy.py. Prior True claims are historical evidence only \u2014 not a live write capability. Discovery/inspection remain ALLOW (api_direct_detect.py, lever_submit.py, board-API enumerate modules). Prior note: api_direct_supported is qualified: legacy non-Enterprise boards only. Modern job-boards.greenhouse.io boards render reCAPTCHA Enterprise (pure HTTP cannot mint an enterprise token) and stay on the browser path. The form-blob gate refuses listing mirrors / SPA shells (e.g. securly13).",
+      "rate_limit_notes": "0 HTTP 429 observed across edge probes and the 2026-09-15 async verify run (60 leads, 2.7 min). api_direct_detect fail-closes on fetch failure.",
+      "status": "verified",
+      "variants": {
+        "greenhouse_legacy_embed": {
+          "api_direct_supported": false,
+          "api_direct_write_lifecycle": "RETIRED_WRITE_PATH",
+          "evidence_note": "RETIRED 2026-09-18 (Keel Blocker Resolution Directive \u00a71, Workstream A): API-direct is retired as a write transport (lifecycle RETIRED_WRITE_PATH). api_direct_supported now reports False by policy via ats_matrix.capability() and engines/api_direct_policy.py. Prior True claims are historical evidence only \u2014 not a live write capability. Discovery/inspection remain ALLOW (api_direct_detect.py, lever_submit.py, board-API enumerate modules). Prior evidence note: edge_case_registry.json 'greenhouse_legacy_embed' verdict viable_direct (14/14 detection tests); older boards.greenhouse.io embeds may lack the Enterprise endpoint"
+        },
+        "greenhouse_modern": {
+          "api_direct_supported": false,
+          "evidence_note": "edge_case_registry.json 'greenhouse_modern' verdict browser_only: GitLab, Anthropic, xAI, Neo4j, AIO Logic boards all refused by api_direct_detect (Enterprise marker present)",
+          "known_blockers": [
+            "captcha_recaptcha_enterprise"
+          ]
+        }
+      },
+      "verification_method": "production traffic (api_direct_detect dry-run gates inside apply_loop verify/launch; form-blob gate) + edge_probe greenhouse_detect protocol + HTTP probes of sample URLs"
+    },
+    "greenhouse_embed": {
+      "api_direct_supported": false,
+      "display_name": "Greenhouse embed form (job-boards.greenhouse.io/embed/job_app)",
+      "evidence": [
+        "engines/application-executor/form_intel.py",
+        "engines/application-executor/api_direct_detect.py"
+      ],
+      "form_probe_ok": true,
+      "guest_discovery": true,
+      "known_blockers": [],
+      "last_verified": "2026-09-16",
+      "notes": "form_probe_ok covers question extraction only; submission candidacy is evaluated on the board URL form via api_direct_detect.",
+      "rate_limit_notes": "no direct-submission path wired for the embed URL form; the api-direct fast lane uses the board URL form (boards|job-boards.greenhouse.io/<board>/jobs/<id>)",
+      "status": "verified",
+      "verification_method": "form_intel.greenhouse_embed_intel extracts the server-rendered question structure over plain HTTP (form_intel.py probe_url)"
+    },
+    "harri": {
+      "api_direct_supported": false,
+      "display_name": "Harri",
+      "evidence": [
+        "engines/application-executor/edge_case_registry.json"
+      ],
+      "form_probe_ok": false,
+      "guest_discovery": true,
+      "known_blockers": [
+        "js_challenge"
+      ],
+      "last_verified": "2026-09-15",
+      "notes": "guest_discovery is partial: minimal shell only, job detail text not reliably present over HTTP.",
+      "rate_limit_notes": null,
+      "status": "verified",
+      "verification_method": "HTTP probe 2026-09-15 (harri.com job page 200 but 4423 bytes minimal shell; no <form>, no apply button, no captcha markers); edge_probe http_render_check protocol"
+    },
+    "icims": {
+      "api_direct_supported": false,
+      "display_name": "iCIMS",
+      "evidence": [
+        "engines/application-executor/edge_case_registry.json",
+        "engines/application-executor/ats.py"
+      ],
+      "form_probe_ok": false,
+      "guest_discovery": true,
+      "known_blockers": [
+        "login_wall",
+        "captcha_recaptcha"
+      ],
+      "last_verified": "2026-09-16",
+      "notes": "Apply routes terminate at a /job/login candidate-login wall; referring pages carry reCAPTCHA markers. No server-rendered apply form over HTTP.",
+      "rate_limit_notes": null,
+      "status": "verified",
+      "verification_method": "HTTP probes 2026-09-15 + supervised re-verification 2026-09-16 (careers-charter.icims.com /job/login: 200 but nav shell only, 0 <form> tags); edge_probe http_render_check protocol"
+    },
+    "jobvite": {
+      "api_direct_supported": false,
+      "display_name": "Jobvite",
+      "evidence": [],
+      "form_probe_ok": false,
+      "guest_discovery": false,
+      "known_blockers": [],
+      "last_verified": null,
+      "notes": "Detection pattern exists in ats.py but no probe evidence is on file.",
+      "rate_limit_notes": null,
+      "status": "unverified",
+      "verification_method": null
+    },
+    "lever": {
+      "api_direct_supported": false,
+      "display_name": "Lever",
+      "evidence": [
+        "engines/application-executor/api_direct_detect.py",
+        "engines/application-executor/lever_submit.py",
+        "engines/application-executor/form_intel.py",
+        "engines/application-executor/edge_case_registry.json",
+        "engines/application-executor/ats.py"
+      ],
+      "form_probe_ok": true,
+      "guest_discovery": true,
+      "known_blockers": [
+        "captcha_hcaptcha"
+      ],
+      "last_verified": "2026-09-16",
+      "notes": "lever_submit.py is a dry-run pre-flight ONLY (validates custom-question mapping against the answer bank before a browser run); live HTTP submit refused by design (gate lever_blocked) until a supervised verification proves a path.",
+      "rate_limit_notes": "api.lever.co returns HTTP 403 'You need an API key' for keyless POST (verified 2026-09-15); no rate-limit signal probed beyond that wall",
+      "status": "verified",
+      "verification_method": "endpoint probes + frontend inspection 2026-09-15 (403 wall, hCaptcha sitekey e33f87f8... on two unrelated orgs); form_intel hCaptcha carrier injection 2026-09-16; edge_probe lever_wall_check protocol"
+    },
+    "oracle_recruiting_cloud": {
+      "api_direct_supported": false,
+      "display_name": "Oracle Recruiting Cloud (HCM)",
+      "evidence": [
+        "engines/application-executor/edge_case_registry.json",
+        "engines/application-executor/api_direct_detect.py",
+        "engines/application-executor/ats.py"
+      ],
+      "form_probe_ok": false,
+      "guest_discovery": true,
+      "known_blockers": [
+        "js_challenge"
+      ],
+      "last_verified": "2026-09-15",
+      "notes": "Detectable via the Oracle HCM Candidate Experience tenant pattern (fa.<tenant>.oraclecloud.com).",
+      "rate_limit_notes": null,
+      "status": "verified",
+      "verification_method": "HTTP probe 2026-09-15 (JS SPA: posting renders as app shell, Apply markers present, no static form / apply endpoint); edge_probe http_render_check protocol"
+    },
+    "paylocity": {
+      "api_direct_supported": false,
+      "display_name": "Paylocity",
+      "evidence": [],
+      "form_probe_ok": false,
+      "guest_discovery": false,
+      "known_blockers": [],
+      "last_verified": null,
+      "notes": "No evidence on file.",
+      "rate_limit_notes": null,
+      "status": "unverified",
+      "verification_method": null
+    },
+    "personio": {
+      "api_direct_supported": false,
+      "display_name": "Personio",
+      "evidence": [],
+      "form_probe_ok": false,
+      "guest_discovery": false,
+      "known_blockers": [],
+      "last_verified": null,
+      "notes": "Detection pattern exists in ats.py but no probe evidence is on file.",
+      "rate_limit_notes": null,
+      "status": "unverified",
+      "verification_method": null
+    },
+    "phenom": {
+      "api_direct_supported": false,
+      "display_name": "Phenom",
+      "evidence": [],
+      "form_probe_ok": false,
+      "guest_discovery": false,
+      "known_blockers": [],
+      "last_verified": null,
+      "notes": "Registry entry exists (edge_case_registry.json) but the verdict is 'unknown' with no probe evidence on file \u2014 carries no capabilities.",
+      "rate_limit_notes": null,
+      "status": "unverified",
+      "verification_method": null
+    },
+    "pinpoint": {
+      "api_direct_supported": false,
+      "display_name": "Pinpoint",
+      "evidence": [
+        "engines/application-executor/edge_case_registry.json",
+        "engines/application-executor/ats.py"
+      ],
+      "form_probe_ok": false,
+      "guest_discovery": true,
+      "known_blockers": [
+        "js_challenge"
+      ],
+      "last_verified": "2026-09-15",
+      "notes": "No server-rendered application form over plain HTTP on sampled URLs. Posting URLs sometimes live on custom careers domains while the slug host still serves the listings JSON.",
+      "rate_limit_notes": "9 live boards (~1,150 postings), 29 HTTP reqs during the 2026-09-15 alt-ATS trial, zero 429s",
+      "status": "verified",
+      "verification_method": "alt-ATS trial 2026-09-15: keyless GET {slug}.pinpointhq.com/postings.json (full HTML description inline); edge_probe http_render_check protocol"
+    },
+    "recruitee": {
+      "api_direct_supported": false,
+      "display_name": "Recruitee",
+      "evidence": [
+        "engines/application-executor/edge_case_registry.json",
+        "engines/application-executor/ats.py"
+      ],
+      "form_probe_ok": false,
+      "guest_discovery": true,
+      "known_blockers": [
+        "js_challenge"
+      ],
+      "last_verified": "2026-09-15",
+      "notes": "No server-rendered application form over plain HTTP on sampled URLs.",
+      "rate_limit_notes": "35 tenants probed, ~48 HTTP reqs during the 2026-09-15 alt-ATS trial, zero 429s",
+      "status": "verified",
+      "verification_method": "alt-ATS trial 2026-09-15 (35 tenants, 11 live boards): keyless GET {tenant}.recruitee.com/api/offers/ (title, location, remote/on_site, department, description); edge_probe http_render_check protocol"
+    },
+    "rippling": {
+      "api_direct_supported": false,
+      "display_name": "Rippling ATS",
+      "evidence": [
+        "engines/application-executor/edge_case_registry.json",
+        "engines/application-executor/ats.py"
+      ],
+      "form_probe_ok": false,
+      "guest_discovery": true,
+      "known_blockers": [
+        "bot_detection_cloudflare_turnstile",
+        "js_challenge"
+      ],
+      "last_verified": "2026-09-15",
+      "notes": "Board listings are machine-readable over plain GET (structured JSON in __NEXT_DATA__). The apply form embeds Cloudflare Turnstile \u2014 application transport stays browser_only.",
+      "rate_limit_notes": "15 boards, ~19 reqs during the 2026-09-15 listings trial, zero 429s",
+      "status": "verified",
+      "verification_method": "HTTP probe 2026-09-14 (app shell, 0 forms, Cloudflare Turnstile site key embedded in platform config) + listings-layer trial 2026-09-15 (__NEXT_DATA__ server-rendered job JSON); edge_probe http_render_check protocol"
+    },
+    "smartrecruiters": {
+      "api_direct_supported": false,
+      "display_name": "SmartRecruiters",
+      "evidence": [
+        "engines/application-executor/edge_case_registry.json",
+        "engines/application-executor/ats.py"
+      ],
+      "form_probe_ok": false,
+      "guest_discovery": true,
+      "known_blockers": [
+        "js_challenge",
+        "no_apply_route_sample"
+      ],
+      "last_verified": "2026-09-15",
+      "notes": "Apply flow resolves through jobs.smartrecruiters.com, for which no sample URL is held. Job detail pages are server-rendered for discovery.",
+      "rate_limit_notes": null,
+      "status": "verified",
+      "verification_method": "HTTP probe 2026-09-15 (www.smartrecruiterscareers.com job page 200, server-rendered description, apply button present, no captcha markers on SEO page); edge_probe http_render_check protocol"
+    },
+    "successfactors": {
+      "api_direct_supported": false,
+      "display_name": "SAP SuccessFactors",
+      "evidence": [
+        "engines/application-executor/edge_case_registry.json"
+      ],
+      "form_probe_ok": false,
+      "guest_discovery": true,
+      "known_blockers": [
+        "login_wall"
+      ],
+      "last_verified": "2026-09-16",
+      "notes": "The only <form> on listing pages is the keyword-search form, not an application. The apply flow lives in the SF candidate portal.",
+      "rate_limit_notes": null,
+      "status": "verified",
+      "verification_method": "HTTP probe 2026-09-15 (careers.crocs.com 200, SuccessFactors asset markers; talentcommunity apply deep-link 302s to careers homepage over HTTP) + supervised re-verification 2026-09-16; edge_probe http_render_check protocol"
+    },
+    "taleo": {
+      "api_direct_supported": false,
+      "display_name": "Oracle Taleo",
+      "evidence": [],
+      "form_probe_ok": false,
+      "guest_discovery": false,
+      "known_blockers": [],
+      "last_verified": null,
+      "notes": "No evidence on file.",
+      "rate_limit_notes": null,
+      "status": "unverified",
+      "verification_method": null
+    },
+    "tealhq": {
+      "api_direct_supported": false,
+      "display_name": "TealHQ",
+      "evidence": [
+        "engines/application-executor/edge_case_registry.json",
+        "engines/application-executor/ats.py"
+      ],
+      "form_probe_ok": false,
+      "guest_discovery": true,
+      "is_aggregator": true,
+      "known_blockers": [
+        "aggregator"
+      ],
+      "last_verified": "2026-09-15",
+      "notes": "Aggregator, not an ATS: job pages link out to the real employer application. is_aggregator=true.",
+      "rate_limit_notes": null,
+      "status": "verified",
+      "verification_method": "live-lead evidence (Filigran lead: TealHQ apply route unresolved until browser STEP 0) + edge_probe aggregator_check protocol"
+    },
+    "teamtailor": {
+      "api_direct_supported": false,
+      "display_name": "Teamtailor",
+      "evidence": [
+        "engines/application-executor/edge_case_registry.json",
+        "engines/application-executor/api_direct_detect.py",
+        "engines/application-executor/ats.py"
+      ],
+      "form_probe_ok": false,
+      "guest_discovery": true,
+      "known_blockers": [
+        "js_challenge"
+      ],
+      "last_verified": "2026-09-16",
+      "notes": "",
+      "rate_limit_notes": null,
+      "status": "verified",
+      "verification_method": "HTTP probe 2026-09-15 (board and postings render over HTTP, job text readable; application form is a JS overlay); edge_probe http_render_check protocol"
+    },
+    "workable": {
+      "api_direct_supported": false,
+      "display_name": "Workable",
+      "evidence": [
+        "engines/application-executor/edge_case_registry.json",
+        "engines/application-executor/ats.py"
+      ],
+      "form_probe_ok": false,
+      "guest_discovery": true,
+      "known_blockers": [
+        "bot_detection_cloudflare_turnstile",
+        "js_challenge"
+      ],
+      "last_verified": "2026-09-16",
+      "notes": "Listings layer is keyless and machine-readable (Markdown + JSON endpoints). No HTTP-renderable apply form; apply flow unobservable over HTTP.",
+      "rate_limit_notes": null,
+      "status": "verified",
+      "verification_method": "HTTP probes 2026-09-15 (dead posting sample; listing page shows Cloudflare Turnstile + JS shell) + production transport note 2026-09-16: public Markdown endpoints apply.workable.com/{sub}/jobs.md, /jobs/view/{id}.md, /llms.txt; keyless board APIs on 3 live boards (huggingface, resourcemanagementconcepts, theoceanac); edge_probe http_render_check protocol"
+    },
+    "workatastartup": {
+      "api_direct_supported": false,
+      "display_name": "Y Combinator Work at a Startup",
+      "evidence": [
+        "engines/application-executor/edge_case_registry.json",
+        "engines/application-executor/ats.py"
+      ],
+      "form_probe_ok": false,
+      "guest_discovery": true,
+      "known_blockers": [
+        "login_wall"
+      ],
+      "last_verified": "2026-09-15",
+      "notes": "YC job pages are app shells; the only apply route requires YC account login/signup.",
+      "rate_limit_notes": null,
+      "status": "verified",
+      "verification_method": "HTTP probe 2026-09-14 (both samples 200: 0 <form>, 0 inputs, auth-wall href to account.ycombinator.com/authenticate); edge_probe http_render_check protocol"
+    },
+    "workday": {
+      "api_direct_supported": false,
+      "display_name": "Workday",
+      "evidence": [
+        "engines/application-executor/edge_case_registry.json",
+        "engines/application-executor/ats.py"
+      ],
+      "form_probe_ok": false,
+      "guest_discovery": true,
+      "known_blockers": [
+        "js_challenge"
+      ],
+      "last_verified": "2026-09-15",
+      "notes": "Posting pages render as a Workday shell over HTTP with no reachable application form.",
+      "rate_limit_notes": null,
+      "status": "verified",
+      "verification_method": "live HTTP sample 2026-09-15 (valmont.wd1.myworkdayjobs.com: 200, 0 forms, 0 inputs over plain HTTP); edge_probe http_render_check protocol"
+    }
+  },
+  "flags_documented": {
+    "api_direct_supported": "a clean pure-HTTP submission path is wired and tested for this board (no browser run needed)",
+    "form_probe_ok": "form_intel (or an equivalent HTTP probe module) can extract the server-rendered application form / custom questions over plain HTTP",
+    "guest_discovery": "public listing/posting pages are reachable over plain HTTP with no login (metadata, job text, board listings)"
+  },
+  "generated": "2026-09-16 13:35 PDT",
+  "known_blockers_vocabulary": [
+    "aggregator",
+    "bot_detection_cloudflare",
+    "bot_detection_cloudflare_turnstile",
+    "captcha_hcaptcha",
+    "captcha_recaptcha",
+    "captcha_recaptcha_enterprise",
+    "captcha_recaptcha_v2",
+    "enterprise_board_only",
+    "js_challenge",
+    "login_wall",
+    "no_apply_route_sample"
+  ],
+  "sources": {
+    "indeed": {
+      "api_direct_supported": false,
+      "display_name": "Indeed",
+      "evidence": [
+        "engines/linkedin_indeed_adapter.py",
+        "docs/linkedin-indeed-lane.md"
+      ],
+      "form_probe_ok": false,
+      "guest_discovery": false,
+      "known_blockers": [
+        "bot_detection_cloudflare"
+      ],
+      "last_verified": "2026-09-16",
+      "notes": "No automated Indeed discovery. This adapter only resolves hand-provided Indeed URLs (operator-provided) to canonical ATS URLs via resolve_indeed_url(). Clearing the challenge would be bot-detection bypass \u2014 out of scope.",
+      "rate_limit_notes": null,
+      "status": "verified",
+      "verification_method": "live HTTP probe 2026-09-16 (plain urllib, standard browser UA, no login): /jobs, /viewjob, /rss all return HTTP 401/403 with a Cloudflare bot-detection challenge requiring JS clearance + login redirect"
+    },
+    "linkedin": {
+      "api_direct_supported": false,
+      "display_name": "LinkedIn (jobs-guest API)",
+      "evidence": [
+        "engines/linkedin_indeed_adapter.py",
+        "docs/linkedin-indeed-lane.md"
+      ],
+      "form_probe_ok": false,
+      "guest_discovery": true,
+      "known_blockers": [],
+      "last_verified": "2026-09-16",
+      "notes": "LinkedIn Easy Apply postings keep the LinkedIn page as the apply target but apply itself is browser-only. Offsite postings hide the employer apply URL from guests; the browser lane resolves the real apply route at runtime (Step 0).",
+      "rate_limit_notes": "HTTP 429 is a hard stop (exit 75, nothing written); 2s polite delay between requests, sequential, bounded pages",
+      "status": "verified",
+      "verification_method": "live HTTP probe 2026-09-16 (plain urllib, standard browser UA, no login): guest search returns ~10 server-rendered cards/page; job detail returns title/company/location/description + apply-route markers; fake id -> 404 (endpoint is real)"
+    }
+  },
+  "version": 1
+}

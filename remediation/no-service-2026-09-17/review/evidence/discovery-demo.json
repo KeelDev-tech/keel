@@ -1,0 +1,18 @@
+{
+  "staged": [
+    {
+      "schema_version": 1,
+      "provider": "greenhouse",
+      "employer_id": "synthetic_fixture",
+      "posting_id": "1",
+      "posting_url": "https://example.org/jobs/1",
+      "title": "Synthetic Operations Example",
+      "posting_text": "Office attendance 5 days a week. Up to 50% travel.",
+      "source_observed_at": "2026-09-17T12:00:00+00:00",
+      "status": "STAGED",
+      "trusted_instructions": false
+    }
+  ],
+  "excluded": [],
+  "fetched_count": 1
+}

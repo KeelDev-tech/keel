@@ -1,0 +1,87 @@
+{
+  "artifacts": [
+    {
+      "artifact_id": "resume",
+      "depends_on": [],
+      "revision": "v1",
+      "scope": "synthetic-keel-application",
+      "statements": [
+        {
+          "claim_id": "claim-example",
+          "claim_revision": "v1",
+          "wording": "Synthetic fixture experience; not a real qualification."
+        }
+      ],
+      "workspace_id": "keel-demo"
+    },
+    {
+      "artifact_id": "packet",
+      "depends_on": [
+        "resume"
+      ],
+      "revision": "v1",
+      "scope": "synthetic-keel-application",
+      "statements": [],
+      "workspace_id": "keel-demo"
+    },
+    {
+      "artifact_id": "interview",
+      "depends_on": [
+        "packet"
+      ],
+      "revision": "v1",
+      "scope": "synthetic-keel-application",
+      "statements": [],
+      "workspace_id": "keel-demo"
+    }
+  ],
+  "claims": [
+    {
+      "allowed_scopes": [
+        "synthetic-keel-application"
+      ],
+      "allowed_wording": [
+        "Synthetic fixture experience; not a real qualification."
+      ],
+      "approval_ref": "fixture://explicit-approval",
+      "basis": "SELF_ATTESTED",
+      "claim_id": "claim-example",
+      "conflicts_with": [],
+      "evidence": [
+        {
+          "content_hash": "a07cad3540184cc2a387531556a71c86db448f027a86403b87da8838b4faf126",
+          "revision": "v1",
+          "source_id": "source-example"
+        }
+      ],
+      "expires_at": "2026-09-18T13:00:00+00:00",
+      "kind": "EXPERIENCE",
+      "predicate": "experience-example",
+      "review_state": "APPROVED",
+      "revision": "v1",
+      "subject_id": "synthetic-applicant",
+      "value_hash": "a07cad3540184cc2a387531556a71c86db448f027a86403b87da8838b4faf126",
+      "workspace_id": "keel-demo"
+    }
+  ],
+  "complete": true,
+  "observed_at": "2026-09-18T12:00:00+00:00",
+  "schema_version": 1,
+  "source_revision": "SYNTHETIC-EVIDENCE-v1",
+  "sources": [
+    {
+      "content_hash": "a07cad3540184cc2a387531556a71c86db448f027a86403b87da8838b4faf126",
+      "expires_at": "2026-09-18T13:00:00+00:00",
+      "observed_at": "2026-09-18T12:00:00+00:00",
+      "origin": "APPLICANT_RECORD",
+      "publisher_id": "synthetic-applicant",
+      "revision": "v1",
+      "source_id": "source-example",
+      "source_ref": "fixture://applicant-assertion",
+      "status": "ACTIVE",
+      "verification_ref": null,
+      "workspace_id": "keel-demo"
+    }
+  ],
+  "workspace_id": "keel-demo"
+}

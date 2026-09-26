@@ -1,0 +1,13 @@
+{
+  "assumption_ref": "fixture://delay-assumption-not-measurement",
+  "base_sha256": "a79e7af830dbca17fdc68c936f3010c217f0552878c0ef2054f22ddb134680fe",
+  "changes": [
+    {
+      "kind": "RELEASE_DELAY_SECONDS",
+      "target": "synthetic-backlog",
+      "value": 600
+    }
+  ],
+  "scenario_id": "synthetic-10-minute-release-delay",
+  "schema_version": 1
+}

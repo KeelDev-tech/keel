@@ -1,0 +1,286 @@
+--- a/api_direct_loop.py
++++ b/api_direct_loop.py
+@@ -46,6 +46,7 @@
+ import subprocess
+ import sys
+ import urllib.request
++import uuid
+ from datetime import datetime, timezone
+ 
+ BASE = os.path.dirname(os.path.abspath(__file__))
+@@ -182,49 +183,55 @@
+ 
+ 
+ def _parse_guard_verdict(out):
+-    """Extract (go: bool, reason: str) from launch_lock --guard output.
+-
+-    J-20260916-2102-gate-936 (2026-09-16): --guard prints the verdict as
+-    pretty-printed JSON (json.dumps(info, indent=1) in launch_lock.main),
+-    so the old last-line scrape returned the JSON's closing "}}" on every
+-    refusal (e.g. reason "}" for a HELD/STAND_DOWN verdict). Parse the
+-    structured output instead; fall back to the legacy last-line scrape
+-    if the output is not JSON (forward-compatible with output changes).
+-    """
+-    try:
+-        info = json.loads((out or "").strip())
+-        if isinstance(info, dict):
+-            verdict = info.get("verdict", "")
+-            status = info.get("status", "")
+-            note = info.get("note", "")
+-            go = verdict == "GO"
+-            reason = (f"{status}: {note}" if note
+-                      else f"{status}: {verdict}" if (status and verdict
+-                                                    and status != verdict)
+-                      else (verdict or status))
+-            return go, reason or "guard_refused"
+-    except (ValueError, AttributeError):
+-        pass
+-    lines = (out or "").strip().splitlines()
+-    return bool(re.search(r"\bGO\b", out or "")), \
+-        (lines[-1] if lines else "guard_refused")
+-
+-
+-def guard(role_id, company, title):
+-    """launch_lock --guard: MANDATORY pre-spawn duplicate gate. Non-GO -> skip."""
++    """Only a structured, consistent GO is accepted; report the actual holder."""
++    try:
++        info = json.loads(out)
++        if not isinstance(info, dict):
++            raise ValueError("not an object")
++        status, verdict = info.get("status"), info.get("verdict")
++        holder = info.get("lock") or {}
++        reason = f"{status or 'UNKNOWN'}: {verdict or 'UNKNOWN'}"
++        if isinstance(holder, dict) and holder.get("task_id"):
++            reason += " holder=" + str(holder["task_id"])
++        if info.get("note"):
++            reason += "; " + str(info["note"])
++        return status == "ACQUIRED" and verdict == "GO", reason[:500]
++    except (ValueError, TypeError):
++        return False, "guard_invalid_json"
++
++
++def guard(role_id, company, title, task_id=None):
+     try:
+         r = subprocess.run(
+-            [sys.executable, LOCK_SCRIPT, "--guard", role_id, TASK_ID,
++            [sys.executable, LOCK_SCRIPT, "--guard", role_id, task_id or TASK_ID,
+              "--company", company or "", "--title", title or ""],
+             capture_output=True, text=True, timeout=30)
+-    except (subprocess.SubprocessError, OSError) as ex:
+-        return False, f"guard_exec_failed: {ex}"
+-    # parse stdout only: stderr may carry tracebacks or interleaved junk
+-    # that would corrupt the verdict parse.
++    except (subprocess.SubprocessError, OSError):
++        return False, "guard_exec_failed"
+     go, reason = _parse_guard_verdict(r.stdout or "")
+-    if r.returncode == 0 and go:
+-        return True, reason
+-    return False, reason
++    return r.returncode == 0 and go, reason
++
++
++def release_pre_dispatch_lock(role_id, task_id):
++    r = subprocess.run([sys.executable, LOCK_SCRIPT, "--release", role_id, task_id],
++                       capture_output=True, text=True, timeout=30)
++    if r.returncode != 0:
++        raise RuntimeError("owned pre-dispatch launch lock was not released")
++
++
++def request_preparation(entry, kind):
++    """Durable handoff request on the same queue entry; no promotion or submit.
++
++    The parent controller consumes this field idempotently and re-evaluates
++    current eligibility. A missing entry is an error, never an orphaned request.
++    """
++    if kind not in {"packet_build", "browser_handoff"}:
++        raise ValueError("unsupported preparation request")
++    path = STRAT_Q if entry["_origin"] == "strategic" else STD_Q
++    fields = {"preparation_request": {"kind": kind, "role_id": entry["role_id"],
++              "requested_at": _utcnow().isoformat(), "source": "api_direct_loop"}}
++    if not queue_io.patch_entry(path, entry["role_id"], fields):
++        raise RuntimeError("preparation request has no canonical queue entry")
+ 
+ 
+ def mark_submitted(entry):
+@@ -294,61 +301,66 @@
+ 
+ 
+ def process_lead(entry, bank, dry_run=False):
+-    role_id = entry["role_id"]
+-    company = entry.get("company", "")
+-    title = entry.get("title", "")
+-    board = entry["_board"]
++    role_id, board = entry["role_id"], entry["_board"]
++    company, title = entry.get("company", ""), entry.get("title", "")
+     result = {"role_id": role_id, "board": board, "outcome": None}
+-
++    def preflight_result(outcome, reason):
++        if not dry_run:
++            record_board_stat(board, role_id, outcome, reason)
++        return dict(result, outcome=outcome, reason=reason)
+     if blocklisted(company):
+-        result.update(outcome="refused", reason="employer_blocklisted")
+-        record_board_stat(board, role_id, "refused", "employer_blocklisted")
+-        telemetry("gate_blocked", role_id=role_id, company=company,
+-                  source="api_direct_loop",
+-                  details={"gate": "employer_blocklist"})
+-        return result
+-
+-    ok, why = guard(role_id, company, title)
+-    if not ok:
+-        result.update(outcome="refused", reason=f"guard: {why}")
+-        record_board_stat(board, role_id, "refused", f"guard: {why}")
+-        telemetry("gate_blocked", role_id=role_id, company=company,
+-                  source="api_direct_loop",
+-                  details={"gate": "launch_guard", "reason": why[:200]})
+-        return result
+-
++        return preflight_result("refused", "employer_blocklisted")
++    renderer = entry.get("api_direct_detect") or {}
++    if isinstance(renderer, dict) and renderer.get("renderer") == "employer_hosted":
++        if not dry_run:
++            request_preparation(entry, "browser_handoff")
++        return preflight_result("handoff", "renderer_employer_hosted")
++    # Every refusal that can be known without a launch lock happens first.
+     packet, ppath = find_packet(role_id)
+     if not packet:
+-        result.update(outcome="skipped", reason="no_packet")
+-        record_board_stat(board, role_id, "skipped", "no_packet")
+-        return result
+-
+-    screen = fl.fastlane_screen(packet, bank, telemetry_enabled=True)
++        if not dry_run:
++            request_preparation(entry, "packet_build")
++        return preflight_result("needs_preparation", "no_packet")
++    screen = fl.fastlane_screen(packet, bank, telemetry_enabled=not dry_run, stage=False)
+     if screen.get("route") != "api_fastlane":
+-        result.update(outcome="refused",
+-                      reason=f"fastlane_{screen.get('route')}: {screen.get('reason','')[:150]}")
+-        record_board_stat(board, role_id, "refused",
+-                          f"fastlane_{screen.get('route')}")
+-        return result
+-
++        if not dry_run and screen.get("route") == "browser":
++            request_preparation(entry, "browser_handoff")
++        return preflight_result("refused", f"fastlane_{screen.get('route')}")
+     if dry_run:
+-        result.update(outcome="dry_run_ok",
+-                      reason=screen.get("reason", "")[:150])
+-        record_board_stat(board, role_id, "dry_run_ok")
+-        return result
+-
+-    ok, msg = asu.grant_human_approval(role_id, STANDING_APPROVER,
+-                                      telemetry_enabled=True)
++        return dict(result, outcome="dry_run_ok", reason=screen.get("reason", ""))
++    # A new claim token per invocation prevents same-name concurrent workers
++    # from inheriting each other's locks, including after ambiguous outcomes.
++    task_id = "api-direct-loop:" + uuid.uuid4().hex
++    ok, why = guard(role_id, company, title, task_id=task_id)
+     if not ok:
++        return preflight_result("refused", "guard: " + why)
++    try:
++        # Staging writes only happen after this invocation owns the launch lock.
++        asu.stage_for_human_review(role_id, fingerprint=screen["fingerprint"],
++            dry_run_reason=screen["reason"], company=company, ats=screen.get("ats", "greenhouse"),
++            telemetry_enabled=True)
++        ok, msg = asu.grant_human_approval(role_id, STANDING_APPROVER,
++                                          telemetry_enabled=True)
++    except BaseException:
++        release_pre_dispatch_lock(role_id, task_id)
++        raise
++    if not ok:
++        release_pre_dispatch_lock(role_id, task_id)
+         result.update(outcome="refused", reason=f"standing_grant: {msg[:150]}")
+         record_board_stat(board, role_id, "refused", "standing_grant_failed")
+         note_edge_case("api-direct standing grant failed after clean dry-run",
+                        f"{role_id}: {msg[:200]}")
+         return result
+ 
+-    telemetry("api_direct_submit_started", role_id=role_id, company=company,
+-              source="api_direct_loop",
+-              details={"board": board, "packet": os.path.basename(ppath or "")})
++    try:
++        telemetry("api_direct_submit_started", role_id=role_id, company=company,
++                  source="api_direct_loop",
++                  details={"board": board, "packet": os.path.basename(ppath or "")})
++    except BaseException:
++        release_pre_dispatch_lock(role_id, task_id)
++        raise
++    # After this boundary, timeout/429/exception/refusal never releases the lease.
++    # The live attempt store, not lease expiry, remains the source of retry truth.
+     try:
+         res = asu.try_api_submit(packet, bank, dry_run=False,
+                                 telemetry_enabled=True)
+@@ -427,16 +439,17 @@
+         # fastlane machinery on an empty set. Schedule, cadence, and policy
+         # unchanged; the http-count row still records that the run happened
+         # (proves the loop ran and spent nothing, rather than went missing).
+-        with open(HTTP_COUNT, "a") as f:
+-            f.write(json.dumps({"ts": _utcnow().isoformat(),
+-                                "http_requests": 0, "leads_processed": 0,
+-                                "submitted": 0}) + "\n")
+-        telemetry("scan_summary", role_id="", company="",
+-                  source="api_direct_loop",
+-                  details={"processed": 0, "submitted": 0,
+-                           "http_requests": 0, "outcomes": {},
+-                           "dry_run": args.dry_run,
+-                           "idle": "no_supply_ready_x_clean_board"})
++        if not args.dry_run:
++            with open(HTTP_COUNT, "a") as f:
++                f.write(json.dumps({"ts": _utcnow().isoformat(),
++                                    "http_requests": 0, "leads_processed": 0,
++                                    "submitted": 0}) + "\n")
++            telemetry("scan_summary", role_id="", company="",
++                      source="api_direct_loop",
++                      details={"processed": 0, "submitted": 0,
++                               "http_requests": 0, "outcomes": {},
++                               "dry_run": args.dry_run,
++                               "idle": "no_supply_ready_x_clean_board"})
+         print("idle: no READY x clean-board supply — exiting")
+         return 0
+ 
+@@ -455,28 +468,31 @@
+             print(f"  {r['role_id']}: {r['outcome']}"
+                   + (f" ({r.get('reason','')[:80]})" if r.get("reason") else ""))
+     except _RateLimited as ex:
+-        print(f"HARD STOP: {ex} — run aborted, nothing half-written")
+-        telemetry("gate_encountered", role_id="", company="",
+-                  source="api_direct_loop",
+-                  details={"gate": "rate_limit_429", "action": "run_aborted"})
++        print(f"HARD STOP: {ex} — inspect in-flight attempts before any retry")
++        if not args.dry_run:
++            telemetry("gate_encountered", role_id="", company="",
++                      source="api_direct_loop",
++                      details={"gate": "rate_limit_429", "action": "run_aborted"})
+         return 75
+ 
+     http_used = _http_requests - start_http
+-    with open(HTTP_COUNT, "a") as f:
+-        f.write(json.dumps({"ts": _utcnow().isoformat(),
+-                            "http_requests": http_used,
+-                            "leads_processed": len(results),
+-                            "submitted": submitted}) + "\n")
++    if not args.dry_run:
++        with open(HTTP_COUNT, "a") as f:
++            f.write(json.dumps({"ts": _utcnow().isoformat(),
++                                "http_requests": http_used,
++                                "leads_processed": len(results),
++                                "submitted": submitted}) + "\n")
+ 
+     by_outcome = {}
+     for r in results:
+         by_outcome[r["outcome"]] = by_outcome.get(r["outcome"], 0) + 1
+     print(f"done: processed={len(results)} submitted={submitted} "
+           f"http={http_used} outcomes={by_outcome}")
+-    telemetry("scan_summary", role_id="", company="", source="api_direct_loop",
+-              details={"processed": len(results), "submitted": submitted,
+-                       "http_requests": http_used, "outcomes": by_outcome,
+-                       "dry_run": args.dry_run})
++    if not args.dry_run:
++        telemetry("scan_summary", role_id="", company="", source="api_direct_loop",
++                  details={"processed": len(results), "submitted": submitted,
++                           "http_requests": http_used, "outcomes": by_outcome,
++                           "dry_run": args.dry_run})
+     return 0
+ 
+ 

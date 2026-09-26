@@ -282,14 +282,37 @@ def is_applicant_item(entry):
     return bool(GENUINE_PAT.search(text))
 
 
+TERMINAL_OUTCOMES = {"completed", "failed"}
+
+
+def _is_live_parked(t):
+    """True only for a genuinely live parked task (holding a real slot).
+
+    Liveness requires BOTH terminal_reason IS NULL and a non-terminal
+    outcome_status (2026-09-22 refinement: 323 `completed` rows carry
+    terminal_reason NULL but are history — terminal_reason alone lies, and
+    status alone lies too). A task the runtime no longer knows ("browser
+    task not found" on close) is already-closed success, never a held
+    slot; with this predicate such rows can never become close candidates
+    again, which also kills post-close re-proposals.
+    """
+    if t.get("terminal_reason") is not None:
+        return False
+    if str(t.get("outcome_status") or "").lower() in TERMINAL_OUTCOMES:
+        return False
+    if t.get("completed_at"):
+        return False
+    return True
+
+
 def parked_candidates(tasks, now):
     """Live (non-terminal) parked tasks older than PARKED_MINUTES."""
     out = []
     for t in tasks:
         if t.get("status") not in PARKED_STATUSES:
             continue
-        if t.get("completed_at"):
-            continue  # terminal occurrence; not holding a live slot
+        if not _is_live_parked(t):
+            continue  # terminal/completed history; not holding a live slot
         if t.get("status") == "parked_outcome" and \
                 t.get("outcome_status") not in PARKED_OUTCOMES:
             continue
@@ -317,8 +340,8 @@ def zero_step_candidates(tasks, now):
     for t in tasks:
         if t.get("status") not in PARKED_STATUSES:
             continue
-        if t.get("completed_at"):
-            continue  # terminal occurrence; not holding a live slot
+        if not _is_live_parked(t):
+            continue  # terminal/completed history; not holding a live slot
         if t.get("status") == "parked_outcome" and \
                 t.get("outcome_status") not in PARKED_OUTCOMES:
             continue
@@ -331,6 +354,155 @@ def zero_step_candidates(tasks, now):
         if age_min >= ZERO_STEP_STALL_MINUTES:
             out.append((t, age_min))
     return sorted(out, key=lambda p: p[1], reverse=True)
+
+
+EVENTS_JSONL = os.path.join(DATA, "telemetry", "events.jsonl")
+
+# Submitted-evidence matching against raw telemetry (2026-09-21/22).
+# The canonical ledger lags telemetry by days, so a guard keyed only on
+# the ledger can re-queue an already-submitted role to READY (observed
+# 2026-09-22: a browser submission fully confirmed in events.jsonl with
+# no SUBMITTED ledger row yet). events.jsonl is the fresher submitted
+# signal. Matching is on company + normalized title — NEVER on role_id
+# alone (ledger and queue use varying role_id schemes).
+# Both event_types are authoritative SUBMITTED evidence — every submitted
+# filter here must match BOTH. Future aliases: add to this set.
+SUBMITTED_EVENT_TYPES = frozenset({"submitted", "submission_claimed"})
+
+
+def _norm_token(s):
+    """company/title match key: lowercased, punctuation/whitespace stripped.
+
+    E.g. "Account Executive - Enterprise, Grower" ->
+    "accountexecutiveenterprisegrower".
+    """
+    return re.sub(r"[^a-z0-9]", "", str(s or "").lower())
+
+
+_KNOWN_ATS_TOKENS = frozenset({
+    "greenhouse", "lever", "ashby", "breezy", "breezyhr", "bamboohr",
+    "jobvite", "recruitee", "smartrecruiters", "workable", "icims",
+    "successfactors", "rippling", "jazzhr", "eightfold", "taleo",
+    "workday", "adp", "clearcompany", "bullhorn", "ceipal", "zoho",
+    "applicantstack", "catsone",
+})
+_TITLE_PREFIX_MIN = 12  # below this, only exact title matches count
+
+
+def _title_from_role_slug(role_id, company):
+    """Recover title words from an application role_id slug.
+
+    ATS8 scheme: ATS8-<ats>-<company>-<title words>-<date>-<jid>, e.g.
+    ATS8-GREENHOUSE-EXAMPLECO-ACCOUNT-EXECUTIVE-LARGEENTERPRISE-JOIN-
+    20260915-J1234567 -> "ACCOUNT EXECUTIVE LARGEENTERPRISE JOIN".
+    Non-ATS8 scheme: best-effort — drop leading company tokens and
+    trailing date tokens, keep the rest (title + location words).
+    Never raises; returns "" when no title words survive.
+    """
+    toks = [t for t in str(role_id or "").split("-") if t]
+    if not toks:
+        return ""
+    if toks[0].upper() == "ATS8":
+        toks = toks[1:]
+        if toks and toks[0].lower() in _KNOWN_ATS_TOKENS:
+            toks = toks[1:]
+    cwords = set(re.findall(r"[a-z0-9]+", str(company or "").lower()))
+    toks = [t for t in toks if t.lower() not in cwords]
+    # strip trailing date / job-id tokens (…-20260915-J1234567)
+    while toks and (re.fullmatch(r"\d{8}", toks[-1])
+                    or re.fullmatch(r"J?\d{5,}", toks[-1], re.I)):
+        toks.pop()
+    return " ".join(toks)
+
+
+def _title_candidates_from_event(d):
+    """Title strings for a telemetry 'submitted' event, deduped, in
+    preference order: the recorded title, then the slug-derived title."""
+    cands = []
+    det = d.get("details") or {}
+    t = det.get("title")
+    if isinstance(t, str) and t.strip():
+        cands.append(t.strip())
+    slug_title = _title_from_role_slug(d.get("role_id"), d.get("company"))
+    if slug_title and slug_title not in cands:
+        cands.append(slug_title)
+    return cands
+
+
+_TELEMETRY_CACHE = {}  # keyed on (path, st_mtime_ns)
+
+
+def _telemetry_submitted_by_company(path=EVENTS_JSONL):
+    """(company, title) pairs with a telemetry 'submitted' /
+    'submission_claimed' event.
+
+    Fail-closed: any read/parse problem returns {} — the caller then
+    behaves exactly as before the guard (no new skips, no new repairs).
+    """
+    if path is None:
+        path = EVENTS_JSONL
+    try:
+        key = (path, os.stat(path).st_mtime_ns)
+    except OSError:
+        return {}
+    if _TELEMETRY_CACHE.get("key") == key:
+        return _TELEMETRY_CACHE["by_company"]
+    by_company = {}
+    try:
+        with open(path) as f:
+            for line in f:
+                try:
+                    d = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(d, dict):
+                    continue
+                if d.get("event_type") not in SUBMITTED_EVENT_TYPES:
+                    continue
+                comp = _norm_token(d.get("company"))
+                if not comp:
+                    continue
+                for t in _title_candidates_from_event(d):
+                    nt = _norm_token(t)
+                    if nt:
+                        by_company.setdefault(comp, set()).add(nt)
+    except OSError:
+        return {}
+    _TELEMETRY_CACHE.clear()
+    _TELEMETRY_CACHE.update(key=key, by_company=by_company)
+    return by_company
+
+
+def _title_pair_match(qt, et):
+    """True when two normalized titles identify the same role.
+
+    Exact equality first; prefix tolerance second (queue titles often
+    carry suffix words the event title lacks). The shorter side must
+    clear _TITLE_PREFIX_MIN so a bare "sales" never matches
+    "sales engineer". Mismatches fail CLOSED on the safe side: an
+    over-match only delays a repair (entry stays IN-FLIGHT for operator
+    review); an under-match is today's behavior.
+    """
+    if not qt or not et:
+        return False
+    if qt == et:
+        return True
+    short, long = (qt, et) if len(qt) < len(et) else (et, qt)
+    return len(short) >= _TITLE_PREFIX_MIN and long.startswith(short)
+
+
+def _entry_telemetry_submitted(entry, by_company):
+    """The telemetry 'submitted' title that blocks repair for this entry,
+    or None. Matched on (company, normalized title) — never role_id."""
+    comp = _norm_token(entry.get("company"))
+    qt = _norm_token(entry.get("title"))
+    titles = by_company.get(comp)
+    if not comp or not qt or not titles:
+        return None
+    for et in sorted(titles):
+        if _title_pair_match(qt, et):
+            return et
+    return None
 
 
 def _is_canonically_parked(entry):

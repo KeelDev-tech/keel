@@ -1,0 +1,42 @@
+--- a/api_fastlane.py
++++ b/api_fastlane.py
+@@ -46,6 +46,7 @@
+ 
+ sys.path.insert(0, BASE)
+ import api_submit as asu  # noqa: E402
++import queue_io
+ import ats as ats_mod  # noqa: E402
+ 
+ 
+@@ -82,9 +83,9 @@
+     Returns (None, None) when the role_id is in neither queue.
+     """
+     std = {e.get("role_id"): e
+-           for e in _load_json(_queue_path("standard"), [])}
++           for e in queue_io._document_entries(_load_json(_queue_path("standard"), []))}
+     stra = {e.get("role_id"): e
+-            for e in _load_json(_queue_path("strategic"), [])}
++            for e in queue_io._document_entries(_load_json(_queue_path("strategic"), []))}
+     in_std, in_stra = role_id in std, role_id in stra
+     if in_std and in_stra:
+         raise CrossQueueAmbiguity(
+@@ -112,7 +113,7 @@
+     return None
+ 
+ 
+-def fastlane_screen(packet, bank, *, telemetry_enabled=False):
++def fastlane_screen(packet, bank, *, telemetry_enabled=False, stage=True):
+     """Dry-run screen of one launch packet for the fast lane.
+ 
+     Returns {"route": "api_fastlane"|"browser"|"refused", ...}.
+@@ -142,6 +143,10 @@
+     if not res["reason"].startswith("dry_run_ok"):
+         return {"route": "browser", "role_id": role_id, "origin": origin,
+                 "ats": ats, "reason": res["reason"]}
++    if not stage:
++        return {"route": "api_fastlane", "role_id": role_id, "origin": origin,
++                "ats": ats, "fingerprint": res["payload_fingerprint"],
++                "staged": False, "reason": res["reason"]}
+     entry2 = asu.stage_for_human_review(
+         role_id, fingerprint=res["payload_fingerprint"],
+         dry_run_reason=res["reason"], company=company, ats=ats,

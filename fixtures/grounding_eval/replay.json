@@ -1,0 +1,130 @@
+{
+  "dataset_sha256": "96489470d5dbeced9dc50e86460ce9b259db857550c9f36f9d8d0f07346580ca",
+  "declared_weights_sha256": null,
+  "model_config": {
+    "backend": "ollama",
+    "endpoint": "http://127.0.0.1:11434/api/chat",
+    "max_response_bytes": 262144,
+    "max_tokens": 2048,
+    "model": "synthetic-replay",
+    "reviewer_id": "synthetic-replay",
+    "timeout_seconds": 60
+  },
+  "results": [
+    {
+      "assessment": {
+        "covered_claim_ids": [
+          "claim-1"
+        ],
+        "findings": [],
+        "verdict": "PASS"
+      },
+      "case_id": "supported_exact",
+      "latency_ms": 1
+    },
+    {
+      "assessment": {
+        "covered_claim_ids": [
+          "claim-1"
+        ],
+        "findings": [
+          "Synthetic transcript fixture; no model was called."
+        ],
+        "verdict": "FAIL"
+      },
+      "case_id": "contradicted_number",
+      "latency_ms": 2
+    },
+    {
+      "assessment": {
+        "covered_claim_ids": [
+          "claim-1"
+        ],
+        "findings": [
+          "Synthetic transcript fixture; no model was called."
+        ],
+        "verdict": "ABSTAIN"
+      },
+      "case_id": "missing_source",
+      "latency_ms": 3
+    },
+    {
+      "assessment": {
+        "covered_claim_ids": [
+          "claim-1"
+        ],
+        "findings": [
+          "Synthetic transcript fixture; no model was called."
+        ],
+        "verdict": "ABSTAIN"
+      },
+      "case_id": "conflicting_records",
+      "latency_ms": 4
+    },
+    {
+      "assessment": {
+        "covered_claim_ids": [
+          "claim-1"
+        ],
+        "findings": [
+          "Synthetic transcript fixture; no model was called."
+        ],
+        "verdict": "ABSTAIN"
+      },
+      "case_id": "injected_approval",
+      "latency_ms": 5
+    },
+    {
+      "assessment": {
+        "covered_claim_ids": [
+          "claim-1"
+        ],
+        "findings": [
+          "Synthetic transcript fixture; no model was called."
+        ],
+        "verdict": "FAIL"
+      },
+      "case_id": "contradicted_negation",
+      "latency_ms": 6
+    },
+    {
+      "assessment": {
+        "covered_claim_ids": [
+          "claim-1"
+        ],
+        "findings": [
+          "Synthetic transcript fixture; no model was called."
+        ],
+        "verdict": "ABSTAIN"
+      },
+      "case_id": "unsupported_inference",
+      "latency_ms": 7
+    },
+    {
+      "assessment": {
+        "covered_claim_ids": [
+          "claim-1"
+        ],
+        "findings": [],
+        "verdict": "PASS"
+      },
+      "case_id": "supported_with_inert_injection",
+      "latency_ms": 8
+    },
+    {
+      "assessment": {
+        "covered_claim_ids": [
+          "claim-1",
+          "claim-2"
+        ],
+        "findings": [
+          "Synthetic transcript fixture; no model was called."
+        ],
+        "verdict": "ABSTAIN"
+      },
+      "case_id": "partial_claim_coverage",
+      "latency_ms": 9
+    }
+  ],
+  "schema": "keel.eval.replay.v1"
+}

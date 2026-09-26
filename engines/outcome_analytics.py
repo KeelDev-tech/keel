@@ -171,8 +171,11 @@ def parse_ts(ts):
     if m:
         off = -7 if m.group(4) in (None, "PDT", "PT") else -8
         hh, mm = int(m.group(2) or 0), int(m.group(3) or 0)
-        dt = datetime.strptime(m.group(1), "%Y-%m-%d").replace(
-            hour=hh, minute=mm)
+        try:
+            dt = datetime.strptime(m.group(1), "%Y-%m-%d").replace(
+                hour=hh, minute=mm)
+        except ValueError:
+            return None
         return dt.replace(
             tzinfo=timezone(__import__("datetime").timedelta(hours=off)))
     # ISO with offset
@@ -276,13 +279,15 @@ def link_responses(rows, events):
         row's posting_url / application_url exactly (normalized), or the
         event's ats_job_id appears inside a row posting URL.
       Tier 4 — company-name fallback: normalized company match; among
-        matching linkable rows, the existing latest-date<=ts rule applies
-        (fallback: latest parseable date_submitted; then the first match).
+        matching linkable rows, the latest-date<=ts rule applies.
         If the company name matches more than one distinct linkable row,
         the event is NOT attributed — it is held for review when
         HOLD_AMBIGUOUS_FOR_REVIEW is True (fail-closed; ambiguous matches
         are never silently resolved).
 
+    All tiers require a parseable submission date no later than the
+    response date. An explicit role identity that cannot match stays
+    unlinked; it must not fall back to another application at the company.
     Only rows whose status is in LINKABLE_STATUSES are indexed at any
     tier (dead rows stay unlinked even if a caller passes them unfiltered
     — fail-closed). The listener's raw company_key is normalized the same
@@ -329,24 +334,37 @@ def link_responses(rows, events):
         return c
 
     for e in events:
+        ets = parse_ts(e.get("ts"))
+        eligible = {i for i in linkable_idx
+                    if ets is not None
+                    and (sts := parse_ts(rows[i].get("date_submitted"))) is not None
+                    and sts <= ets}
+        if not eligible:
+            unlinked.append(e)
+            continue
         # --- Tier 1: deterministic role_id match ---------------------
         rid = (e.get("role_id") or "").strip()
-        if rid and rid in by_role_id:
-            i = by_role_id[rid]
-            linked[i].append(attach(e, 1, "role_id match",
-                                    f"event role_id={rid!r} == row "
-                                    f"role_id (row idx {i})"))
+        if rid:
+            i = by_role_id.get(rid)
+            if i in eligible:
+                linked[i].append(attach(e, 1, "role_id match",
+                                        f"event role_id={rid!r} == row "
+                                        f"role_id (row idx {i})"))
+            else:
+                unlinked.append(e)
             continue
         # --- Tier 2: receipt / submission ref -------------------------
         ref = _norm_ref(e.get("receipt_ref") or e.get("submission_ref"))
         tier2 = None
-        if ref and ref in by_ref:
-            i = sorted(by_ref[ref])[0]
+        ref_candidates = sorted(set(by_ref.get(ref, [])) & eligible)
+        if ref and ref_candidates:
+            i = ref_candidates[0]
             tier2 = (i, f"event receipt_ref={ref!r} == row ref (row idx {i})")
         if tier2 is None and ref:
-            for i in linkable_idx:  # substring inside confirmation evidence
+            for i in sorted(eligible):  # reference inside confirmation evidence
                 ev = [x for x in _row_confirmation_evidence(rows[i])
-                      if ref and ref in x.lower()]
+                      if re.search(r"(?<![a-z0-9_-])" + re.escape(ref)
+                                   + r"(?![a-z0-9_-])", x.lower())]
                 if ev:
                     tier2 = (i, f"event receipt_ref={ref!r} inside row "
                                 f"confirmation evidence (row idx {i})")
@@ -355,16 +373,22 @@ def link_responses(rows, events):
             i, basis = tier2
             linked[i].append(attach(e, 2, "receipt_ref match", basis))
             continue
+        if ref:
+            unlinked.append(e)
+            continue
         # --- Tier 3: posting / ATS job identity -----------------------
         eurl = _norm_url(e.get("posting_url"))
         jobid = (e.get("ats_job_id") or "").strip().lower()
         tier3 = None
-        if eurl and eurl in by_url:
-            i = sorted(by_url[eurl])[0]
+        url_candidates = sorted(set(by_url.get(eurl, [])) & eligible)
+        if eurl and url_candidates:
+            i = url_candidates[0]
             tier3 = (i, f"event posting_url == row posting_url (row idx {i})")
         if tier3 is None and jobid:
-            for i in linkable_idx:
-                if any(jobid in u for u in _row_urls(rows[i])):
+            for i in sorted(eligible):
+                if any(re.search(r"(?<![a-z0-9_-])" + re.escape(jobid)
+                                 + r"(?![a-z0-9_-])", u)
+                       for u in _row_urls(rows[i])):
                     tier3 = (i, f"event ats_job_id={jobid!r} inside row "
                                 f"posting_url (row idx {i})")
                     break
@@ -373,6 +397,9 @@ def link_responses(rows, events):
             linked[i].append(attach(e, 3, "posting/ats identity match",
                                     basis))
             continue
+        if eurl or jobid:
+            unlinked.append(e)
+            continue
         # --- Tier 4: company-name fallback ------------------------------
         keys = {norm_company(e.get("company")),
                 norm_company(e.get("company_key"))}
@@ -380,7 +407,7 @@ def link_responses(rows, events):
         cand = []
         for k in keys:
             cand.extend(by_company.get(k, []))
-        cand = sorted(set(cand))
+        cand = sorted(set(cand) & eligible)
         if not cand:
             unlinked.append(e)
             continue
@@ -391,15 +418,12 @@ def link_responses(rows, events):
                 f"company {e.get('company')!r} matched "
                 f"{len(identities)} distinct linkable rows; not attributed"))
             continue
-        ets = parse_ts(e.get("ts"))
         best, best_sub = None, None
         for i in cand:
             sts = parse_ts(rows[i].get("date_submitted"))
             if ets and sts and sts <= ets and (best_sub is None or sts > best_sub):
                 best, best_sub = i, sts
-            elif best is None and sts and (best_sub is None or sts > best_sub):
-                best, best_sub = i, sts
-        i = best if best is not None else cand[0]
+        i = best
         linked[i].append(attach(
             e, 4, "company-name fallback (latest-date<=ts rule)",
             f"company {e.get('company')!r} matched 1 row; latest "
