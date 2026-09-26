@@ -28,7 +28,7 @@ sys.path.insert(0, REPO)
 import export_flow_snapshot as efs
 from keel_local.contracts import application_identity
 
-HISTORICAL = "trent-wade"
+HISTORICAL = "historical-key-fixture"
 
 
 def _write_id_file(directory, payload):
