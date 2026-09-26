@@ -35,7 +35,7 @@ def resolve_data_dir(explicit: str | None = None) -> Path:
     """Resolve the server's data directory.
 
     Defaults to the bundled ``sample_data`` shipped with this package.
-    Refuses any directory that looks like Trent's real pipeline workspace.
+    Refuses any directory that looks like the operator's real pipeline workspace.
     """
     base = Path(explicit).expanduser().resolve() if explicit else (
         Path(__file__).resolve().parent / "sample_data"
@@ -52,7 +52,7 @@ def resolve_data_dir(explicit: str | None = None) -> Path:
                 raise SafetyError(f"data dir '{base}' is in a forbidden area: {prefix}")
         # Belt-and-braces: never allow the live pipeline tree itself.
         if rel_str == "workspace/job-pipeline" or rel_str.startswith("workspace/job-pipeline/"):
-            raise SafetyError(f"data dir '{base}' is Trent's live pipeline tree")
+            raise SafetyError(f"data dir '{base}' is the operator's live pipeline tree")
     return base
 
 

@@ -38,7 +38,7 @@ Field-mapping honesty (fail closed where the live system has no evidence):
     True only for a staged-launch entry whose packet file exists, parses, and
     whose brief renders the identity answers (email marker); anything less
     fails closed to False. approval_valid follows the contract-governance
-    definition (NOT Trent's personal input): under the standing FULL
+    definition (NOT the operator's personal input): under the standing FULL
     AUTOPILOT scope the apply-loop buffer guard only stages leads that
     passed its attestation/answer-consistency checks, so a staged lead with
     an identity-complete packet carries the lane's launch authorization.
@@ -112,12 +112,52 @@ ADAPTER_VERSION = "export_flow_snapshot/1.3.0"  # 1.3.0 (2026-09-20 ARM 3):
 # readiness gates mapped to real ledger / lock-dir / buffer evidence
 # (J-20260920-1831-feed-3884): attempt_state from ledger + attempt journal,
 # launch_lock_held from the canonical lease registry, history_reconciled
-# per-lead, approval_valid per contract-governance (lane staging, not Trent
+# per-lead, approval_valid per contract-governance (lane staging, not the operator's
 # input), packet_present from staged packets with identity coverage, and a
 # mechanical per-key dependency pin when a real packet is present. Every
 # mapping fails closed to the v1 placeholder posture when its evidence is
 # absent; lead_row() without an evidence dict keeps the exact v1 behavior.
-CANDIDATE_ID = "trent-wade"
+# Candidate key feeding application_identity() digests. Runtime override
+# precedence (first hit wins), mirroring _load_identity_markers() below:
+#   1. env KEEL_CANDIDATE_ID
+#   2. the restricted file hidden_files/candidate-id.json
+#      (mode 0600; JSON {"candidate_id": "..."}); the private host keeps
+#      the historical key here so attempt-telemetry joins stay stable.
+#   3. the example-value default below: public clones get a synthetic key
+#      and no real identifier lives in the tree.
+#
+# Rationale (review thread on this line, PR #21): the key is part of the
+# identity digest, so changing the identity input outright would orphan
+# historical digests — outstanding INTENT/DISPATCHED events would miss the
+# join at lead_row() and attempted leads would misreport as executable.
+# A stable configured key keeps history joinable while the tree stays
+# synthetic.
+_CANDIDATE_ID_ENV = "KEEL_CANDIDATE_ID"
+_CANDIDATE_ID_FILE = os.path.join(KEEL_DIR, "hidden_files",
+                                  "candidate-id.json")
+_EXAMPLE_CANDIDATE_ID = "demo-candidate"
+
+
+def _load_candidate_id():
+    """Resolve the candidate key per the precedence above.
+
+    Every path fails closed to the example default on malformed or
+    unreadable input."""
+    raw = os.environ.get(_CANDIDATE_ID_ENV)
+    if raw and raw.strip():
+        return raw.strip()
+    try:
+        with open(_CANDIDATE_ID_FILE) as f:
+            doc = json.load(f)
+        cid = doc.get("candidate_id") if isinstance(doc, dict) else None
+        if isinstance(cid, str) and cid.strip():
+            return cid.strip()
+    except (OSError, ValueError, TypeError):
+        pass
+    return _EXAMPLE_CANDIDATE_ID
+
+
+CANDIDATE_ID = _load_candidate_id()
 REVIEW_AFTER_DAYS = 7
 MEASUREMENT_WINDOW_DAYS = 7
 
@@ -734,7 +774,7 @@ def approval_evidence(role_id, staged_packets, now):
     """(approval_valid, approval_expires_at): the contract-governance definition.
 
     The flow model's approval is the LANE's launch authorization, not
-    Trent's personal input. Under the standing FULL AUTOPILOT scope
+    the operator's personal input. Under the standing FULL AUTOPILOT scope
     (standard legal attestations pre-authorized; the apply-loop buffer
     guard parks anything unattested), a lead the sanctioned pipeline has
     staged with a loadable, identity-complete packet carries the lane's

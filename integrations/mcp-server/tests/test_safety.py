@@ -1,7 +1,7 @@
 """Tests for the Keel MCP server safety guardrails.
 
 These tests encode the non-negotiable invariants: the server must never
-touch Trent's real pipeline data, credentials, or answer bank, and no tool
+touch the operator's real pipeline data, credentials, or answer bank, and no tool
 may perform an irreversible external action.
 """
 import sys

@@ -74,6 +74,16 @@ STATS_JSON = os.environ.get("STATS_JSON", os.path.join(REPO, "docs", "geo", "sta
 LAUNCH_CANON = 55  # historical; counted 2026-09-15 00:17 PT; never recomputed
 PT = ZoneInfo("America/Los_Angeles")
 
+# Public-safe gate names for the checked-in stats.json. The snapshot is a
+# public artifact, so private operator names are aliased here at generation
+# time: re-running recount.py reproduces the sanitized keys instead of
+# restoring the private ones (review thread on docs/geo/stats.json, PR
+# #21). Telemetry itself keeps the private names.
+PUBLIC_GATE_NAMES = {
+    "needs_trent_input": "needs_operator_input",
+    "trent_input_needs_user": "operator_input_needs_user",
+}
+
 # Canonical ledger-status mapping lives next to the evidence gate. The
 # recount's cross-check must use the same canonicalization as the audit
 # (LEDGER_STATUS_ALIAS: the two historical lowercase "submitted" rows count
@@ -144,6 +154,7 @@ def count_gates(telemetry_path):
             gate = details.get("gate")
             if not gate:
                 continue
+            gate = PUBLIC_GATE_NAMES.get(str(gate), str(gate))
             pair = (str(rid), str(gate))
             if details.get("backfilled"):
                 backfilled_pairs.add(pair)
