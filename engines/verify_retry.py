@@ -352,7 +352,7 @@ def check_live(url, title_hint=""):
 
 def _html_to_text(html):
     """Crude HTML -> text for the eligibility screen."""
-    t = re.sub(r"(?s)<script.*?</script>|<style.*?</style>", " ", html or "")
+    t = re.sub(r"(?si)<script.*?</script\s*>|<style.*?</style\s*>", " ", html or "")
     t = re.sub(r"<[^>]+>", " ", t)
     return re.sub(r"\s+", " ", t).strip()[:50000]
 

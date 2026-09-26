@@ -54,8 +54,14 @@ def has_hcaptcha(html):
             or "hcaptcha.render" in low)
 
 
+_LEVER_PATH_SAFE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
 def fetch_apply_html(org, posting_id):
     """GET Lever's hosted apply page HTML. Raises on any failure."""
+    for component in (org, posting_id):
+        if not isinstance(component, str) or not _LEVER_PATH_SAFE.match(component):
+            raise ValueError(f"unsafe Lever URL path component: {component!r}")
     return fetch(f"https://jobs.lever.co/{org}/{posting_id}/apply")
 
 
