@@ -12,6 +12,7 @@ from pathlib import Path
 import re
 import sqlite3
 import stat
+import types
 
 
 class MachineError(ValueError):
@@ -75,6 +76,55 @@ def clone(value, limit=262144):
 
 def digest(value):
     return hashlib.sha256(canonical(value)).hexdigest()
+
+
+def _code_const(value):
+    """Process-deterministic structural encoding of one code constant.
+
+    ``marshal.dumps`` of a code object is not stable on every supported
+    interpreter: CPython 3.10 derives marshal's FLAG_REF bit from the live
+    reference count of each string constant, so byte-identical code hashes
+    differently depending on which temporary objects happen to be alive.
+    Encoding the code object's structure through the canonical digest keeps
+    code pins deterministic within a process on every version.
+    """
+    if isinstance(value, types.CodeType):
+        return {'code': code_fingerprint(value)}
+    if isinstance(value, tuple):
+        return {'tuple': [_code_const(item) for item in value]}
+    if isinstance(value, frozenset):
+        return {'frozenset': sorted((_code_const(item) for item in value), key=repr)}
+    if isinstance(value, bytes):
+        return {'bytes': value.hex()}
+    require(type(value) in (str, int, float, complex, bool, type(None), type(Ellipsis)),
+            'operation_const_unsupported')
+    return {'const': repr(value)}
+
+
+def code_fingerprint(code):
+    """Deterministic tamper-evident hash of a code object's semantics.
+
+    Covers bytecode, constants (recursively), names and signature metadata.
+    Source-file bytes are pinned separately by callers; together they detect
+    any substitution of the pinned function.
+    """
+    require(isinstance(code, types.CodeType), 'operation_code_required')
+    return digest({
+        'argcount': code.co_argcount,
+        'posonlyargcount': code.co_posonlyargcount,
+        'kwonlyargcount': code.co_kwonlyargcount,
+        'nlocals': code.co_nlocals,
+        'stacksize': code.co_stacksize,
+        'flags': code.co_flags,
+        'bytecode': code.co_code.hex(),
+        'consts': [_code_const(value) for value in code.co_consts],
+        'names': list(code.co_names),
+        'varnames': list(code.co_varnames),
+        'freevars': list(code.co_freevars),
+        'cellvars': list(code.co_cellvars),
+        'filename': code.co_filename,
+        'name': code.co_name,
+    })
 
 
 def _ancestors(path):

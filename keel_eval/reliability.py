@@ -7,11 +7,11 @@ Repeated trials share a case cluster and never inflate the independent sample si
 from dataclasses import dataclass
 import hashlib
 import inspect
-import marshal
 import math
 from pathlib import Path
 import time
 
+from keel_machine.common import code_fingerprint
 from .evaluation import (EvaluationError, VERDICTS, _canonical, _hash, _keys,
                          _sha, _snapshot, _token, dataset_digest, validate_dataset)
 
@@ -53,7 +53,7 @@ class Runner:
         if type(config) is not dict:
             _fail("runner_config_invalid")
         return {"source_sha256": hashlib.sha256(source).hexdigest(),
-                "bytecode_sha256": hashlib.sha256(marshal.dumps(self.callback.__code__)).hexdigest(),
+                "bytecode_sha256": code_fingerprint(self.callback.__code__),
                 "defaults_sha256": _sha({"positional": list(self.callback.__defaults__ or ()),
                                           "keyword": self.callback.__kwdefaults__ or {}}),
                 "config_sha256": _sha(config), "entrypoint": self.callback.__qualname__}

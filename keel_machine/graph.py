@@ -8,14 +8,13 @@ No task JSON can import code, choose a shell command, or obtain execution rights
 from dataclasses import dataclass, field
 import hashlib
 import inspect
-import marshal
 import math
 from pathlib import Path
 import secrets
 import time
 import types
 
-from .common import MachineError, canonical, clone, digest, ident, require, sha
+from .common import MachineError, canonical, clone, code_fingerprint, digest, ident, require, sha
 from .contracts import check_contract, validate_contract
 
 FLAGS={'execution_authorized':False,'external_actions':0,'paid_services_required':False}
@@ -72,7 +71,7 @@ class Operation:
             require(path.is_file() and path.stat().st_size<=8*1024*1024,'operation_source_unavailable')
             sources[name]=hashlib.sha256(path.read_bytes()).hexdigest()
         return digest({'name':self.name,'sources':sources,
-                       'code':hashlib.sha256(marshal.dumps(self.function.__code__)).hexdigest(),
+                       'code':code_fingerprint(self.function.__code__),
                        'defaults':list(self.function.__defaults__ or ()),
                        'keyword_defaults':self.function.__kwdefaults__ or {},
                        'input_contract':self.input_contract,'output_contract':self.output_contract})

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Keel's local operator interface. Python 3.11+; POSIX; no runtime dependencies."""
+"""Keel's local operator interface. Python 3.10+; POSIX; no runtime dependencies."""
 import argparse
 import json
 import os
 from pathlib import Path
 import sys
 
-if sys.version_info < (3, 11):
-    raise SystemExit('Keel requires Python 3.11 or newer.')
+if sys.version_info < (3, 10):
+    raise SystemExit('Keel requires Python 3.10 or newer.')
 if os.name != 'posix':
     raise SystemExit('This release requires Linux, macOS, or a Linux environment such as WSL; native Windows is not validated.')
 
