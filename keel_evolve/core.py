@@ -46,7 +46,7 @@ def _decode(value):
         raise ValueError("evolution_storage_corrupt") from None
 
 
-class EvolutionEngine:
+class _BaseEngine:
     """Private local evidence, procedure, scenario and promotion registry."""
 
     @classmethod
@@ -378,6 +378,12 @@ class EvolutionEngine:
                 require(db.execute("SELECT 1 FROM evidence WHERE evidence_id=?",
                                    (source_evidence_id,)).fetchone() is not None,
                         "scenario_source_evidence_missing")
+            if type(fixture) is dict and 'subject' in fixture:
+                subject_hash = hashlib.sha256(_json(fixture['subject'])).hexdigest()
+                prior_subject = db.execute('SELECT split FROM evolution_subjects WHERE subject_sha256=?',
+                                           (subject_hash,)).fetchone()
+                require(prior_subject is None or prior_subject[0]=='development', 'scenario_holdout_leak')
+                db.execute("INSERT OR IGNORE INTO evolution_subjects VALUES(?,'development')", (subject_hash,))
             existing = db.execute("SELECT * FROM scenarios WHERE fingerprint_sha256=?",
                                   (fingerprint,)).fetchone()
             if existing is None:
@@ -404,8 +410,8 @@ class EvolutionEngine:
             cursor = cursor[component]
         operator = invariant["operator"]
         passed = (present if operator == "present" else
-                  present and cursor == invariant["expected"] if operator == "equals" else
-                  not present or cursor != invariant["expected"])
+                  present and _json(cursor) == _json(invariant["expected"]) if operator == "equals" else
+                  present and _json(cursor) != _json(invariant["expected"]))
         return {"schema": "keel.evolution.scenario-result.v1", "scenario_id": scenario_id,
                 "fingerprint_sha256": row["fingerprint_sha256"], "passed": bool(passed),
                 "operator": operator, "observed_value_sha256": hashlib.sha256(_json(cursor)).hexdigest(),
@@ -600,3 +606,10 @@ class EvolutionEngine:
                     "community_candidates": db.execute("SELECT COUNT(*) FROM community_candidates").fetchone()[0],
                     "evaluations": db.execute("SELECT COUNT(*) FROM evaluations").fetchone()[0],
                     "execution_authorized": False}
+
+
+from .hardening import Hardened
+
+
+class EvolutionEngine(Hardened, _BaseEngine):
+    """Hardened public API; legacy helpers never supply promotion or replay authority."""
