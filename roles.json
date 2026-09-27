@@ -17,7 +17,10 @@
         "supply",
         "prepare-role",
         "flush-outbox",
-        "demo"
+        "demo",
+        "productivity-status",
+        "productivity-once",
+        "productivity-recover"
       ],
       "responsibility": "Applicant truth, scope and release decisions; resolve conflicts using evidence."
     },
@@ -27,7 +30,9 @@
         "roles",
         "discover",
         "verify",
-        "supply"
+        "supply",
+        "productivity-status",
+        "productivity-once"
       ],
       "responsibility": "Source identity, freshness, deduplication and permitted public reads; no claims of submission."
     },
@@ -38,7 +43,8 @@
         "validate-packet",
         "roles",
         "prepare-role",
-        "supply"
+        "supply",
+        "productivity-status"
       ],
       "responsibility": "Materials and question coverage; no answer invention or legal commitments."
     },
@@ -48,7 +54,8 @@
         "dashboard",
         "validate-packet",
         "roles",
-        "supply"
+        "supply",
+        "productivity-status"
       ],
       "responsibility": "Distinguish claims, correlation and verification; require a trusted receipt adapter for verified outcomes."
     },
@@ -57,7 +64,8 @@
         "doctor",
         "validate-packet",
         "roles",
-        "supply"
+        "supply",
+        "productivity-status"
       ],
       "responsibility": "Adversarial cases, reproducibility, concurrency, recovery and source-bound test evidence."
     },
@@ -66,7 +74,8 @@
         "doctor",
         "validate-packet",
         "roles",
-        "supply"
+        "supply",
+        "productivity-status"
       ],
       "responsibility": "Review network, file, credential and authority boundaries; test bypass attempts."
     },
@@ -75,7 +84,8 @@
         "doctor",
         "dashboard",
         "roles",
-        "supply"
+        "supply",
+        "productivity-status"
       ],
       "responsibility": "Clear next actions, honest empty/error states, keyboard and small-screen use."
     },
@@ -85,7 +95,8 @@
         "dashboard",
         "validate-packet",
         "roles",
-        "supply"
+        "supply",
+        "productivity-status"
       ],
       "responsibility": "State invariants, recoverability, bounded work and truthful observability."
     }

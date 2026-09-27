@@ -471,8 +471,23 @@ def discover(workspace, *, max_new=200, timeout=120, titles=(), locations=(), re
                 'fit_or_eligibility_claimed': False, 'submission_authorized': False}
 
 
-def _next_time(entry):
-    stamp = (entry.get('posting_verification') or {}).get('next_eligible_at')
+def _observation_matches(entry, key):
+    observation = entry.get('posting_verification')
+    return (isinstance(observation, dict) and key is not None
+            and observation.get('identity') == list(key))
+
+
+def _next_time(entry, key):
+    observation = entry.get('posting_verification') or {}
+    if not isinstance(observation, dict):
+        return 'invalid'
+    # A row may be retargeted after a prior observation. Its old posting's
+    # retry timestamp cannot defer verification of a different exact posting.
+    # Legacy scheduling records without an identity retain their cooldown;
+    # they do not establish current posting presence.
+    if 'identity' in observation and not _observation_matches(entry, key):
+        return None
+    stamp = observation.get('next_eligible_at')
     if not stamp:
         return None
     try:
@@ -506,7 +521,7 @@ def verify(workspace, *, limit=100, timeout=120, live=False, reader=None):
             skipped['telemetry_pending'] += 1; continue
         if _held(row) or rid in terminal_ids or key is not None and key in terminal_keys:
             skipped['held_or_active_or_terminal'] += 1; continue
-        next_time = _next_time(row)
+        next_time = _next_time(row, key)
         if next_time == 'invalid':
             skipped['invalid_cooldown_state'] += 1; continue
         if next_time is not None and next_time > now:
@@ -572,6 +587,7 @@ def verify(workspace, *, limit=100, timeout=120, live=False, reader=None):
     # Never commit observations after a cooperative run deadline expired.
     _deadline(reader)
     committed, conflicts, errors = [], [], []
+    committed_verdicts = Counter()
     if live and observations:
         # Crash-safe per file, not a transaction spanning multiple JSON files.
         # Each committed row contains its own replayable telemetry outbox.
@@ -607,6 +623,9 @@ def verify(workspace, *, limit=100, timeout=120, live=False, reader=None):
                     _deadline(reader)
                     atomic_json(path, current_documents[path])
                     committed.extend(ids)
+                    # Observed verdicts include conflicts and failed writes.
+                    # Credit only the rows in this successfully persisted file.
+                    committed_verdicts.update(by_role[rid][2]['verdict'] for rid in ids)
                 except OSError as exc:
                     errors.append({'queue': path.name, 'reason': type(exc).__name__, 'not_committed': ids})
         flush = flush_outbox(workspace)
@@ -619,7 +638,8 @@ def verify(workspace, *, limit=100, timeout=120, live=False, reader=None):
               'observed': len(observations), 'deferred_without_attempt': dict(deferred),
               'selected_boards': len(boards), 'board_reads': board_reads,
               'verdicts': dict(Counter(o['verdict'] for _, _, o in observations)),
-              'committed': len(committed), 'concurrent_conflicts': conflicts, 'write_errors': errors,
+              'committed': len(committed), 'committed_verdicts': dict(committed_verdicts),
+              'concurrent_conflicts': conflicts, 'write_errors': errors,
               'requests': reader.requests, 'telemetry': flush, 'rate_limit_hold': reader.stopped,
               'request_count_scope': 'bounded_reader_dispatches',
               'promoted_to_ready': 0, 'submission_authorized': False,
@@ -709,9 +729,11 @@ def supply_report(workspace):
             counts['missing_exact_posting_identity'] += 1
         elif posting_counts[key] != 1:
             counts['identity_conflict'] += 1
-        elif (row.get('posting_verification') or {}).get('verdict') == 'live' and fresh((row.get('posting_verification') or {}).get('observed_at'), 3600):
+        elif (_observation_matches(row, key)
+              and row['posting_verification'].get('verdict') == 'live'
+              and fresh(row['posting_verification'].get('observed_at'), 3600)):
             counts['posting_verified_form_and_approval_separate'] += 1
-        elif (next_time := _next_time(row)) == 'invalid':
+        elif (next_time := _next_time(row, key)) == 'invalid':
             counts['invalid_cooldown'] += 1
         elif next_time and next_time > now:
             counts['verification_cooldown'] += 1
