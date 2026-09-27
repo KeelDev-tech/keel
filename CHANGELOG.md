@@ -1,3 +1,9 @@
+## 0.6.1 — Sustained public operation
+
+Replaced the 256-run productivity journal ceiling with indexed, retained replay history and restart-safe migration. Ledger checkpoints detect replacement and rollback without rescanning every historical request. Added fixed, resumable trial cohorts with actual workload/build fingerprints and evidence-based reports; unknown or mismatched observations cannot establish gains.
+
+Added an exact-attempt receipt projection interface for qualified host validators, plus a read-only CLI review path. It preserves unresolved attempts, approvals and holds; no private executor or billing adapter is supplied. See docs/SUSTAINED_OPERATION.md for operation, storage and deployment boundaries.
+
 ## 0.6.0 — Measured public pipeline scheduling
 
 Connected supply inspection, durable source scheduling, verification outbox recovery and shared resource accounting through `productivity-status`, `productivity-once` and explicit `productivity-recover`. Each live cycle has an immutable run ID and at most one bounded public-read stage. Persisted receipts prevent duplicate dispatch and support settlement recovery; unknown outcomes retain uncertainty. Intake pauses at the configured supply/backlog limits and repeated zero-progress stages receive cooldowns.

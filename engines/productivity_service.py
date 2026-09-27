@@ -17,7 +17,7 @@ from collections import Counter
 
 import pipeline_service as pipeline
 import source_scheduler
-from safe_io import atomic_json, canonical, digest, file_lock, loads
+from safe_io import atomic_json, atomic_bytes, canonical, digest, file_lock, loads
 from keel_efficiency.ledger import BudgetExceeded, ResourceLedger
 
 SCHEMA = 'keel.productivity.v1'
@@ -83,7 +83,7 @@ def _blank(now):
     return {'schema': SCHEMA, 'last_now': now, 'namespace': None, 'runs': {}, 'stages': {}}
 
 
-def _load(path, now):
+def _load_legacy(path, now):
     if not path.exists():
         _require(not path.is_symlink(), 'productivity_journal_symlink')
         return _blank(now)
@@ -93,6 +93,9 @@ def _load(path, now):
         raw = stream.read(MAX_STATE_BYTES + 1)
     _require(len(raw) <= MAX_STATE_BYTES, 'productivity_journal_too_large')
     state = loads(raw)
+    return _validate_state(state, now)
+
+def _validate_state(state, now):
     _require(type(state) is dict and set(state) == {'schema', 'last_now', 'namespace', 'runs', 'stages'}
              and state['schema'] == SCHEMA and _number(state['last_now']) and now >= state['last_now'],
              'productivity_journal_or_clock_invalid')
@@ -103,26 +106,7 @@ def _load(path, now):
     _require(type(state['runs']) is dict and len(state['runs']) <= MAX_RUNS
              and (not state['runs'] or namespace is not None), 'productivity_runs_invalid')
     for run_id, row in state['runs'].items():
-        _require(type(run_id) is str and IDENT.fullmatch(run_id) is not None and type(row) is dict
-                 and set(row) == {'binding', 'request_id', 'stage', 'phase', 'result', 'receipt_sha256', 'recovery', 'accounting_namespace'}
-                 and row['phase'] in ('INTENT', 'RECORDED', 'COMPLETE', 'CANCELLED')
-                 and type(row['binding']) is str and re.fullmatch('[0-9a-f]{64}', row['binding'])
-                 and type(row['request_id']) is str
-                 and row['request_id'] == 'productivity:' + digest({'workspace': namespace['workspace'], 'run_id': run_id})
-                 and row['stage'] in ('idle', 'discover', 'verify'), 'productivity_run_invalid')
-        accounting = row['accounting_namespace']
-        _require(type(accounting) is dict and set(accounting) == {'ledger_path_sha256', 'scope_id'}
-                 and type(accounting['ledger_path_sha256']) is str and re.fullmatch('[0-9a-f]{64}', accounting['ledger_path_sha256'])
-                 and type(accounting['scope_id']) is str and 0 < len(accounting['scope_id']) <= 200, 'productivity_accounting_namespace_invalid')
-        _require(row['recovery'] is None or type(row['recovery']) is dict and set(row['recovery']) == {'at', 'queue_sha256'}
-                 and _number(row['recovery']['at']) and type(row['recovery']['queue_sha256']) is str
-                 and re.fullmatch('[0-9a-f]{64}', row['recovery']['queue_sha256']), 'productivity_recovery_invalid')
-        if row['phase'] in ('INTENT', 'CANCELLED'):
-            _require(row['result'] is None and row['receipt_sha256'] is None, 'productivity_intent_invalid')
-        else:
-            _require(type(row['result']) is dict and digest(row['result']) == row['receipt_sha256']
-                     and row['result'].get('run_id') == run_id, 'productivity_result_receipt_invalid')
-            _validate_result(row['result'], run_id, row)
+        _validate_row(run_id, row, namespace['workspace'])
     _require(type(state['stages']) is dict and not set(state['stages']) - {'discover', 'verify'},
              'productivity_stages_invalid')
     for row in state['stages'].values():
@@ -131,6 +115,86 @@ def _load(path, now):
                  and _number(row['next_at']), 'productivity_backoff_invalid')
     return state
 
+
+def _validate_row(run_id, row, workspace):
+    _require(type(run_id) is str and IDENT.fullmatch(run_id) is not None and type(row) is dict
+             and set(row) == {'binding', 'request_id', 'stage', 'phase', 'result', 'receipt_sha256', 'recovery', 'accounting_namespace'}
+             and row['phase'] in ('INTENT', 'RECORDED', 'COMPLETE', 'CANCELLED')
+             and type(row['binding']) is str and re.fullmatch('[0-9a-f]{64}', row['binding'])
+             and type(row['request_id']) is str
+             and row['request_id'] == 'productivity:' + digest({'workspace': workspace, 'run_id': run_id})
+             and row['stage'] in ('idle', 'discover', 'verify'), 'productivity_run_invalid')
+    accounting = row['accounting_namespace']
+    _require(type(accounting) is dict and set(accounting) == {'ledger_path_sha256', 'scope_id'}
+             and type(accounting['ledger_path_sha256']) is str and re.fullmatch('[0-9a-f]{64}', accounting['ledger_path_sha256'])
+             and type(accounting['scope_id']) is str and 0 < len(accounting['scope_id']) <= 200, 'productivity_accounting_namespace_invalid')
+    _require(row['recovery'] is None or type(row['recovery']) is dict and set(row['recovery']) == {'at', 'queue_sha256'}
+             and _number(row['recovery']['at']) and type(row['recovery']['queue_sha256']) is str
+             and re.fullmatch('[0-9a-f]{64}', row['recovery']['queue_sha256']), 'productivity_recovery_invalid')
+    if row['phase'] in ('INTENT', 'CANCELLED'):
+        _require(row['result'] is None and row['receipt_sha256'] is None, 'productivity_intent_invalid')
+    else:
+        _require(type(row['result']) is dict and digest(row['result']) == row['receipt_sha256']
+                 and row['result'].get('run_id') == run_id, 'productivity_result_receipt_invalid')
+        _validate_result(row['result'], run_id, row)
+
+
+def _legacy_fence(history, path, now, *, write):
+    """Old versions must reject this home after migration, not fork history."""
+    expected = {'schema': 'keel.productivity.history-reference.v1',
+                'history_instance_id': history.manifest['instance_id'], 'database': 'history.sqlite3',
+                'legacy_sha256': history.manifest['legacy_sha256']}
+    if path.exists() or path.is_symlink():
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, 'rb') as stream:
+            _require(stat.S_ISREG(os.fstat(stream.fileno()).st_mode), 'productivity_legacy_fence_invalid')
+            raw = stream.read(MAX_STATE_BYTES + 1)
+        _require(len(raw) <= MAX_STATE_BYTES, 'productivity_legacy_fence_too_large')
+        value = loads(raw)
+        if type(value) is dict and value.get('schema') == expected['schema']:
+            _require(value == expected, 'productivity_legacy_fence_mismatch')
+            return
+        legacy = _validate_state(value, now)
+        _require(history.manifest['legacy_sha256'] == digest(legacy), 'productivity_legacy_changed_after_migration')
+        archive = path.with_name('journal.v1.json')
+        if archive.exists() or archive.is_symlink():
+            descriptor = os.open(archive, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            with os.fdopen(descriptor, 'rb') as stream:
+                _require(stat.S_ISREG(os.fstat(stream.fileno()).st_mode)
+                         and stream.read(MAX_STATE_BYTES + 1) == raw, 'productivity_legacy_archive_conflict')
+        elif write:
+            atomic_bytes(archive, raw)
+    elif history.manifest['legacy_sha256'] is not None:
+        archive = path.with_name('journal.v1.json')
+        _require(archive.exists() and digest(_load_legacy(archive, now)) == history.manifest['legacy_sha256'],
+                 'productivity_legacy_archive_missing')
+    if write:
+        atomic_json(path, expected)
+
+
+def _load(path, now, *, write=False):
+    from productivity_history import History
+    folder, root = path.parent, path.parent.parent.parent
+    database, manifest = folder / 'history.sqlite3', folder / 'history.json'
+    if manifest.exists() or manifest.is_symlink():
+        _require(database.exists(), 'productivity_history_database_missing')
+        history = History(folder, root, _validate_row, writable=write)
+    elif database.exists() or database.is_symlink():
+        _require(write, 'productivity_history_incomplete')
+        legacy = _load_legacy(path, now)
+        history = History.finish_bootstrap(folder, root, _validate_row,
+            legacy_sha256=digest(legacy) if path.exists() else None)
+    else:
+        legacy = _load_legacy(path, now)
+        if not write:
+            return legacy
+        history = History.create(folder, root, legacy, _validate_row,
+                                 legacy_sha256=digest(legacy) if path.exists() else None)
+    _legacy_fence(history, path, now, write=write)
+    state = history.state(now)
+    _validate_state({key: {} if key == 'runs' else value for key, value in state.items()
+                     if not key.startswith('_')}, now)
+    return state
 
 def _count(value, maximum=10**9):
     return type(value) is int and 0 <= value <= maximum
@@ -179,6 +243,12 @@ def _validate_result(value, run_id, row):
 
 
 def _save(path, state, now):
+    if '_history' in state:
+        if '_ledger' in state:
+            ledger = state['_ledger']
+            state['_anchors'][digest(str(Path(ledger.path).absolute()))] = ledger.checkpoint()
+        state['_history'].save(state, now)
+        return
     _require(now >= state['last_now'], 'productivity_clock_regressed')
     state['last_now'] = now
     _require(len(canonical(state)) <= MAX_STATE_BYTES, 'productivity_journal_capacity')
@@ -221,6 +291,8 @@ def _choice(supply, policy, state, now):
 
 
 def _pending(state):
+    if '_history' in state:
+        return state['_history'].pending()[0]
     return [run_id for run_id, row in state['runs'].items() if row['phase'] not in ('COMPLETE', 'CANCELLED')
             or row['result'] and row['result'].get('manual_recovery_required') and row['recovery'] is None]
 
@@ -239,6 +311,8 @@ def _accounting_namespace(ledger, scope_id):
 
 
 def _aggregate(state, namespace=None):
+    if '_history' in state:
+        return _history_aggregate(state['_history'], namespace)
     stages = {}
     unknown = 0
     cancelled = 0
@@ -270,7 +344,8 @@ def _aggregate(state, namespace=None):
         item['coverage'] = 'incomplete' if unknown or item['progress_unknown_runs'] else 'retained_controller_runs_only'
         item['result_unit'] = 'deduplicated_lead_added' if stage == 'discover' else 'committed_live_posting_presence' if stage == 'verify' else None
     return {'stages': stages, 'runs_without_measured_result': unknown, 'cancelled_before_dispatch': cancelled,
-            'retained_runs': len(state['runs']), 'run_capacity': MAX_RUNS,
+            'retained_runs': len(state['runs']), 'run_capacity': None,
+            'legacy_import_limit': MAX_RUNS, 'storage': 'legacy_awaiting_migration' if state['runs'] else 'not_initialized',
             'accounting_namespace': namespace,
             'scope_coverage': list({digest(row['accounting_namespace']): row['accounting_namespace'] for row in state['runs'].values()
                                     if namespace is None or row['accounting_namespace'] == namespace}.values()),
@@ -278,6 +353,26 @@ def _aggregate(state, namespace=None):
             'compute_ms_semantics': 'cooperative_cycle_wall_time; not CPU or GPU metering',
             'request_count_scope': 'bounded_reader_dispatches; not sockets or redirect hops'}
 
+
+
+def _history_aggregate(history, namespace=None):
+    counts = history.counts(namespace)
+    stages = copy.deepcopy(counts['stages'])
+    for stage, item in stages.items():
+        amount = item['added_leads'] if stage == 'discover' else item['committed_posting_presence']
+        incomplete = counts['unknown'] or item['progress_unknown_runs']
+        item['requests_per_stage_result'] = item['requests'] / amount if amount and not incomplete else None
+        item['coverage'] = 'incomplete' if incomplete else 'retained_controller_runs_only'
+        item['result_unit'] = 'deduplicated_lead_added' if stage == 'discover' else 'committed_live_posting_presence' if stage == 'verify' else None
+    coverage, truncated = ([namespace], False) if namespace is not None else history.coverage()
+    return {'stages': stages, 'runs_without_measured_result': counts['unknown'],
+            'cancelled_before_dispatch': counts['cancelled'], 'retained_runs': history.counts()['runs'],
+            'run_capacity': None, 'accounting_namespace': namespace,
+            'scope_coverage': coverage, 'scope_coverage_truncated': truncated,
+            'storage': 'indexed_sqlite; history_retained_until_disk_capacity',
+            'credit_measurement': 'unobserved',
+            'compute_ms_semantics': 'cooperative_cycle_wall_time; not CPU or GPU metering',
+            'request_count_scope': 'bounded_reader_dispatches; not sockets or redirect hops'}
 
 def status(workspace, *, ledger=None, scope_id=None, target_verified=20, backlog_limit=200, clock=time.time):
     policy = _policy(target_verified, backlog_limit)
@@ -287,6 +382,8 @@ def status(workspace, *, ledger=None, scope_id=None, target_verified=20, backlog
     state = _load(path, now)
     _require(state['namespace'] is None or state['namespace']['workspace'] == str(root), 'productivity_namespace_mismatch')
     budget = _ledger(ledger, scope_id)
+    if ledger is not None:
+        _validate_accounting(state, ledger, readonly=True)
     namespace = _accounting_namespace(ledger, scope_id) if ledger is not None else None
     supply = _supply(root)
     stage, reason = _choice(supply, policy, state, now)
@@ -294,27 +391,56 @@ def status(workspace, *, ledger=None, scope_id=None, target_verified=20, backlog
     return {'schema': SCHEMA, 'status': 'HELD_RECOVERY' if pending else 'OBSERVED',
             'next_stage': 'idle' if pending else stage, 'reason': 'unfinished_or_uncertain_run' if pending else reason,
             'supply': supply, 'policy': policy, 'budget': budget, 'pending_run_ids': pending,
+            'pending_run_count': state['_history'].counts()['pending'] if '_history' in state else len(pending),
+            'pending_runs_truncated': '_history' in state and state['_history'].counts()['pending'] > len(pending),
             'stage_backoff': copy.deepcopy(state['stages']), 'accounting_namespace': state['namespace'], 'metrics': _aggregate(state, namespace), **FLAGS}
 
 
-def _validate_accounting(state, ledger):
-    """Detect missing or rolled-back ledger requests before further dispatch."""
+def _validate_request(row, ledger):
+    request = ledger.request(row['request_id'])
+    _require(request['scope_id'] == row['accounting_namespace']['scope_id']
+             and request['metadata'] == {'purpose': 'public_pipeline_productivity', 'binding_sha256': row['binding']},
+             'productivity_ledger_binding_mismatch')
+    if row['phase'] == 'CANCELLED':
+        _require(request['state'] == 'CANCELLED', 'productivity_ledger_cancellation_missing')
+    elif row['phase'] == 'COMPLETE':
+        _require(request['state'] in ('UNKNOWN', 'SETTLED') and all(value is None or request['usage'][key] == value
+                 for key, value in row['result']['usage'].items()), 'productivity_ledger_receipt_missing')
+    else:
+        _require(request['state'] in ('RESERVED', 'DISPATCHED', 'UNKNOWN', 'SETTLED', 'CANCELLED'),
+                 'productivity_ledger_intent_invalid')
+
+
+def _validate_accounting(state, ledger, *, readonly=False):
+    """Check an indexed ledger prefix and only the requested cached run.
+
+    Legacy imports have at most 256 records. Their ledger bindings are checked
+    once before an anchor is installed; live histories never need rescanning.
+    """
     ledger_hash = digest(str(Path(ledger.path).absolute()))
-    for row in state['runs'].values():
-        if row['accounting_namespace']['ledger_path_sha256'] != ledger_hash:
-            continue
-        request = ledger.request(row['request_id'])
-        _require(request['scope_id'] == row['accounting_namespace']['scope_id']
-                 and request['metadata'] == {'purpose': 'public_pipeline_productivity', 'binding_sha256': row['binding']},
-                 'productivity_ledger_binding_mismatch')
-        if row['phase'] == 'CANCELLED':
-            _require(request['state'] == 'CANCELLED', 'productivity_ledger_cancellation_missing')
-        elif row['phase'] == 'COMPLETE':
-            _require(request['state'] in ('UNKNOWN', 'SETTLED') and all(value is None or request['usage'][key] == value
-                     for key, value in row['result']['usage'].items()), 'productivity_ledger_receipt_missing')
+    history = state.get('_history')
+    if history is not None:
+        anchor = history.anchor(ledger_hash)
+        if anchor is not None:
+            ledger.validate_checkpoint(anchor)
         else:
-            _require(request['state'] in ('RESERVED', 'DISPATCHED', 'UNKNOWN', 'SETTLED', 'CANCELLED'),
-                     'productivity_ledger_intent_invalid')
+            page, total = history.page(ledger_hash=ledger_hash), 0
+            while page['rows']:
+                total += len(page['rows'])
+                _require(history.manifest['legacy_sha256'] is not None and total <= MAX_RUNS,
+                         'productivity_history_ledger_anchor_missing')
+                for record in page['rows']:
+                    _validate_request(record['row'], ledger)
+                if not page['has_more']:
+                    break
+                page = history.page(after_sequence=page['next_sequence'], ledger_hash=ledger_hash)
+            if not readonly:
+                history.set_anchor(ledger_hash, ledger.checkpoint())
+        if not readonly:
+            state['_ledger'] = ledger
+    for row in state['runs'].values():
+        if row['accounting_namespace']['ledger_path_sha256'] == ledger_hash:
+            _validate_request(row, ledger)
 
 
 def _settle_recorded(ledger, row):
@@ -326,6 +452,15 @@ def _response(row, *, replay=False, accounting=None):
             'accounting_state': accounting, 'journal_phase': row['phase'],
             'recovery_acknowledgment': copy.deepcopy(row['recovery'])}
 
+
+
+def _run_binding(workspace, ledger, scope_id, *, policy, max_requests, timeout,
+                 max_boards, max_new, verify_limit, titles, locations, transport):
+    """Canonical immutable work identity shared by cycles and bounded trials."""
+    return digest({'workspace': str(Path(workspace).absolute()), 'ledger': str(Path(ledger.path).absolute()),
+        'scope_id': scope_id, 'policy': policy, 'max_requests': max_requests, 'timeout': timeout,
+        'max_boards': max_boards, 'max_new': max_new, 'verify_limit': verify_limit,
+        'titles': list(titles), 'locations': list(locations), 'transport': transport})
 
 def run_once(workspace, *, run_id=None, ledger=None, scope_id=None, live=False,
              max_requests=8, timeout=30, max_boards=2, max_new=50, verify_limit=100,
@@ -358,18 +493,17 @@ def run_once(workspace, *, run_id=None, ledger=None, scope_id=None, live=False,
              'synthetic_workspace_cannot_perform_live_productivity_reads')
     ledger_path = Path(ledger.path)
     _require(ledger_path.resolve(strict=True) == ledger_path, 'productivity_ledger_path_invalid')
-    binding = digest({'workspace': str(root), 'ledger': str(ledger_path), 'scope_id': scope_id,
-        'policy': policy, 'max_requests': max_requests, 'timeout': timeout, 'max_boards': max_boards,
-        'max_new': max_new, 'verify_limit': verify_limit, 'titles': list(titles), 'locations': list(locations),
-        'transport': 'injected' if fetcher is not None else 'public_https'})
+    binding = _run_binding(root, ledger, scope_id, policy=policy, max_requests=max_requests,
+        timeout=timeout, max_boards=max_boards, max_new=max_new, verify_limit=verify_limit,
+        titles=titles, locations=locations, transport='injected' if fetcher is not None else 'public_https')
     namespace = {'workspace': str(root)}
     accounting_namespace = _accounting_namespace(ledger, scope_id)
     request_id = 'productivity:' + digest({'workspace': str(root), 'run_id': run_id})
     with file_lock(folder / 'controller.lock', timeout=0):
         now = _stamp(clock)
-        state = _load(path, now)
-        _validate_accounting(state, ledger)
+        state = _load(path, now, write=True)
         prior = state['runs'].get(run_id)
+        _validate_accounting(state, ledger)
         if prior is not None:
             _require(prior['binding'] == binding, 'productivity_run_id_binding_conflict')
             if prior['phase'] == 'CANCELLED':
@@ -389,7 +523,6 @@ def run_once(workspace, *, run_id=None, ledger=None, scope_id=None, live=False,
         if pending:
             return {'schema': SCHEMA, 'status': 'HELD_RECOVERY', 'reason': 'unfinished_or_uncertain_run',
                     'pending_run_ids': pending, 'manual_recovery_required': True, **FLAGS}
-        _require(len(state['runs']) < MAX_RUNS, 'productivity_run_capacity_exhausted')
         started = _stamp(monotonic)
         before = _supply(root)
         estimate = {'calls': max_requests, 'compute_ms': math.ceil(timeout * 1000),
@@ -489,9 +622,10 @@ def recover(workspace, *, run_id, ledger, scope_id, clock=time.time):
     _ledger(ledger, scope_id, required=True)
     root, folder, path = _paths(workspace)
     _bound_workspace(root)
-    _require(path.exists(), 'productivity_run_missing')
+    _require(path.exists() or (folder / 'history.sqlite3').exists() or (folder / 'history.json').exists(), 'productivity_run_missing')
     with file_lock(folder / 'controller.lock', timeout=0):
-        state = _load(path, _stamp(clock))
+        state = _load(path, _stamp(clock), write=True)
+        state['runs'].get(run_id)
         _validate_accounting(state, ledger)
         _require(state['namespace'] == {'workspace': str(root)}, 'productivity_namespace_mismatch')
         row = state['runs'].get(run_id)
@@ -528,3 +662,60 @@ def recover(workspace, *, run_id, ledger, scope_id, clock=time.time):
                 'previous_progress': copy.deepcopy(row['result']['progress']),
                 'receipt_sha256': row['receipt_sha256'], 'reservation_released': False,
                 'recovery_acknowledgment': copy.deepcopy(row['recovery']), **FLAGS}
+
+
+def _history_document(record):
+    return {'schema': 'keel.productivity.history-run.v1', 'run_id': record['run_id'],
+            'sequence': record['sequence'], **copy.deepcopy(record['row'])}
+
+
+def get_run(workspace, run_id, *, ledger=None, scope_id=None, clock=time.time):
+    """Read one retained receipt by its indexed ID; never migrate or create."""
+    _require(type(run_id) is str and IDENT.fullmatch(run_id) is not None, 'productivity_run_id_required')
+    root, _, path = _paths(workspace)
+    _bound_workspace(root)
+    _ledger(ledger, scope_id)
+    state = _load(path, _stamp(clock))
+    _require(state['namespace'] is None or state['namespace'] == {'workspace': str(root)}, 'productivity_namespace_mismatch')
+    if '_history' in state:
+        record = state['_history'].get(run_id)
+        _require(record is not None, 'productivity_run_missing')
+        row = record['row']
+        state['runs'][run_id] = row
+    else:
+        row = state['runs'].get(run_id)
+        _require(row is not None, 'productivity_run_missing')
+        record = {'run_id': run_id, 'row': row, 'sequence': list(state['runs']).index(run_id) + 1}
+    if ledger is not None:
+        _require(row['accounting_namespace'] == _accounting_namespace(ledger, scope_id), 'productivity_recovery_namespace_mismatch')
+        _validate_accounting(state, ledger, readonly=True)
+    return _history_document(record)
+
+
+def receipts(workspace, *, after_sequence=0, limit=100, ledger=None, scope_id=None, clock=time.time):
+    """Return at most 100 immutable run records in stable admission order."""
+    _require(type(after_sequence) is int and after_sequence >= 0 and type(limit) is int and 1 <= limit <= 100,
+             'productivity_history_page_invalid')
+    root, _, path = _paths(workspace)
+    _bound_workspace(root)
+    _ledger(ledger, scope_id)
+    state = _load(path, _stamp(clock))
+    namespace = _accounting_namespace(ledger, scope_id) if ledger is not None else None
+    if '_history' in state:
+        page = state['_history'].page(after_sequence=after_sequence, limit=limit, namespace=namespace)
+        if ledger is not None:
+            for record in page['rows']:
+                state['runs'][record['run_id']] = record['row']
+            _validate_accounting(state, ledger, readonly=True)
+        total = state['_history'].counts(namespace)['runs']
+    else:
+        records = [{'sequence': index, 'run_id': run_id, 'row': row} for index, (run_id, row)
+                   in enumerate(state['runs'].items(), 1) if index > after_sequence
+                   and (namespace is None or row['accounting_namespace'] == namespace)]
+        page = {'rows': records[:limit], 'next_sequence': records[min(limit, len(records))-1]['sequence'] if records else after_sequence,
+                'has_more': len(records) > limit}
+        total = sum(namespace is None or row['accounting_namespace'] == namespace for row in state['runs'].values())
+        if ledger is not None:
+            _validate_accounting(state, ledger, readonly=True)
+    return {'schema': 'keel.productivity.receipts.v1', 'receipts': [_history_document(record) for record in page['rows']],
+            'next_sequence': page['next_sequence'], 'has_more': page['has_more'], 'total_runs': total}
