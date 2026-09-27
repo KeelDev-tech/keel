@@ -101,11 +101,11 @@ from zoneinfo import ZoneInfo
 BASE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE)
 from keel_paths import HOME, DATA, TELEMETRY  # noqa: E402 — repo path convention
-from safe_io import read_json  # noqa: E402 — bounded JSON reads
+from safe_io import read_json, loads as strict_json  # noqa: E402 — bounded/strict JSON reads
 import safe_http  # noqa: E402 — policy-checked transport
 try:
     import launch_lock  # noqa: E402 — atomic per-role lock + prelaunch guard
-except ImportError:  # noqa: E402 — guard falls back to CLI / fail-open below
+except ImportError:  # noqa: E402 — guard falls back to CLI / refuses if unavailable
     launch_lock = None
 
 import form_intel
@@ -582,10 +582,9 @@ def _launch_guard(role_id, company, title):
 
     Returns (go: bool, task_id: str, reason: str). On GO the lock is HELD by
     this task_id — store it in the packet so the executor can release it
-    (or it expires). Fail-open when the launch_lock tooling is missing:
-    the twin-submit check in already_submitted() still guards ledger-level
-    duplicates. A HELD/refused verdict skips the lead — the owning lane is
-    already on it.
+    (or it expires). Missing or failing launch_lock tooling refuses the
+    claim: a ledger duplicate check alone cannot replace atomic exclusion.
+    A HELD/refused verdict skips the lead — the owning lane is already on it.
     """
     task_id = "apply_loop-%d-%s" % (
         os.getpid(), datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S"))
@@ -609,7 +608,8 @@ def _launch_guard(role_id, company, title):
                     # a verdict cannot authorize a launch.
                     return False, task_id, (
                         f"prelaunch guard failed ({ex}); cannot proceed")
-                info = info or {}
+                if type(ok) is not bool or not isinstance(info, dict):
+                    return False, task_id, "invalid prelaunch guard result; cannot proceed"
                 verdict = str(info.get("verdict", "")).upper()
                 status = info.get("status", "")
                 if ok and verdict == "GO":
@@ -618,7 +618,9 @@ def _launch_guard(role_id, company, title):
                     f"prelaunch guard {status or verdict or 'refused'}: "
                     f"{info.get('note', '')}".strip())
             ok, info = _ll.acquire(role_id, task_id, owner="apply_loop")
-            if ok:
+            if type(ok) is not bool or not isinstance(info, dict):
+                return False, task_id, "invalid launch lock result; cannot proceed"
+            if ok is True:
                 return True, task_id, ""
             return (False, task_id,
                     "launch lock HELD: %s" % ((info or {}).get("status", "")))
@@ -628,7 +630,7 @@ def _launch_guard(role_id, company, title):
             # operator reconciliation (silent-defect sweep 2026-09-19).
             raise
         except Exception as ex:
-            return True, task_id, f"guard tooling failed ({ex}); proceeding"
+            return False, task_id, f"guard tooling failed ({ex}); cannot proceed"
     # CLI fallback: the sibling launch_lock.py module may exist without being
     # imported (or vice versa).
     if os.path.isfile(LAUNCH_LOCK_SCRIPT):
@@ -638,13 +640,16 @@ def _launch_guard(role_id, company, title):
                  task_id, "--company", company or "", "--title", title or ""],
                 capture_output=True, text=True, timeout=30)
             out = (r.stdout or "") + (r.stderr or "")
-            if r.returncode == 0 and re.search(r"\bGO\b", out):
-                return True, task_id, ""
+            if r.returncode == 0:
+                info = strict_json(r.stdout)
+                if (isinstance(info, dict) and info.get("verdict") == "GO"
+                        and info.get("status") == "ACQUIRED" and info.get("role_id") == role_id):
+                    return True, task_id, ""
             return False, task_id, (
                 out.strip().splitlines()[-1] if out.strip() else "guard refused")
         except Exception as ex:
-            return True, task_id, f"guard tooling failed ({ex}); proceeding"
-    return True, task_id, "no launch_lock tooling; guard skipped (fail-open)"
+            return False, task_id, f"guard tooling failed ({ex}); cannot proceed"
+    return False, task_id, "no launch_lock tooling; cannot proceed"
 
 
 def _release_launch_lock(role_id, task_id):
@@ -914,6 +919,16 @@ def _drop_buffer_entry(role_id):
                        if s.get("role_id") != role_id])
 
 
+def _checked_prescreen(packet, bank):
+    """Only a recognized, well-formed result may reach packet consumers."""
+    verdict = prescreen.screen_packet(packet, bank)
+    if (not isinstance(verdict, dict) or verdict.get("verdict") not in {"CLEAN", "PARK"}
+            or not isinstance(verdict.get("reasons"), list)
+            or any(not isinstance(reason, str) for reason in verdict["reasons"])):
+        raise ValueError("invalid prescreen verdict")
+    return verdict
+
+
 def refresh_buffer(tagged=None, now=None):
     """Prefetch launch packets for the top-ranked eligible leads.
 
@@ -994,10 +1009,17 @@ def refresh_buffer(tagged=None, now=None):
                                 task_id=task_id)
             packet = json.load(open(path))
             try:
-                verdict = prescreen.screen_packet(packet, bank)
+                verdict = _checked_prescreen(packet, bank)
             except Exception as ex:
-                print(f"  prescreen error on {role_id} ({ex}); treating as CLEAN")
-                verdict = {"verdict": "CLEAN", "reasons": []}
+                try:
+                    _archive_packet(path)
+                finally:
+                    _release_launch_lock(role_id, task_id)
+                log_event.log("gate_blocked", role_id=role_id, company=entry.get("company", ""), ats="",
+                              source="apply_loop", details={"gate": "prescreen_unconfirmed",
+                                                           "reason": type(ex).__name__})
+                print(f"BUFFER-HOLD {role_id}: prescreen unconfirmed; cannot proceed")
+                continue
             if verdict["verdict"] == "PARK":
                 res = prescreen.park_lead(role_id, verdict["reasons"])
                 _release_launch_lock(role_id, task_id)
@@ -1192,7 +1214,7 @@ def build_packet(entry, origin="standard", dest_dir=None, task_id=""):
     # Pre-publication prescreen: the packet is fully built in memory first;
     # the screen runs BEFORE any file is written. If the screen raises, the
     # error propagates and zero packet files are published (fail-closed).
-    prescreen.screen_packet(packet, bank)
+    _checked_prescreen(packet, bank)
     dest = dest_dir or PACKETS
     os.makedirs(dest, exist_ok=True)
     path = os.path.join(dest, f"{role_id}.json")
@@ -1282,10 +1304,20 @@ def main():
             # later PARK can release the lock instead of leaking it.
             task_id = packet.get("launch_task_id", "") or ""
         try:
-            verdict = prescreen.screen_packet(packet, bank)
+            verdict = _checked_prescreen(packet, bank)
         except Exception as ex:
-            print(f"  prescreen error on {role_id} ({ex}); treating as CLEAN")
-            verdict = {"verdict": "CLEAN", "reasons": []}
+            # A failed recheck cannot authorize a packet or an IN-FLIGHT mark.
+            # Retire the active artifact so a separate packet consumer cannot
+            # mistake it for a completed screen; no role is dead-marked/parked.
+            try:
+                _archive_packet(path)
+            finally:
+                _release_launch_lock(role_id, task_id)
+            log_event.log("gate_blocked", role_id=role_id, company=company, ats="",
+                          source="apply_loop", details={"gate": "prescreen_unconfirmed",
+                                                       "reason": type(ex).__name__})
+            print(f"PRESCREEN-HOLD {role_id}: prescreen unconfirmed; cannot proceed")
+            continue
         if verdict["verdict"] == "PARK":
             res = prescreen.park_lead(role_id, verdict["reasons"])
             _release_launch_lock(role_id, task_id)

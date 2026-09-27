@@ -31,8 +31,9 @@ side. They will be closed.
 
 ## Dev setup
 
-Python 3.10+, stdlib only — no dependencies to install, no virtualenv to
-build. CI runs the same suite on 3.10 / 3.11 / 3.12.
+Python 3.11+. The local runtime uses the standard library. Development tests
+use the free dependencies in `requirements-dev.txt`; CI tests Python 3.11 and
+3.12. Install them with `python3 -m pip install -r requirements-dev.txt`.
 
 ```bash
 ./setup.sh          # "Make it mine" — copies examples into data/, walks you
@@ -47,7 +48,9 @@ Then, from the repo root:
 KEEL_HOME=$PWD python3 engines/score_roles.py --in sample_data/discovered_roles.example.json --out data/scored.json
 KEEL_HOME=$PWD python3 engines/apply_loop.py          # build one launch packet
 KEEL_HOME=$PWD python3 engines/build_dashboard.py    # render the dashboard
-python3 -m unittest discover -s tests                 # full test suite
+python3 -m unittest discover -s tests                 # unittest suite
+python3 -m pytest -q tests/test_optimization_*.py security/tests/test_optimization_security.py
+python3 -m pytest -q tests/test_security_boundary_peer_denial.py
 python3 -m py_compile engines/*.py                    # syntax check
 ```
 
@@ -68,15 +71,16 @@ Conventions that matter:
 
 ## Test standards (CI enforces these)
 
-CI is `python3 -m unittest discover -s tests` on 3.10 / 3.11 / 3.12 with
-**no `pip install` step**. A test that can't run from a clean checkout
-fails the whole suite. Three hard rules:
+CI installs the pinned development requirements, runs `unittest` discovery,
+the explicit optimization/security pytest suite, and the matched cache
+benchmark on Python 3.11 and 3.12. A test that cannot run from a clean
+checkout is a defect. Three hard rules:
 
-1. **Stdlib only in `tests/` and in every import-time code path.** No
-   `pytest`, no third-party imports — one stray import aborts the *entire*
-   run with exit 1, not just your test. If a module genuinely needs an
-   optional dependency, guard it with `try/except ImportError` and a
-   no-op fallback.
+1. **Keep the local runtime standard-library-only.** Test dependencies must
+   be declared in `requirements-dev.txt`. Add pytest function tests to an
+   explicit CI pytest step; unittest discovery does not execute them. Optional
+   runtime integrations must report unavailable dependencies explicitly and
+   must not silently bypass a required check.
 2. **Never `sys.path.insert` an absolute machine-local path at import
    time.** It shadows same-named test modules during unittest discovery
    and breaks CI on any machine where the directory exists. Load
@@ -88,8 +92,8 @@ fails the whole suite. Three hard rules:
    errors on a clean checkout is a broken test.
 
 Before opening your PR, run the suite exactly as CI does, from the repo
-root: `python3 -m unittest discover -s tests`. If it's green there, it's
-green on CI.
+root using the commands in `.github/workflows/ci.yml`. A local pass on one
+Python version does not establish that both CI versions passed.
 
 ## How to contribute
 

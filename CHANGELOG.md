@@ -1,3 +1,9 @@
+## 0.5.1 — Measured runtime optimization and recovery hardening
+
+Grouped public-board verification, preserved unattempted fair turns and cooldowns, per-snapshot exact identity indexes, indexed one-pass cache eviction, header-first durable 429 handling, and honest UNKNOWN broker outcomes. No new paid service or application authority. CI runs the new adversarial regressions and matched cache benchmark. See docs/OPTIMIZATION_0_5_1.md for reproducible measurements and limits.
+
+Legacy packet preparation now refuses unavailable launch guards and unconfirmed prescreen results. Malformed answer-authority expiry abstains instead of silently retaining authority.
+
 ## 0.5.0 — Resource efficiency candidate
 
 Shared local budgets and usage accounting; qualified preparation routing; bounded context, pure-work reuse, adaptive review plans, shadow contextual bandits, data-only procedure qualification and matched replay benchmarks. See docs/CREDIT_EFFICIENCY.md for controls and limitations.

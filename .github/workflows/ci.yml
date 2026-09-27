@@ -24,5 +24,16 @@ jobs:
         run: pip install -r requirements-dev.txt
       - name: Run stdlib test suite
         run: python3 -m unittest discover -s tests
+      - name: Run optimization and security regressions
+        run: >-
+          python3 -m pytest -q
+          tests/test_optimization_efficiency.py
+          tests/test_optimization_pipeline.py
+          tests/test_optimization_transport.py
+          tests/test_optimization_legacy_gates.py
+          tests/test_security_boundary_peer_denial.py
+          security/tests/test_optimization_security.py
+      - name: Verify matched cache benchmark
+        run: PYTHONPATH=. python3 tests/benchmark_optimization_efficiency.py
       - name: Honesty-gates demo smoke test
         run: KEEL_DEMO_PAUSE=0 python3 demo/honesty_gates_demo.py
