@@ -115,7 +115,13 @@ def prepare(update, base):
     # the NEW directory, retaining original audit evidence in the untouched base.
     payload = {name: {'sha256': hashlib.sha256(body).hexdigest(), 'bytes': len(body)}
                for name, (body, _) in sorted(files.items()) if name != 'MANIFEST.json'}
-    files['MANIFEST.json'] = ((json.dumps({'schema_version': 1, 'version': 'frontier-20260926',
+    # Bind the display version to the already hash-verified source payload.
+    # Small generic deltas may have no VERSION file; never label them as a
+    # specific historical Keel release.
+    version = files.get('VERSION', (b'source-update', False))[0].decode('utf-8').strip()
+    if not version or len(version) > 128 or any(ord(c) < 32 for c in version):
+        raise ValueError('invalid source version')
+    files['MANIFEST.json'] = ((json.dumps({'schema_version': 1, 'version': version,
                                          'files': payload}, sort_keys=True, indent=2) + '\n').encode(), False)
     return files, len(changed)
 

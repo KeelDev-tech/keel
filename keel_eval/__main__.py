@@ -19,6 +19,8 @@ def main(argv=None):
     local.add_argument("--config", required=True)
     local.add_argument("--weights-sha256", default=None, help="optional operator declaration; not weight attestation")
     local.add_argument("--out")
+    local.add_argument("--budget-ledger", required=True)
+    local.add_argument("--budget-scope", required=True)
     demo = commands.add_parser("reliability-demo", help="run paired synthetic local callbacks; no model or provider calls")
     demo.add_argument("--out")
     trials = commands.add_parser("reliability-replay", help="score a frozen paired trial transcript without executing code")
@@ -45,7 +47,9 @@ def main(argv=None):
             result = evaluate_replay(dataset, read_json(args.results))
         else:
             dataset = read_json(args.dataset)
-            result = run_local(dataset, _config(read_json(args.config)), declared_weights_sha256=args.weights_sha256)
+            from keel_efficiency.defaults import budget_environment
+            with budget_environment(args.budget_ledger, args.budget_scope):
+                result = run_local(dataset, _config(read_json(args.config)), declared_weights_sha256=args.weights_sha256)
         if args.out:
             write_private(args.out, result)
         else:
