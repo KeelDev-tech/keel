@@ -1,0 +1,35 @@
+{
+  "task": "extract exact references",
+  "sources": [
+    {
+      "source_id": "rules",
+      "revision": "demo-v1",
+      "content": "Preserve required review and approval gates.",
+      "kind": "constraint"
+    },
+    {
+      "source_id": "reference-skill",
+      "revision": "demo-v1",
+      "content": "Extract exact source references.",
+      "kind": "skill",
+      "keywords": [
+        "extract",
+        "references"
+      ],
+      "dependencies": [
+        {
+          "source_id": "rules",
+          "revision": "demo-v1"
+        }
+      ]
+    }
+  ],
+  "required_constraints": [
+    "Preparation only. No external actions."
+  ],
+  "max_bytes": 4096,
+  "current_revisions": {
+    "rules": "demo-v1",
+    "reference-skill": "demo-v1"
+  }
+}

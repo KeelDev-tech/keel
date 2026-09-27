@@ -1,3 +1,7 @@
+## 0.5.0 — Resource efficiency candidate
+
+Shared local budgets and usage accounting; qualified preparation routing; bounded context, pure-work reuse, adaptive review plans, shadow contextual bandits, data-only procedure qualification and matched replay benchmarks. See docs/CREDIT_EFFICIENCY.md for controls and limitations.
+
 # Changelog
 
 All notable changes to Keel are documented here. The format follows

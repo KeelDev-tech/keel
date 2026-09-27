@@ -67,9 +67,16 @@ def load_bundle(path):
 
 
 class LocalAgent:
-    def __init__(self, home, workspace_id, *, clock=None):
+    def __init__(self, home, workspace_id, *, clock=None, ledger=None, scope_id=None):
         self.home = private_home(home)
         self.clock = clock or utcnow
+        if (ledger is None) != (scope_id is None):
+            raise ValueError("ledger and scope_id must be supplied together")
+        if ledger is None:
+            from keel_efficiency.defaults import open_default_budget
+            ledger, scope_id = open_default_budget(self.home)
+        ledger.snapshot(scope_id)
+        self.resource_ledger, self.resource_scope = ledger, scope_id
         self.state = LocalState(self.home / "agent.sqlite3", workspace_id)
         self.reviews = ReviewStore(self.home / "reviews.sqlite3")
 
@@ -111,7 +118,8 @@ class LocalAgent:
                     "candidate changed or blocked before review")
             result = run_blind_review(self.reviews, round_id=payload["round_id"], subject=fresh["subject"],
                 reviewers=reviewers, expires_at=self.clock()+timedelta(seconds=payload["ttl_seconds"]),
-                clock=self.clock, transport=transport)
+                clock=self.clock, transport=transport,
+                ledger=self.resource_ledger, scope_id=self.resource_scope)
             # COMPLETED means processing completed, including a review HOLD.
             result["execution_authorized"] = False
             return self.state.complete(job["job_id"], job["token"], result, now=self.clock())

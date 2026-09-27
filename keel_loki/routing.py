@@ -233,7 +233,7 @@ def _locked_state(path, policy):
 
 
 def run_route(subject, policy, *, expected_policy_sha256, source_sha256, permissions,
-              state_path, allow_model_calls=False, transport=None):
+              state_path, allow_model_calls=False, transport=None, ledger=None, scope_id=None):
     """Run frozen deterministic/no-model/small/strong branches once.
 
     Only valid ABSTAIN can escalate. Errors and HTTP 429 never trigger retries.
@@ -254,6 +254,13 @@ def run_route(subject, policy, *, expected_policy_sha256, source_sha256, permiss
         _fail("model_call_opt_in_invalid")
     if transport is not None and not callable(transport):
         _fail("transport_not_callable")
+    if (ledger is None) != (scope_id is None):
+        _fail("budget_ledger_and_scope_required_together")
+    if ledger is None and allow_model_calls and transport is None:
+        from keel_efficiency.defaults import open_default_budget
+        ledger, scope_id = open_default_budget(Path(state_path).absolute().parent)
+    if ledger is not None:
+        ledger.snapshot(scope_id)
     records, calls, started = [], 0, time.monotonic()
     subject = dataset["cases"][0]["subject"]
     report = {"schema": "keel.loki.route-report.v1", "policy_sha256": digest(policy),
@@ -263,6 +270,8 @@ def run_route(subject, policy, *, expected_policy_sha256, source_sha256, permiss
         "records": records, "model_calls_attempted": 0, "session_state": None,
         "model_quality_validated": False, "permissions_authenticated": False,
         "execution_authorized": False, "production_deployed": False}
+    report["resource_governance"] = {"enabled": ledger is not None, "scope_id": scope_id,
+                                      "receipts": []}
     def stage(name, outcome, reason, **extra):
         records.append(dict(stage=name, outcome=outcome, reason=reason, **extra))
     def done(outcome, reason, state=None):
@@ -324,7 +333,15 @@ def run_route(subject, policy, *, expected_policy_sha256, source_sha256, permiss
                     state["rate_limited"] = True
                     save(state)
                 return response
-            result = run_local(dataset, config, transport=send)["cases"][0]
+            governed = None
+            if ledger is not None:
+                from keel_efficiency.transport import GovernedTransport
+                governed = GovernedTransport(ledger, scope_id, send,
+                    binding={"policy_sha256": digest(policy), "stage": name,
+                             "subject_sha256": digest(subject)})
+            result = run_local(dataset, config, transport=governed or send)["cases"][0]
+            if governed is not None and governed.last_receipt is not None:
+                report["resource_governance"]["receipts"].append(governed.last_receipt)
             # Adapter errors after a reserved request remain unknown across
             # future routes; a parsed response or known HTTP error is resolved.
             error = preflight_error or result.get("error_code")

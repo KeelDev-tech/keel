@@ -23,6 +23,8 @@ def main(argv=None):
         item.add_argument("--home", required=True)
         item.add_argument("--workspace", required=True)
         item.add_argument("--out")
+        item.add_argument("--budget-ledger", help="shared local resource ledger")
+        item.add_argument("--budget-scope", help="existing scope in the shared ledger")
     for name in ("snapshot-import", "snapshot-seal", "enqueue-review", "prepare-browser"):
         commands[name].add_argument("input")
     seal = commands["snapshot-seal"]
@@ -44,7 +46,9 @@ def main(argv=None):
             from .revisions import export_revisions
             result = export_revisions(read_json(args.input), attachment_root=args.attachments, now=utcnow())
         else:
-            agent = LocalAgent(args.home, args.workspace)
+            from keel_efficiency.defaults import configured_budget
+            ledger, scope_id = configured_budget(args.budget_ledger, args.budget_scope)
+            agent = LocalAgent(args.home, args.workspace, ledger=ledger, scope_id=scope_id)
             if args.command == "init":
                 result = {"state": "INITIALIZED", "workspace_id": args.workspace, "execution_authorized": False}
             elif args.command == "snapshot-seal":

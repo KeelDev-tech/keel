@@ -139,6 +139,9 @@ def main(argv=None):
         if name in inputs:p.add_argument('--input',required=True)
         if name in homes:p.add_argument('--home',required=True)
         if name in {'lab','route'}:p.add_argument('--allow-model-calls',action='store_true')
+        if name in {'lab','route'}:
+            p.add_argument('--budget-ledger')
+            p.add_argument('--budget-scope')
         if name=='route':p.add_argument('--state')
         if name=='browser-trial':p.add_argument('--render-browser',action='store_true')
         if name=='modelcheck':p.add_argument('--max-states',type=int,default=50000)
@@ -152,7 +155,12 @@ def main(argv=None):
             if value:_outside(value)
         from tools.loki_inventory import inventory
         before=inventory()
-        result=dispatch(args,before['sha256'])
+        if getattr(args,'allow_model_calls',False):
+            from keel_efficiency.defaults import budget_environment
+            with budget_environment(args.budget_ledger,args.budget_scope):
+                result=dispatch(args,before['sha256'])
+        else:
+            result=dispatch(args,before['sha256'])
         after=inventory()
         same=before==after
         envelope={'schema':'keel.loki.command.v1' if same else 'keel.loki.invalid-command.v1',
