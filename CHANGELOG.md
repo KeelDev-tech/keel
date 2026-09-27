@@ -1,3 +1,9 @@
+## 0.6.0 — Measured public pipeline scheduling
+
+Connected supply inspection, durable source scheduling, verification outbox recovery and shared resource accounting through `productivity-status`, `productivity-once` and explicit `productivity-recover`. Each live cycle has an immutable run ID and at most one bounded public-read stage. Persisted receipts prevent duplicate dispatch and support settlement recovery; unknown outcomes retain uncertainty. Intake pauses at the configured supply/backlog limits and repeated zero-progress stages receive cooldowns.
+
+Verification reports count successfully committed verdicts separately from observations, and fresh presence must match the current posting identity. Metrics separate new queued postings from committed presence observations; actual credit consumption remains unobserved. The controller adds no model requirement, paid service, applicant assertions or submission authority. See docs/PRODUCTIVITY.md.
+
 ## 0.5.1 — Measured runtime optimization and recovery hardening
 
 Grouped public-board verification, preserved unattempted fair turns and cooldowns, per-snapshot exact identity indexes, indexed one-pass cache eviction, header-first durable 429 handling, and honest UNKNOWN broker outcomes. No new paid service or application authority. CI runs the new adversarial regressions and matched cache benchmark. See docs/OPTIMIZATION_0_5_1.md for reproducible measurements and limits.

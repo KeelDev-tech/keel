@@ -1,0 +1,9 @@
+{
+  "limits": {
+    "calls": 64,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "compute_ms": 300000,
+    "external_credit_micros": 0
+  }
+}
