@@ -3,6 +3,47 @@
 All notable changes to Keel are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4.0] - 2026-09-26
+
+### Added
+- **Durable fair-intake scheduler** (`engines/source_scheduler.py`,
+  `keel_next/source_scheduler_demo.py`): selects bounded source batches,
+  divides intake allowance across them, remembers fair turns and backoff,
+  stops on rate limits, and holds interrupted runs for explicit recovery —
+  admits only parked rows; a SIGKILL after queue commit reconciles as
+  `HELD_RECOVERY` with no duplicates on replay.
+  Docs: `docs/SOURCE_SCHEDULER.md`.
+- **Skill ancestry** (`keel_evolve/lineage.py`): derived lessons/procedures
+  pin their parent, inherit context limits, reject incompatible parents, and
+  are blocked by withdrawn/expired/corrupt ancestors without disabling
+  healthy siblings.
+- **Balanced response-protocol evaluation** (`keel_eval/frontier.py`):
+  exercises the actual response validator against valid, invalid and
+  missing inputs with confusion matrices, per-family and per-label recall,
+  error/abstention risks, and conservative sequential cluster bounds so
+  repeats are not counted as independent evidence.
+  Docs: `docs/evaluation-frontier.md`.
+- **Recovery and security repairs** (`security/execution/`,
+  `security/actions/approval_gate.py`): withdrawal stays possible when
+  application quotas exhaust audit capacity; restored artifacts fork only to
+  fresh candidates; backup ancestors and metadata are checked; raw failure
+  fixtures cannot be relabelled as held-out subjects; FIFO state files fail
+  without hanging.
+
+### Changed
+- `engines/http_cache.py`, `engines/pipeline_service.py`,
+  `engines/outcome_tracking/evidence_gate.py`,
+  `engines/ashby_lever_json_enumerate.py`,
+  `engines/greenhouse_json_enumerate.py`: hardened intake/evidence paths to
+  match the 0.4.0 scheduler and evaluation contracts.
+- `keel.py`, `keel_next/__main__.py`: expose the `frontier` demonstration
+  entrypoint (`python3 -B -m keel_next frontier`).
+
+### Fixed
+- Release profile tooling (`tools/release_profile.py`,
+  `tools/apply_source_update.py`) and evolution engine/hardening modules
+  updated for the 0.4.0 freeze; `release-files.json` regenerated.
+
 ## [Unreleased]
 
 ### Added

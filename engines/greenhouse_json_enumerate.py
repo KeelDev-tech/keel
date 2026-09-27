@@ -64,13 +64,17 @@ import time
 import html as htmlmod
 import urllib.error
 import urllib.request
+
+try:
+    from .safe_http import urlopen as safe_urlopen, HostRateLimited
+except ImportError:  # Direct script / legacy engines-on-sys.path entry points.
+    from safe_http import urlopen as safe_urlopen, HostRateLimited
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE)
 import api_direct_detect as add  # noqa: E402 (shared UA)
-import safe_http  # noqa: E402 — policy-checked transport
 from ats_discovery import normalize as N  # noqa: E402
 import dedupe_gate  # noqa: E402
 import queue_intake  # noqa: E402
@@ -123,8 +127,10 @@ def fetch_board_json(board):
     """GET the board's jobs JSON. Raises RateLimited on 429."""
     req = urllib.request.Request(API.format(board=board), headers=add.UA)
     try:
-        with safe_http.urlopen(req, timeout=20) as r:
+        with safe_urlopen(req, timeout=20) as r:
             return json.loads(r.read().decode("utf-8"))
+    except HostRateLimited as e:
+        raise RateLimited(board) from e
     except urllib.error.HTTPError as e:
         if e.code == 429:
             raise RateLimited(board)

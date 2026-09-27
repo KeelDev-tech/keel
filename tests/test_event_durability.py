@@ -7,7 +7,8 @@ import unittest
 from unittest.mock import patch
 
 # Live-tree convention (cf. tests/test_pipeline_scale.py): engines/ must be
-# importable for keel_paths; the candidate's harness supplied this via PYTHONPATH.
+# importable for keel_paths; restored for the repo pytest harness (the 0.4.0
+# candidate's harness supplied this via PYTHONPATH).
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'engines'))
 
 from engines import log_event

@@ -4,8 +4,10 @@
 Synthetic temp data only — no private ledger, no real role IDs, no
 production counts. Covers the repo's outcome_tracking.evidence_gate API:
 load_ledger tolerance, find_submitted_rows, record_gate_decision /
-load_decisions round-trip, coverage() verdict buckets, and fail-closed
-handling of unparseable input.
+load_decisions round-trip, coverage() verdict buckets, and fail-fast
+handling of corrupt ledger data and malformed telemetry streams
+(0.4.0 contract: corrupt data never means empty; a malformed stream
+invalidates the whole stream, never degrades silently).
 """
 import json
 import os
@@ -45,9 +47,11 @@ class LoadLedgerTest(unittest.TestCase):
     def test_missing_file_returns_empty(self):
         self.assertEqual(eg.load_ledger("/nonexistent/x.json"), [])
 
-    def test_invalid_json_returns_empty(self):
+    def test_invalid_json_raises(self):
+        # 0.4.0 fail-fast contract: corrupt ledger data raises; corrupt data
+        # never silently means empty. JSONDecodeError subclasses ValueError.
         p = _tmp("ledger.json", "{not json")
-        self.assertEqual(eg.load_ledger(p), [])
+        self.assertRaises(ValueError, eg.load_ledger, p)
 
 
 class SubmittedRowsTest(unittest.TestCase):
@@ -87,7 +91,38 @@ class CoverageTest(unittest.TestCase):
     def _events(self, lines):
         return _tmp("events.jsonl", "\n".join(lines) + "\n")
 
-    def test_verified_pending_unevidenced(self):
+    def test_clean_stream_grades_claims(self):
+        # 0.4.0 grading model: quoted confirmation text is evidence to review,
+        # not provider acceptance — a correlated quote inside the 24h window
+        # grades pending, never auto-verified (verified requires an explicitly
+        # injected provider validator, out of scope for this synthetic API).
+        from datetime import datetime, timezone
+        rows = [
+            {"role_id": "RV", "status": "SUBMITTED",
+             "date_submitted": "2026-09-16T09:00:00+00:00"},
+            {"role_id": "RP", "status": "SUBMITTED",
+             "date_submitted": "2026-09-16T09:00:00+00:00"},
+            {"role_id": "RU", "status": "SUBMITTED",
+             "date_submitted": "2026-09-16T09:00:00+00:00"},
+            {"role_id": "RN", "status": "PARKED",
+             "date_submitted": "2026-09-16T09:00:00+00:00"},
+        ]
+        ev = self._events([
+            json.dumps({"event_type": "submitted", "role_id": "RV",
+                        "ts": "2026-09-16T10:00:00+00:00",
+                        "details": {"confirmation": '"Your application ABC12345 was received"'}}),
+            json.dumps({"event_type": "submitted", "role_id": "RP",
+                        "ts": "2026-09-16T10:00:00+00:00",
+                        "details": {}}),
+        ])
+        now = datetime(2026, 9, 16, 12, 0, 0, tzinfo=timezone.utc)
+        v, p, u = eg.coverage(rows, events_path=ev, now=now)
+        self.assertEqual((v, p, u), (0, 2, 1))
+
+    def test_malformed_stream_fails_fast(self):
+        # 0.4.0 fail-fast contract: a malformed telemetry stream invalidates
+        # the whole stream — aggregation cannot silently call incomplete
+        # evidence complete. All claims grade unevidenced.
         rows = [
             {"role_id": "RV", "status": "SUBMITTED",
              "date_submitted": "2026-09-16T09:00:00+00:00"},
@@ -108,9 +143,11 @@ class CoverageTest(unittest.TestCase):
             "not-json {{{",
         ])
         v, p, u = eg.coverage(rows, events_path=ev)
-        self.assertEqual((v, p, u), (1, 1, 1))
+        self.assertEqual((v, p, u), (0, 0, 3))
 
-    def test_quote_outside_window_is_not_verified(self):
+    def test_quote_outside_window_is_unevidenced(self):
+        # 0.4.0 fail-fast contract: a quote outside the 24h correlation
+        # window is not evidence at all — not verified, not pending.
         rows = [{"role_id": "RW", "status": "SUBMITTED",
                  "date_submitted": "2026-09-16T09:00:00+00:00"}]
         ev = self._events([
@@ -119,7 +156,7 @@ class CoverageTest(unittest.TestCase):
                         "details": {"confirmation": '"confirmation ABC12345 received"'}}),
         ])
         v, p, u = eg.coverage(rows, events_path=ev)
-        self.assertEqual((v, p, u), (0, 1, 0))
+        self.assertEqual((v, p, u), (0, 0, 1))
 
     def test_missing_events_file_all_unevidenced(self):
         rows = [{"role_id": "RX", "status": "SUBMITTED",

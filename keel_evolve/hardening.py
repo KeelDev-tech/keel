@@ -89,6 +89,44 @@ class Hardened:
             yield db
             self._usage(db)
 
+    @contextmanager
+    def _withdrawal_transaction(self):
+        """Reserve no new storage authority: withdrawals may degrade audit detail.
+
+        This deliberately bypasses enrichment hooks in normal transactions. The
+        active-artifact check must continue to enforce dependency revocations.
+        """
+        with self.db.transaction() as db:
+            yield db
+
+    def _withdraw(self, db, artifact_id, *, state, reason, now, record=None):
+        """A full registry must never keep an unsafe artifact available.
+
+        Try the detailed write under a savepoint. If that exhausts a quota,
+        retain only the smaller HELD state in the existing row; report the lost
+        detail explicitly. No evidence or prior feedback is deleted to make room.
+        """
+        db.execute('SAVEPOINT evolution_withdrawal')
+        try:
+            if record is not None:
+                record()
+            db.execute('UPDATE artifacts SET state=?,reason=?,updated_at=? WHERE artifact_id=?',
+                       (state, reason, now, artifact_id))
+            self._usage(db)
+        except ValueError as error:
+            if str(error) not in ('evolution_row_quota','evolution_byte_quota','evolution_page_quota'):
+                raise
+            db.execute('ROLLBACK TO evolution_withdrawal')
+            # Every valid state is at least as long as HELD. Removing reason and
+            # retaining the timestamp makes this update byte-nonincreasing.
+            db.execute("UPDATE artifacts SET state='HELD',reason=NULL WHERE artifact_id=?", (artifact_id,))
+            detailed = False
+        else:
+            detailed = True
+        finally:
+            db.execute('RELEASE evolution_withdrawal')
+        return detailed
+
     def _active(self, db, artifact_id, states=('PROMOTED',)):
         now = self._clock(db)
         row = db.execute('SELECT * FROM artifacts WHERE artifact_id=?', (artifact_id,)).fetchone()
@@ -117,6 +155,8 @@ class Hardened:
                 ident(eid)
                 e = db.execute('SELECT task_family,outcome FROM evidence WHERE evidence_id=?', (eid,)).fetchone()
                 require(e is not None and e['task_family'] == task_family and e['outcome'] == 'PASS', 'artifact_evidence_invalid')
+            if 'dependencies' in body:
+                self._validate_dependencies(db, body, artifact_id)
             prior = db.execute('SELECT * FROM artifacts WHERE artifact_id=?', (artifact_id,)).fetchone()
             if prior is not None:
                 require(prior['body_json'] == raw and prior['evidence_json'] == links
@@ -245,6 +285,9 @@ class Hardened:
             saved = db.execute('SELECT * FROM evolution_datasets WHERE dataset_sha256=?', (key,)).fetchone()
             require(saved is not None and saved['split'] == 'held_out'
                     and saved['ordinal'] <= life['revision'], 'holdout_not_frozen_before_artifact')
+            recovery = json.loads(row['body_json']).get('requalification')
+            require(recovery is None or recovery['dataset_sha256']==key,
+                    'requalification_holdout_binding_mismatch')
             require(saved['used_by'] in (None, binding), 'holdout_already_consumed')
             prior = db.execute('SELECT * FROM evolution_trials WHERE evaluation_id=?', (evaluation_id,)).fetchone()
             if prior is not None:
@@ -302,6 +345,7 @@ class Hardened:
         with self._transaction() as db:
             row, _ = self._active(db, artifact_id, ('CANDIDATE','SIMULATION','PROMOTED'))
             require(row['body_sha256'] == receipt['artifact_body_sha256'], 'evaluation_artifact_revision_mismatch')
+            self._promotion_ready(db, row)
             db.execute("UPDATE artifacts SET state='PROMOTED',updated_at=? WHERE artifact_id=?", (self._clock(db), artifact_id))
         return {'state':'PROMOTED','artifact_id':artifact_id,'evaluation_id':evaluation_id,
                 'production_qualified':False, 'qualified_task_distribution':True, 'qualified_behavior':'closed_rule_interpreter',
@@ -414,37 +458,99 @@ class Hardened:
     def feedback(self, feedback_id, artifact_id, evidence_id, *, reason='contradiction'):
         ident(feedback_id);ident(artifact_id);ident(evidence_id)
         require(reason in ('contradiction','drift','runtime_failure'), 'feedback_reason_invalid')
-        with self._transaction() as db:
+        with self._withdrawal_transaction() as db:
             now = self._clock(db)
-            row = db.execute('SELECT * FROM artifacts WHERE artifact_id=?', (artifact_id,)).fetchone()
-            evidence = db.execute('SELECT * FROM evidence WHERE evidence_id=?', (evidence_id,)).fetchone()
+            row = db.execute('SELECT task_family FROM artifacts WHERE artifact_id=?', (artifact_id,)).fetchone()
+            evidence = db.execute('SELECT task_family,outcome FROM evidence WHERE evidence_id=?', (evidence_id,)).fetchone()
             require(row is not None and evidence is not None and evidence['task_family']==row['task_family']
                     and evidence['outcome'] in ('FAIL','UNKNOWN'), 'feedback_evidence_invalid')
             prior = db.execute('SELECT * FROM evolution_feedback WHERE feedback_id=?', (feedback_id,)).fetchone()
             if prior:
                 require(tuple(prior)==(feedback_id,artifact_id,evidence_id,reason), 'feedback_identity_conflict')
-            else: db.execute('INSERT INTO evolution_feedback VALUES(?,?,?,?)',(feedback_id,artifact_id,evidence_id,reason))
-            db.execute("UPDATE artifacts SET state='HELD',reason=?,updated_at=? WHERE artifact_id=?", (reason,now,artifact_id))
-        return {'artifact_id':artifact_id,'state':'HELD','reason':reason,'execution_authorized':False}
+            def record():
+                if prior is None:
+                    db.execute('INSERT INTO evolution_feedback VALUES(?,?,?,?)', (feedback_id,artifact_id,evidence_id,reason))
+            detailed = self._withdraw(db,artifact_id,state='HELD',reason=reason,now=now,record=record)
+        return {'artifact_id':artifact_id,'state':'HELD','reason':reason if detailed else None,
+                'detail_recorded':detailed,'execution_authorized':False}
+
+    def retire(self, artifact_id, reason):
+        ident(artifact_id)
+        require(type(reason) is str and 0 < len(reason) <= 256, 'retirement_reason_invalid')
+        with self._withdrawal_transaction() as db:
+            now = self._clock(db)
+            require(db.execute('SELECT 1 FROM artifacts WHERE artifact_id=?',(artifact_id,)).fetchone()
+                    is not None, 'retirement_artifact_missing')
+            detailed = self._withdraw(db,artifact_id,state='RETIRED',reason=reason,now=now)
+        return {'artifact_id':artifact_id,'state':'RETIRED' if detailed else 'HELD',
+                'reason':reason if detailed else None,'detail_recorded':detailed,'execution_authorized':False}
 
     def rollback(self, failed_artifact_id, previous_artifact_id):
         ident(failed_artifact_id);ident(previous_artifact_id)
         require(failed_artifact_id != previous_artifact_id, 'rollback_same_artifact')
-        with self._transaction() as db:
+        with self._withdrawal_transaction() as db:
             previous, _ = self._active(db, previous_artifact_id)
             failed = db.execute('SELECT * FROM artifacts WHERE artifact_id=?',(failed_artifact_id,)).fetchone()
             require(failed is not None and failed['kind']==previous['kind']
                     and failed['task_family']==previous['task_family']
                     and previous['created_at'] <= failed['created_at'], 'rollback_scope_invalid')
             # Selection cannot restore a retired or expired version, or clear a hold.
-            db.execute("UPDATE artifacts SET state='HELD',reason='rollback',updated_at=? WHERE artifact_id=?",
-                       (self._clock(db),failed_artifact_id))
+            detailed = self._withdraw(db,failed_artifact_id,state='HELD',reason='rollback',now=self._clock(db))
             return {'selected_artifact_id':previous_artifact_id,'failed_artifact_id':failed_artifact_id,
-                    'execution_authorized':False}
+                    'detail_recorded':detailed,'execution_authorized':False}
+
+    def fork_for_requalification(self, source_artifact_id, artifact_id, *, evidence_ids,
+                                dataset_sha256, ttl_seconds=3600):
+        """Copy a held revision into a new candidate; never revive old receipts."""
+        ident(source_artifact_id);ident(artifact_id);sha(dataset_sha256)
+        require(source_artifact_id != artifact_id, 'requalification_requires_new_id')
+        require(type(evidence_ids) is list and 1 <= len(evidence_ids) <= 64,
+                'requalification_evidence_invalid')
+        with self._transaction() as db:
+            self._clock(db)
+            source = db.execute('SELECT * FROM artifacts WHERE artifact_id=?',(source_artifact_id,)).fetchone()
+            life = db.execute('SELECT revision FROM evolution_lifecycle WHERE artifact_id=?',(source_artifact_id,)).fetchone()
+            require(source is not None and life is not None and source['state']=='HELD',
+                    'requalification_source_not_held')
+            require(hashlib.sha256(source['body_json']).hexdigest()==source['body_sha256'],
+                    'artifact_body_corrupt')
+            require(db.execute('SELECT 1 FROM artifacts WHERE artifact_id=?',(artifact_id,)).fetchone()
+                    is None, 'requalification_requires_new_id')
+            holdout = db.execute('SELECT split,ordinal,used_by FROM evolution_datasets WHERE dataset_sha256=?',
+                                 (dataset_sha256,)).fetchone()
+            require(holdout is not None and holdout['split']=='held_out' and holdout['used_by'] is None
+                    and holdout['ordinal'] > life['revision'], 'requalification_fresh_holdout_required')
+            old_evidence = set(json.loads(source['evidence_json']))
+            old_hashes = {db.execute('SELECT evidence_sha256 FROM evidence WHERE evidence_id=?',(eid,)).fetchone()[0]
+                          for eid in old_evidence}
+            require(all(type(eid) is str and eid not in old_evidence for eid in evidence_ids),
+                    'requalification_fresh_evidence_required')
+            for eid in evidence_ids:
+                ident(eid)
+                evidence = db.execute('SELECT task_family,outcome,observed_at,evidence_sha256 FROM evidence WHERE evidence_id=?',
+                                      (eid,)).fetchone()
+                # Requalification evidence must postdate the hold itself: every
+                # hold path records its timestamp in the source's updated_at,
+                # so a same-family PASS observed after source creation but
+                # before the contradiction, retirement, or restore that held
+                # the source can never requalify it.
+                require(evidence is not None and evidence['task_family']==source['task_family']
+                        and evidence['outcome']=='PASS' and evidence['observed_at'] >= source['updated_at']
+                        and evidence['evidence_sha256'] not in old_hashes,
+                        'requalification_fresh_evidence_required')
+            body = json.loads(source['body_json'])
+            body['ttl_seconds'] = self._ttl(ttl_seconds)
+            # Record the full recovery provenance in the new artifact hash. The
+            # dependencies member is preserved and revalidated by _propose.
+            body['requalification'] = {'source_artifact_id':source_artifact_id,
+                'source_body_sha256':source['body_sha256'],'dataset_sha256':dataset_sha256}
+        return self._propose(artifact_id,source['kind'],source['task_family'],body,evidence_ids)
 
     def backup(self, destination):
         destination = Path(os.path.abspath(destination))
         require(destination.parent.resolve(strict=True)==destination.parent,'backup_parent_invalid')
+        from keel_machine.common import _ancestors
+        _ancestors(destination)
         destination.mkdir(mode=0o700,exist_ok=False)
         target=destination/'evolution.sqlite3'
         descriptor=os.open(target,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600);os.close(descriptor)
@@ -475,6 +581,7 @@ class Hardened:
         backup_home=Path(os.path.abspath(backup_home));_private(backup_home,True)
         source=backup_home/'evolution.sqlite3';_private(source);_private(backup_home/'backup.json')
         require(source.stat().st_size <= PAGE_LIMIT*4096,'backup_too_large')
+        require((backup_home/'backup.json').stat().st_size <= 4096,'backup_metadata_too_large')
         metadata=json.loads((backup_home/'backup.json').read_bytes())
         require(metadata=={'schema':'keel.evolution.backup.v1',
                 'sha256':hashlib.sha256(source.read_bytes()).hexdigest(),
@@ -490,7 +597,10 @@ class Hardened:
         restored=cls(destination,clock=clock)
         with restored._transaction() as db:
             require(db.execute('PRAGMA integrity_check').fetchone()[0]=='ok','restore_integrity_failed')
-            restored._clock(db)
-            db.execute("UPDATE artifacts SET state='HELD',reason='restored_requires_requalification'")
+            now = restored._clock(db)
+            # Record the restore as the hold event: requalification evidence
+            # must be observed at or after this timestamp.
+            db.execute("UPDATE artifacts SET state='HELD',reason='restored_requires_requalification',updated_at=?",
+                       (now,))
         restored._sync_home()
         return restored

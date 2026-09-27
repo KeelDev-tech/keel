@@ -122,7 +122,7 @@ class EvolutionEngineTests(unittest.TestCase):
     def test_body_tamper_is_held(self):
         plan=self.seed()
         with self.engine.db.transaction() as db:db.execute("UPDATE artifacts SET body_json=?",(b'{}',))
-        with self.assertRaisesRegex(ValueError,'body_corrupt'):
+        with self.assertRaisesRegex(ValueError,'inactive_or_expired|body_corrupt'):
             self.engine.replay_plan('procedure',{'version':1},{'subject':{}})
 
     def contract(self, plan):

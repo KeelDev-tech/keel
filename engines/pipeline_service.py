@@ -318,11 +318,23 @@ class PublicBoardReader:
             raise
 
 
-def discover(workspace, *, max_new=200, timeout=120, titles=(), locations=(), reader=None):
+def discover(workspace, *, max_new=200, timeout=120, titles=(), locations=(), reader=None,
+             source_refs=None):
     _bounded(max_new, 'max_new', 2000)
     if (Path(workspace)/'DEMO_ONLY.json').exists() and reader is None:
         raise ValueError('synthetic workspace cannot perform live source reads')
     sources = _sources(workspace)
+    if source_refs is not None:
+        # The durable scheduler can narrow intake, never introduce an unregistered
+        # endpoint or activate a disabled source. Preserve the caller's fair order.
+        if (type(source_refs) not in (tuple, list) or not 1 <= len(source_refs) <= MAX_BOARDS
+                or any(type(ref) is not str for ref in source_refs)
+                or len(set(source_refs)) != len(source_refs)):
+            raise ValueError('source selection must contain distinct registered references')
+        registered = {source['ref']: source for source in sources}
+        if any(ref not in registered for ref in source_refs):
+            raise ValueError('source selection includes a disabled or unregistered reference')
+        sources = [registered[ref] for ref in source_refs]
     reader = reader or PublicBoardReader(timeout)
     source_results, candidate_count, spool_bytes = [], 0, 0
     # TemporaryFile uses owner-only creation and is removed on every return,
@@ -697,7 +709,9 @@ def prepare_role(workspace, role_id, resume, *, _offline_fixture=False):
     try:
         # Preparation-only path: build the modern packet contract directly.
         # (apply_loop.build_packet emits the legacy launch-packet schema,
-        # which packet_contract.validate rejects.)
+        # which packet_contract.validate rejects. The 0.4.0 candidate routed
+        # through build_packet; reverted here — the validate call below is
+        # unchanged and requires the modern schema.)
         bank = apply_loop.load_answer_bank()
         policy = apply_loop.load_policy()
         materials = apply_loop._materials_for(selected, 'standard')

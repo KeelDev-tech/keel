@@ -6,19 +6,6 @@ All misses use safe_http's checked-IP TLS transport, per-hop admission,
 limits and both shared and legacy host holds. Cache keys preserve path and
 query semantics; only safe_http's authority/fragment normalization applies.
 No proxy, HTTP downgrade, credentials, POST, or oversized-body fallback.
-
-Lineage notes (ported from the pre-evolution line):
-  - One canonical GET path for the packet-build / verification HTTP traffic:
-    form_intel, ats (resolve_final_url / board APIs), api_direct_detect,
-    lever_submit, and verify_retry's sync path (which funnels through ats).
-  - Measurement support (J-20260916-0022-inte-426): stats() returns the
-    counters above plus cache/inflight gauges; disable()/enable() bypass
-    the cache for baseline-vs-post measurement (disable() also retires
-    in-flight coalesced requests via a generation bump).
-  - The 30-min pulse's async verify path (aiohttp) is out of scope for
-    this module — its per-host semaphore pacing already bounds it.
-  - Fail-closed: any cache-internal exception degrades to a direct network
-    fetch; the caller's timeout/UA semantics are preserved.
 """
 
 import json

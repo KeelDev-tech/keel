@@ -39,7 +39,7 @@ def capability_report(workspace, code_root=ROOT):
     """Report observed local prerequisites and explicitly disconnected services."""
     root = Path(code_root)
     system = platform.system()
-    python_ok = sys.version_info >= (3, 10)
+    python_ok = sys.version_info >= (3, 11)
     posix = os.name == 'posix'
     descriptors = all(hasattr(os, name) for name in ('O_DIRECTORY', 'O_NOFOLLOW'))
     descriptors = descriptors and os.open in os.supports_dir_fd
@@ -106,6 +106,8 @@ def capability_report(workspace, code_root=ROOT):
         'local_machine_runtime': present('keel_machine/runtime.py', 'keel_muse/coordinator.py',
                                          'keel_agent/state.py'),
         'offline_pipeline_benchmark': present('keel_next/benchmark.py'),
+        'frontier_capabilities': present('engines/source_scheduler.py','keel_evolve/lineage.py',
+                                          'keel_eval/frontier.py','keel_next/frontier.py'),
         'guarded_evolution_engine': present('keel_evolve/core.py', 'keel_evolve/demo.py',
                                             'keel_eval/reliability.py'),
     }
@@ -113,7 +115,7 @@ def capability_report(workspace, code_root=ROOT):
         'schema_version': 1,
         'profile': 'local-agent-ecosystem',
         'runtime': {'status': runtime_status, 'operating_system': system,
-                    'supported_platform': 'Linux / WSL with Python 3.10+',
+                    'supported_platform': 'Linux / WSL with Python 3.11+',
                     'qualified_platform': 'Linux with Python 3.12 in this audit',
                     'python': platform.python_version(), 'python_supported': python_ok,
                     'posix_file_locking': locking and posix,
