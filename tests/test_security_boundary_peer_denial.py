@@ -5,8 +5,8 @@
 Pins:
   (a) Denial code contract: an unmapped peer observes the structured
       ("held", "peer_denied") verdict -- never a bare BrokenPipeError.
-  (b) Fail-closed transport equivalence: BrokenPipeError/ConnectionResetError
-      inside the handshake window map to the peer_denied verdict (held);
+  (b) Lost-receipt safety: BrokenPipeError/ConnectionResetError after sending
+      begins map to unknown, because dispatch may already have happened;
       no evidence is fabricated and the client never retries.
   (c) Standing holds: no external egress in security.execution (AF_UNIX only),
       dispatch stays human-gated (default Boundary binds no host authority
@@ -18,6 +18,7 @@ no queue/ledger/telemetry/credential writes.
 """
 
 import base64
+import errno
 import os
 import random
 import socket
@@ -56,7 +57,12 @@ def denied_server(tmp_path):
     path = tmp_path / "broker.sock"
     server = UnixServer(str(path), Boundary(), {os.getuid() + 1: "worker-1"},
                         io_timeout=2.0, synthetic_test_mode=True)
-    server.open()
+    try:
+        server.open()
+    except OSError as exc:
+        if exc.errno in {errno.EPERM, errno.EACCES, errno.EAFNOSUPPORT}:
+            pytest.skip("kernel AF_UNIX unavailable: " + str(exc))
+        raise
     thread = threading.Thread(target=server.serve_forever,
                               kwargs={"max_connections": 64}, daemon=True)
     thread.start()
@@ -121,11 +127,15 @@ def test_concurrent_denials_never_hang_never_dispatch(denied_server):
 
 
 @pytest.mark.parametrize("failure", [BrokenPipeError, ConnectionResetError])
-def test_transport_error_in_handshake_window_is_denial_equivalent(tmp_path, monkeypatch, failure):
-    """(b) A transport error between connect and the structured response maps to
-    the peer_denied verdict -- fail-closed (held), with no fabricated evidence."""
+def test_transport_error_in_handshake_window_is_unknown(tmp_path, monkeypatch, failure):
+    """(b) A transport failure cannot prove denial or justify a resend."""
     sock_path = str(tmp_path / "dead.sock")
-    listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    except OSError as exc:
+        if exc.errno in {errno.EPERM, errno.EACCES, errno.EAFNOSUPPORT}:
+            pytest.skip("kernel AF_UNIX unavailable: " + str(exc))
+        raise
     listener.bind(sock_path)
     listener.listen(1)
 
@@ -137,11 +147,13 @@ def test_transport_error_in_handshake_window_is_denial_equivalent(tmp_path, monk
     else:
         monkeypatch.setattr(ipc, "receive", raiser)
 
-    result = UnixClient(sock_path, expected_server_uid=os.getuid(), timeout=5).execute(make_request())
-    listener.close()
-    assert result == {"status": "held", "code": "peer_denied",
+    try:
+        result = UnixClient(sock_path, expected_server_uid=os.getuid(), timeout=5).execute(make_request())
+    finally:
+        listener.close()
+    assert result == {"status": "unknown", "code": "transport_outcome_unconfirmed",
                       "envelope_digest": "", "evidence_id": ""}, result
-    assert result["status"] == "held"  # fail-closed: never submitted/not_submitted
+    assert result["status"] == "unknown"  # no fabricated submitted/not_submitted result
 
 
 def test_no_external_egress_in_execution_boundary():

@@ -3,7 +3,7 @@
 <!-- Repo is live at KeelDev-tech/keel. -->
 [![CI](https://github.com/KeelDev-tech/keel/actions/workflows/ci.yml/badge.svg)](.github/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.2.0-informational.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.5.1-informational.svg)](CHANGELOG.md)
 
 <p align="center"><img src="docs/assets/keel-logo.png" width="160" alt="Keel logo"></p>
 
@@ -54,8 +54,9 @@ ATS vendors. See [SPLIT.md](SPLIT.md).
   form values, banded rules, hard gates, and the per-field verification
   protocol, with a documented EXECUTOR CONTRACT for your submission layer
   (`engines/apply_loop.py`).
-- **Verification retry** — re-verifies parked leads (HTTP liveness, board
-  APIs), promotes LIVE ones, buries dead ones (`engines/verify_retry.py`).
+- **Verification retry** — records posting-presence observations from public
+  board APIs without promoting READY or inferring death from missing evidence.
+  Budget-deferred work keeps its turn (`engines/verify_retry.py`).
 - **Telemetry & analytics** — append-only event log, outcome analytics with
   fail-closed reporting rules, employer-response intake via a pluggable mail
   source (`engines/log_event.py`, `engines/outcome_analytics.py`,
@@ -64,6 +65,11 @@ ATS vendors. See [SPLIT.md](SPLIT.md).
   (`engines/build_dashboard.py`).
 
 ![Dashboard](docs/assets/dashboard-screenshot.png)
+
+The 0.5.1 optimization pass reduces repeated board reads and cache eviction
+work, preserves unattempted work under request limits, and hardens uncertain
+broker outcomes and rate-limit handling. See the [reproducible measurements
+and security boundaries](docs/OPTIMIZATION_0_5_1.md).
 
 ## What it does NOT do
 

@@ -603,34 +603,40 @@ def _parse_free_scope(text: str, registry=None):
 _EXPIRY_FIELDS = ("expires", "expiry", "valid_until", "expires_at")
 
 
-def _read_expiry(entry) -> str:
+def _expiry_time(value):
     try:
-        if isinstance(entry, dict):
-            for f in _EXPIRY_FIELDS:
-                v = entry.get(f)
-                if v:
-                    return str(v).strip()
-    except Exception:
-        pass
-    return ""
+        if type(value) is not str or not value.strip():
+            raise ValueError("invalid expiry")
+        dt = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    except (ValueError, TypeError, AttributeError, OverflowError):
+        raise ValueError("invalid banked authority expiry") from None
+
+
+def _read_expiry(entry) -> str:
+    recorded = []
+    if isinstance(entry, dict):
+        for f in _EXPIRY_FIELDS:
+            v = entry.get(f)
+            if v is None or v == "":
+                continue
+            # Every supplied alias is restrictive. A future date under one
+            # name cannot hide an expired or malformed date under another.
+            recorded.append((_expiry_time(v), v.strip()))
+    return min(recorded)[1] if recorded else ""
 
 
 def _is_expired(expiry: str) -> bool:
-    """True when a recorded expiry is parseable and in the past.
+    """Check expiry; malformed authority must make resolve() abstain.
 
-    Unparseable expiry text is IGNORED (not invented as expired) — the
-    entry's other metadata still governs. Fail-safe: error -> not expired.
+    Absent expiry retains the existing no-expiry convention. Legacy naive
+    timestamps retain their explicit UTC interpretation.
     """
-    try:
-        if not expiry:
-            return False
-        s = expiry.strip().replace("Z", "+00:00")
-        dt = datetime.fromisoformat(s)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt < datetime.now(timezone.utc)
-    except Exception:
+    if not expiry:
         return False
+    return _expiry_time(expiry) <= datetime.now(timezone.utc)
 
 
 # --------------------------------------------------------------- resolution

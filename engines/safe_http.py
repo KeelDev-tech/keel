@@ -22,7 +22,10 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin, urlsplit, urlunsplit, parse_qsl
 from urllib.request import Request
-from safe_io import atomic_json, contained_path, file_lock, read_json
+try:
+    from .safe_io import atomic_json, contained_path, file_lock, read_json
+except ImportError:  # Legacy script entry points import engines as top-level modules.
+    from safe_io import atomic_json, contained_path, file_lock, read_json
 
 MAX_BYTES = 4 * 1024 * 1024
 MAX_REDIRECTS = 3
@@ -34,6 +37,10 @@ SECRET_QUERY = re.compile(r"(?:password|passwd|secret|token|api.?key|credential|
 
 class NetworkPolicyError(URLError):
     pass
+
+
+class HostRateLimited(NetworkPolicyError):
+    """A previously observed HTTP 429 still prohibits reads from this host."""
 
 
 def validate_url(url):
@@ -112,8 +119,32 @@ def _cooldown_path(host):
     return contained_path(root, Path("data/http-cooldowns") / (name + ".json"), must_exist=False)
 
 
-class HostRateLimited(NetworkPolicyError):
-    """A host is cooling down after HTTP 429; cached reads are denied."""
+def _retry_delay(raw):
+    # RFC delta-seconds is an integer, not a float/exponent or signed number.
+    raw = str(raw).strip()
+    if re.fullmatch(r"[0-9]+", raw):
+        value = float(raw)
+        return max(60, value) if math.isfinite(value) else None
+    try:
+        leap_second = bool(re.search(r"\d{2}:\d{2}:60(?: |$)", raw))
+        date_text = re.sub(r"(\d{2}:\d{2}):60(?= |$)", r"\1:59", raw) if leap_second else raw
+        date = parsedate_to_datetime(date_text)
+        if date.tzinfo is None:
+            # The obsolete asctime HTTP-date form omits GMT but still means UTC.
+            date = date.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        short_year = re.fullmatch(r"[A-Za-z]+, \d{2}-[A-Za-z]{3}-(\d{2}) \d{2}:\d{2}:\d{2} GMT", raw)
+        if short_year:
+            year = now.year // 100 * 100 + int(short_year.group(1))
+            date = date.replace(year=year)
+            future_limit = (now.year + 50, now.month, now.day, now.hour, now.minute, now.second)
+            if (date.year, date.month, date.day, date.hour, date.minute, date.second) > future_limit:
+                date = date.replace(year=year - 100)
+        if leap_second:
+            date += timedelta(seconds=1)
+        return max(60, (date - now).total_seconds())
+    except (ValueError, TypeError, OverflowError):
+        return 60
 
 
 def _check_host_cooldown_locked(host, path):
@@ -146,34 +177,6 @@ def check_host_cooldown(url, *, timeout=20):
         _check_host_cooldown_locked(host, path)
 
 
-def _retry_delay(raw):
-    # RFC delta-seconds is an integer, not a float/exponent or signed number.
-    raw = str(raw).strip()
-    if re.fullmatch(r"[0-9]+", raw):
-        value = float(raw)
-        return max(60, value) if math.isfinite(value) else None
-    try:
-        leap_second = bool(re.search(r"\d{2}:\d{2}:60(?: |$)", raw))
-        date_text = re.sub(r"(\d{2}:\d{2}):60(?= |$)", r"\1:59", raw) if leap_second else raw
-        date = parsedate_to_datetime(date_text)
-        if date.tzinfo is None:
-            # The obsolete asctime HTTP-date form omits GMT but still means UTC.
-            date = date.replace(tzinfo=timezone.utc)
-        now = datetime.now(timezone.utc)
-        short_year = re.fullmatch(r"[A-Za-z]+, \d{2}-[A-Za-z]{3}-(\d{2}) \d{2}:\d{2}:\d{2} GMT", raw)
-        if short_year:
-            year = now.year // 100 * 100 + int(short_year.group(1))
-            date = date.replace(year=year)
-            future_limit = (now.year + 50, now.month, now.day, now.hour, now.minute, now.second)
-            if (date.year, date.month, date.day, date.hour, date.minute, date.second) > future_limit:
-                date = date.replace(year=year - 100)
-        if leap_second:
-            date += timedelta(seconds=1)
-        return max(60, (date - now).total_seconds())
-    except (ValueError, TypeError, OverflowError):
-        return 60
-
-
 def _read_host(url, method, headers, deadline, max_bytes):
     """Serialize cooperating readers of one host, including admission and 429 writes.
 
@@ -188,20 +191,7 @@ def _read_host(url, method, headers, deadline, max_bytes):
     path = _cooldown_path(host)
     with file_lock(str(path) + ".lock", timeout=_remaining(deadline)):
         _remaining(deadline)
-        state = read_json(path, missing=None, limit=4096)
-        if state is not None:
-            if (not isinstance(state, dict) or type(state.get("schema_version")) is not int
-                    or state["schema_version"] != 1 or state.get("host") != host or "until" not in state):
-                raise NetworkPolicyError("invalid persistent host cooldown")
-            until = state["until"]
-            if until is not None and (type(until) not in (int, float) or not math.isfinite(until) or until < 0):
-                raise NetworkPolicyError("invalid persistent cooldown expiry")
-            if until is None or until > time.time():
-                raise NetworkPolicyError("host is cooling down after HTTP 429")
-        with _backoff_lock:
-            if _backoff.get(host, 0) > time.monotonic():
-                raise NetworkPolicyError("host is cooling down after HTTP 429")
-            _backoff.pop(host, None)
+        _check_host_cooldown_locked(host, path)
         records = resolve_public(host, timeout=_remaining(deadline))
         result = _exchange(url, method, headers, records, _remaining(deadline), max_bytes)
         if result.status == 429:
@@ -266,6 +256,13 @@ def _exchange(url, method, headers, records, timeout, max_bytes):
             conn.request(method, (parsed.path or "/") + ("?" + parsed.query if parsed.query else ""),
                          headers={**headers, "Accept-Encoding": "identity"})
             response = conn.getresponse()
+            # Admission decisions depend on headers, never on these untrusted
+            # bodies. In particular, a slow, compressed or oversized 429 body
+            # must not discard an already observed rate limit before _read_host
+            # records it durably. Closing the connection also avoids downloading
+            # redirect pages that cannot contribute posting evidence.
+            if response.status in (301, 302, 303, 307, 308, 429):
+                return Response(b"", response.status, response.headers, url)
             length = response.getheader("Content-Length")
             if length and (int(length) < 0 or int(length) > max_bytes):
                 raise NetworkPolicyError("response exceeds size limit")
@@ -299,7 +296,12 @@ def _exchange(url, method, headers, records, timeout, max_bytes):
     raise URLError(type(last_error).__name__ if last_error else "connection failed")
 
 
-def urlopen(url, data=None, timeout=20, *, max_bytes=MAX_BYTES):
+def urlopen(url, data=None, timeout=20, *, max_bytes=MAX_BYTES, before_request=None):
+    """Bounded read; an optional per-hop callback may add admission restrictions.
+
+    The callback receives a validated URL and cannot bypass the mandatory
+    cooldown, DNS pinning, request restrictions, or response bounds below.
+    """
     if data is not None:
         raise NetworkPolicyError("request bodies prohibited")
     method, headers = "GET", {}
@@ -324,6 +326,8 @@ def urlopen(url, data=None, timeout=20, *, max_bytes=MAX_BYTES):
         if url in seen:
             raise NetworkPolicyError("redirect loop")
         seen.add(url)
+        if before_request is not None:
+            before_request(url)
         result = _read_host(url, method, headers, deadline, max_bytes)
         if result.status in (301, 302, 303, 307, 308):
             target = result.headers.get("Location")

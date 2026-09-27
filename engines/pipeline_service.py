@@ -18,7 +18,7 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import urlsplit
 
-from safe_http import urlopen, validate_url
+from safe_http import urlopen, validate_url, HostRateLimited
 from safe_io import atomic_json, read_json, rows, loads, digest, canonical, utc_now, fresh, aware_time, file_lock
 from queue_io import queue_lock
 from posting_identity import TOKEN, identity, observe
@@ -163,12 +163,52 @@ def _held(entry):
     return False
 
 
+def _identity_index(entries, reader=None):
+    """Parse each immutable queue snapshot once, retaining duplicate evidence.
+
+    This is deliberately scoped to one snapshot: caching across queue commits
+    could hide a concurrently changed target or a newly introduced duplicate.
+    """
+    indexed, role_counts, posting_counts = [], Counter(), Counter()
+    for offset, (path, row) in enumerate(entries):
+        if offset % 32 == 0 and reader is not None:
+            _deadline(reader)
+        key = _key(row)
+        indexed.append((path, row, key))
+        role_counts[row.get('role_id')] += 1
+        if key is not None:
+            posting_counts[key] += 1
+    return indexed, role_counts, posting_counts
+
+
+def _terminal_ledger_index(ledger, reader=None):
+    ids, keys = set(), set()
+    for offset, row in enumerate(ledger):
+        if offset % 32 == 0 and reader is not None:
+            _deadline(reader)
+        if str(row.get('status', '')).upper() in FINAL_OR_ACTIVE:
+            ids.add(row.get('role_id'))
+            key = _key(row)
+            if key is not None:
+                keys.add(key)
+    return ids, keys
+
+
+def _request_budget_blocks(reader, ref):
+    """A cached complete board needs no request, even at the request cap."""
+    cap = getattr(reader, 'max_requests', None)
+    return (cap is not None and reader.requests >= cap
+            and ref not in getattr(reader, 'cache', {})
+            and ref not in getattr(reader, 'errors', {}))
+
+
 class PublicBoardReader:
     """Per-run board cache: one fetch per GH/Ashby board; bounded Lever pages.
 
     The entire response is validated before it is usable. Partial pagination
     cannot be treated as a complete source, nor can it prove missing jobs dead.
     A 429 ends this reader's run; safe_http additionally persists host cooldown.
+    ``requests`` bounds reader dispatches, not sockets or HTTP redirect hops.
     """
     def __init__(self, timeout=120, fetcher=None, max_requests=50):
         self.deadline = _budget(timeout)
@@ -176,6 +216,7 @@ class PublicBoardReader:
         self.max_requests = _bounded(max_requests, 'max_requests', 1000)
         self.requests = 0
         self.stopped = False
+        self.blocked_by_host_cooldown = False
         self.cache = OrderedDict()
         self.cache_sizes = {}
         self.cache_bytes = 0
@@ -202,6 +243,10 @@ class PublicBoardReader:
                 raise ValueError('expected object or array response')
             _deadline(self)
             return value
+        except HostRateLimited:
+            self.stopped = True
+            self.blocked_by_host_cooldown = True
+            raise
         except HTTPError as exc:
             if exc.code == 429:
                 self.stopped = True
@@ -443,17 +488,15 @@ def verify(workspace, *, limit=100, timeout=120, live=False, reader=None):
         raise ValueError('synthetic workspace cannot perform live verification')
     reader = reader or PublicBoardReader(timeout)
     run_id, now = uuid.uuid4().hex, utc_now()
-    if live:
-        flush_outbox(workspace)
+    initial_flush = flush_outbox(workspace) if live else {'emitted': 0, 'pending': 0}
     with queue_lock(timeout=_lock_budget(reader), owner='public-verify:snapshot'):
         _deadline(reader)
         documents, ledger = _documents(workspace)
         selected = copy.deepcopy(_all_rows(documents))
-    id_counts = Counter(row.get('role_id') for _, row in selected)
-    posting_counts = Counter(_key(row) for _, row in selected if _key(row) is not None)
-    terminal_ids = {r.get('role_id') for r in ledger if str(r.get('status', '')).upper() in FINAL_OR_ACTIVE}
+    selected, id_counts, posting_counts = _identity_index(selected, reader)
+    terminal_ids, terminal_keys = _terminal_ledger_index(ledger, reader)
     eligible, skipped = [], Counter()
-    for index, (path, row) in enumerate(selected):
+    for index, (path, row, key) in enumerate(selected):
         if index % 32 == 0:
             _deadline(reader)
         rid = row.get('role_id')
@@ -461,14 +504,13 @@ def verify(workspace, *, limit=100, timeout=120, live=False, reader=None):
             skipped['duplicate_or_invalid_role_id'] += 1; continue
         if row.get('verification_event_pending'):
             skipped['telemetry_pending'] += 1; continue
-        if _held(row) or rid in terminal_ids:
+        if _held(row) or rid in terminal_ids or key is not None and key in terminal_keys:
             skipped['held_or_active_or_terminal'] += 1; continue
         next_time = _next_time(row)
         if next_time == 'invalid':
             skipped['invalid_cooldown_state'] += 1; continue
         if next_time is not None and next_time > now:
             skipped['cooldown'] += 1; continue
-        key = _key(row)
         if key is None:
             skipped['missing_exact_identity'] += 1; continue
         if posting_counts[key] != 1:
@@ -479,43 +521,68 @@ def verify(workspace, *, limit=100, timeout=120, live=False, reader=None):
     eligible.sort(key=lambda x: (str(x[0]), x[1]))
     overflow = max(0, len(eligible)-limit)
     chosen = eligible[:limit]
-    observations = []
-    for _, rid, path, snapshot, key in chosen:
-        ref = ':'.join(key[:2])
+    # Fix the same oldest-first cohort before batching. Process each complete
+    # board once even when its records exceed the shared LRU retention budget;
+    # observations and commits are restored to the original selected order.
+    boards = OrderedDict()
+    for item in chosen:
+        boards.setdefault(':'.join(item[4][:2]), []).append(item)
+    by_role, deferred, board_reads = {}, Counter(), 0
+    for ref, cohort in boards.items():
+        _deadline(reader)
+        if reader.stopped:
+            deferred['http_429'] += len(cohort)
+            continue
+        if _request_budget_blocks(reader, ref):
+            deferred['request_budget'] += len(cohort)
+            continue
+        board_reads += 1
         try:
-            job = reader.read(ref).get(key)
-            verdict, reason = ('live', 'exact_published_posting') if job else ('ambiguous', 'posting_absent_from_board_not_death_evidence')
+            postings = reader.read(ref)
+            failure = None
+        except HostRateLimited:
+            # The persisted transport hold is not fresh posting evidence or a
+            # new failed verification. Preserve this cohort's old retry state.
+            deferred['persisted_http_429'] += len(cohort)
+            continue
         except Exception as exc:
-            job = None
-            verdict, reason = 'ambiguous', 'source_unavailable:'+type(exc).__name__
-        observed = utc_now()
-        delay = 3600 if verdict == 'live' else 300
-        observation = {'schema_version': 1, 'observation_id': run_id+':'+hashlib.sha256(rid.encode()).hexdigest()[:24],
-                       'observed_at': observed.isoformat(), 'verdict': verdict, 'reason': reason,
-                       'identity': list(key), 'source_record_sha256': job['record_sha256'] if job else None,
-                       'source_url': job['source_url'] if job else None,
-                       'next_eligible_at': (observed+timedelta(seconds=delay)).isoformat(),
-                       'form_verified': False, 'acceptance_verified': False, 'execution_authorized': False}
-        observations.append((path, snapshot, observation))
+            postings = {}
+            failure = 'source_unavailable:'+type(exc).__name__
+        for index, (_, rid, path, snapshot, key) in enumerate(cohort):
+            if index % 32 == 0:
+                _deadline(reader)
+            job = postings.get(key)
+            verdict, reason = (('ambiguous', failure) if failure else
+                ('live', 'exact_published_posting') if job else
+                ('ambiguous', 'posting_absent_from_board_not_death_evidence'))
+            observed = utc_now()
+            delay = 3600 if verdict == 'live' else 300
+            observation = {'schema_version': 1, 'observation_id': run_id+':'+hashlib.sha256(rid.encode()).hexdigest()[:24],
+                           'observed_at': observed.isoformat(), 'verdict': verdict, 'reason': reason,
+                           'identity': list(key), 'source_record_sha256': job['record_sha256'] if job else None,
+                           'source_url': job['source_url'] if job else None,
+                           'next_eligible_at': (observed+timedelta(seconds=delay)).isoformat(),
+                           'form_verified': False, 'acceptance_verified': False, 'execution_authorized': False}
+            by_role[rid] = (path, snapshot, observation)
+    observations = [by_role[item[1]] for item in chosen if item[1] in by_role]
     if reader.stopped:
         for _, _, observation in observations:
-            observation.update(verdict='ambiguous', reason='batch_withheld_after_http_429')
+            observation.update(verdict='ambiguous', reason='batch_withheld_after_http_429',
+                next_eligible_at=(aware_time(observation['observed_at'])+timedelta(seconds=300)).isoformat())
     # Never commit observations after a cooperative run deadline expired.
     _deadline(reader)
     committed, conflicts, errors = [], [], []
-    if live:
+    if live and observations:
         # Crash-safe per file, not a transaction spanning multiple JSON files.
         # Each committed row contains its own replayable telemetry outbox.
         with queue_lock(timeout=_lock_budget(reader), owner='public-verify:commit'):
             _deadline(reader)
             current_documents, current_ledger = _documents(workspace)
-            current = _all_rows(current_documents)
-            counts = Counter(row.get('role_id') for _, row in current)
-            current_keys = Counter(_key(row) for _, row in current if _key(row) is not None)
-            ledger_ids = {r.get('role_id') for r in current_ledger if str(r.get('status', '')).upper() in FINAL_OR_ACTIVE}
+            current, counts, current_keys = _identity_index(_all_rows(current_documents), reader)
+            ledger_ids, ledger_keys = _terminal_ledger_index(current_ledger, reader)
             grouped = defaultdict(list)
             by_path_and_id = defaultdict(list)
-            for index, (current_path, current_row) in enumerate(current):
+            for index, (current_path, current_row, _) in enumerate(current):
                 if index % 32 == 0:
                     _deadline(reader)
                 by_path_and_id[(current_path, current_row.get('role_id'))].append(current_row)
@@ -524,7 +591,10 @@ def verify(workspace, *, limit=100, timeout=120, live=False, reader=None):
                     _deadline(reader)
                 rid = snapshot['role_id']
                 found = by_path_and_id[(path, rid)]
-                if counts[rid] != 1 or len(found) != 1 or found[0] != snapshot or current_keys[_key(snapshot)] != 1 or _held(found[0]) or rid in ledger_ids:
+                key = tuple(observation['identity'])
+                if (counts[rid] != 1 or len(found) != 1 or found[0] != snapshot
+                        or current_keys[key] != 1 or _held(found[0])
+                        or rid in ledger_ids or key in ledger_keys):
                     conflicts.append(rid); continue
                 row = found[0]
                 row['posting_verification'] = observation
@@ -541,12 +611,17 @@ def verify(workspace, *, limit=100, timeout=120, live=False, reader=None):
                     errors.append({'queue': path.name, 'reason': type(exc).__name__, 'not_committed': ids})
         flush = flush_outbox(workspace)
     else:
-        flush = {'emitted': 0, 'pending': 0}
+        # An idle or wholly deferred run has no row writes or new events. Do
+        # not reread all queues twice just to commit and flush an empty batch.
+        flush = initial_flush
     report = {'schema_version': 1, 'run_id': run_id, 'observed_at': now.isoformat(), 'dry_run': not live,
               'selected': len(chosen), 'deferred_by_limit': overflow, 'skipped': dict(skipped),
+              'observed': len(observations), 'deferred_without_attempt': dict(deferred),
+              'selected_boards': len(boards), 'board_reads': board_reads,
               'verdicts': dict(Counter(o['verdict'] for _, _, o in observations)),
               'committed': len(committed), 'concurrent_conflicts': conflicts, 'write_errors': errors,
               'requests': reader.requests, 'telemetry': flush, 'rate_limit_hold': reader.stopped,
+              'request_count_scope': 'bounded_reader_dispatches',
               'promoted_to_ready': 0, 'submission_authorized': False,
               'observation_scope': 'posting_presence_only; form, eligibility and human approval remain separate'}
     if live:
@@ -617,27 +692,28 @@ def supply_report(workspace):
     with queue_lock(timeout=10, owner='supply:read'):
         documents, ledger = _documents(workspace)
         all_rows = _all_rows(documents)
-    counts, identities = Counter(), Counter(row.get('role_id') for _, row in all_rows)
-    terminal_ids = {r.get('role_id') for r in ledger if str(r.get('status', '')).upper() in FINAL_OR_ACTIVE}
-    posting_counts = Counter(_key(row) for _, row in all_rows if _key(row) is not None)
+    indexed, identities, posting_counts = _identity_index(all_rows)
+    counts = Counter()
+    terminal_ids, terminal_keys = _terminal_ledger_index(ledger)
+    now = utc_now()
     questions = defaultdict(list)
-    for _, row in all_rows:
+    for _, row, key in indexed:
         rid = row.get('role_id')
         if not isinstance(rid, str) or not rid or identities[rid] != 1:
             counts['identity_conflict'] += 1
-        elif _held(row) or rid in terminal_ids:
+        elif _held(row) or rid in terminal_ids or key is not None and key in terminal_keys:
             counts['held_active_or_terminal'] += 1
         elif row.get('verification_event_pending'):
             counts['telemetry_pending'] += 1
-        elif _key(row) is None:
+        elif key is None:
             counts['missing_exact_posting_identity'] += 1
-        elif posting_counts[_key(row)] != 1:
+        elif posting_counts[key] != 1:
             counts['identity_conflict'] += 1
         elif (row.get('posting_verification') or {}).get('verdict') == 'live' and fresh((row.get('posting_verification') or {}).get('observed_at'), 3600):
             counts['posting_verified_form_and_approval_separate'] += 1
-        elif _next_time(row) == 'invalid':
+        elif (next_time := _next_time(row)) == 'invalid':
             counts['invalid_cooldown'] += 1
-        elif _next_time(row) and _next_time(row) > utc_now():
+        elif next_time and next_time > now:
             counts['verification_cooldown'] += 1
         else:
             counts['actionable_verification'] += 1

@@ -101,7 +101,7 @@ class SourceSchedulerTests(unittest.TestCase):
         self.assertEqual(first['status'], 'HELD_REQUEST_BUDGET')
         self.assertEqual(first['requests'], 1)
         second = self.run_batch(max_boards=2)
-        self.assertEqual(second['attempted'], ['greenhouse:fixture-002', 'greenhouse:fixture-003'])
+        self.assertEqual(second['attempted'], ['greenhouse:fixture-001', 'greenhouse:fixture-002'])
 
     def test_unavailable_source_backoff_allows_other_sources(self):
         self.sources(3)

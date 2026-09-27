@@ -180,10 +180,35 @@ def scheduled_discover(workspace, *, max_boards=4, max_new=200, timeout=120,
                        for index in range(len(selected))]
         held = None
         for ref, allocation in zip(selected, allocations):
+            try:
+                pipeline._deadline(reader)
+            except TimeoutError:
+                held = 'HELD_DEADLINE'
+                break
+            # Exhaustion before a board read is not a failed source attempt.
+            # Leave its backoff untouched and return its reserved fair turn.
+            if pipeline._request_budget_blocks(reader, ref):
+                held = 'HELD_REQUEST_BUDGET'
+                break
+            dispatches_before = reader.requests
             result = pipeline.discover(root, max_new=allocation, timeout=timeout, titles=titles,
                                        locations=locations, reader=reader, source_refs=[ref])
             stamp = _stamp(clock)
             _require(stamp >= now, 'scheduler clock regressed')
+            if (result['status'] == 'HELD_DEADLINE' and reader.requests == dispatches_before
+                    and not result.get('sources')):
+                # The deadline can expire after admission but before read().
+                # Do not invent a failed source attempt from that empty pass.
+                # A dispatched read or completed cached source retains the
+                # existing attempt/backoff accounting, even if it later times out.
+                held = 'HELD_DEADLINE'
+                break
+            if reader.stopped and reader.blocked_by_host_cooldown:
+                # A persisted host hold did not complete or fail this source's
+                # new read. Return its turn and retain its old backoff state.
+                state['cooldown_until'] = stamp + RATE_LIMIT_HOLD_SECONDS
+                held = 'HELD_HTTP_429'
+                break
             row = state['sources'][ref]
             source_complete = result['status'] == 'COMPLETE'
             row['last_status'], row['last_added'] = result['status'], result['added']
@@ -200,7 +225,7 @@ def scheduled_discover(workspace, *, max_boards=4, max_new=200, timeout=120,
             _save(path, state, stamp)
             if held:
                 break
-        # A shared request budget/429 may stop before selected peers are read.
+        # A shared request budget/deadline/429 may stop before peers are read.
         # Return their turns; otherwise a slow first board can starve its peers.
         for ref in selected[len(reports):]:
             state['sources'][ref]['last_attempt'] = previous_attempts[ref]

@@ -118,6 +118,14 @@ class SingleFlightStore:
                 created_at REAL NOT NULL, lease_until REAL, run_until REAL,
                 expires_at REAL, value_json BLOB, value_sha256 TEXT,
                 accessed_sequence INTEGER NOT NULL, hold_reason TEXT)""")
+            # Every operation prunes deadlines before looking up its exact key.
+            # Partial indexes keep an unexpired cache hit from scanning every
+            # artifact twice, without maintaining a second expiry authority.
+            # These additions also apply when opening an existing v1 store.
+            db.execute("""CREATE INDEX IF NOT EXISTS efficiency_reuse_ready_expiry
+                ON efficiency_reuse_entries(expires_at) WHERE state='READY'""")
+            db.execute("""CREATE INDEX IF NOT EXISTS efficiency_reuse_run_expiry
+                ON efficiency_reuse_entries(run_until) WHERE state='RUNNING'""")
             now = self._clock()
             row = db.execute("SELECT * FROM efficiency_reuse_meta WHERE singleton=1").fetchone()
             if row is None:
@@ -234,25 +242,44 @@ class SingleFlightStore:
                                  expires_at=row["expires_at"])
 
     def _room(self, db, now, *, extra_entries, extra_bytes, except_digest=None):
-        # Check irreducible occupancy before removing reusable artifacts. A
-        # single impossible result must not empty otherwise useful cache data.
-        pinned = db.execute("""SELECT COUNT(*),COALESCE(SUM(length(key_json)+COALESCE(length(value_json),0)),0)
-            FROM efficiency_reuse_entries WHERE state='HELD' OR key_sha256=?
-            OR (state='RUNNING' AND lease_until>?)""", (except_digest or "", now)).fetchone()
-        if pinned[0] + extra_entries > self.max_entries or pinned[1] + extra_bytes > self.max_bytes:
+        # Measure once inside the write transaction, then select deterministic
+        # victims before mutating anything. Reaggregating after each deletion
+        # makes a large artifact admission quadratic in cache occupancy.
+        # No durable counter is introduced: byte accounting stays derived from
+        # the canonical bytes actually stored in this transaction.
+        if extra_entries > self.max_entries or extra_bytes > self.max_bytes:
             return False
         usage = self._usage(db)
-        while usage["entries"] + extra_entries > self.max_entries or usage["bytes"] + extra_bytes > self.max_bytes:
-            # Live leaders and corruption holds cannot be evicted. Expired pure
-            # leaders are recoverable; a new global fence defeats the ABA race.
-            row = db.execute("""SELECT key_sha256 FROM efficiency_reuse_entries
-                WHERE (state='READY' OR (state='RUNNING' AND lease_until<=?))
-                AND key_sha256!=? ORDER BY accessed_sequence,key_sha256 LIMIT 1""",
-                             (now, except_digest or "")).fetchone()
-            if row is None:
-                return False
-            db.execute("DELETE FROM efficiency_reuse_entries WHERE key_sha256=?", (row[0],))
-            usage = self._usage(db)
+
+        def fits():
+            return (usage["entries"] + extra_entries <= self.max_entries
+                    and usage["bytes"] + extra_bytes <= self.max_bytes)
+
+        if fits():
+            return True
+        victims = []
+        # Live leaders, held entries and the completing leader remain pinned.
+        # Finish reading before deleting: modifying a table under an active
+        # SQLite SELECT cursor does not promise a stable iteration order.
+        rows = db.execute("""SELECT key_sha256,
+            length(key_json)+COALESCE(length(value_json),0) AS stored_bytes
+            FROM efficiency_reuse_entries
+            WHERE (state='READY' OR (state='RUNNING' AND lease_until<=?))
+            AND key_sha256!=? ORDER BY accessed_sequence,key_sha256""",
+                          (now, except_digest or ""))
+        try:
+            for row in rows:
+                victims.append((row[0],))
+                usage["entries"] -= 1
+                usage["bytes"] -= row[1]
+                if fits():
+                    break
+        finally:
+            rows.close()
+        if not fits():
+            # An impossible result cannot consume otherwise useful artifacts.
+            return False
+        db.executemany("DELETE FROM efficiency_reuse_entries WHERE key_sha256=?", victims)
         return True
 
     def claim(self, key, owner_id, *, lease_seconds=60):

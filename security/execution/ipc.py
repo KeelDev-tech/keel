@@ -4,13 +4,13 @@ One connection carries one length-prefixed JSON request and one response. The se
 is sequential (one active client); backlog and absolute I/O deadlines are bounded.
 Trusted handlers MUST bound their own browser/network operation time.
 
-Peer-denial contract (2026-09-21 race repair): when the broker denies an unmapped
+Peer-denial contract: when the broker denies an unmapped
 peer UID it flushes the structured peer_denied response and half-closes with a
 bounded linger so a still-sending client observes the denial, not a transport
-error. Residual transport errors (BrokenPipeError/ConnectionResetError) inside the
-handshake window are denial-equivalent on the client: the broker dispatches only
-for a validated mapped peer, so a transport failure between connect and the
-structured response can never indicate a dispatch. Fail-closed either way.
+error. Only a validated response proves denial. After sending begins, lost,
+malformed or timed-out responses mean UNKNOWN: a mapped broker may have already
+dispatched and recorded an outcome before its receipt was lost. Clients never
+retry an uncertain exchange; the host owns reconciliation.
 """
 from __future__ import annotations
 import os
@@ -269,19 +269,14 @@ class UnixClient:
             try:
                 send(connection, data, limit=MAX_WIRE, deadline=deadline)
                 result = strict_json(receive(connection, limit=MAX_RESPONSE, deadline=deadline))
-            except (BrokenPipeError, ConnectionResetError):
-                # Denial-window transport equivalence (fail-closed, documented):
-                # the broker dispatches only for a validated mapped peer, and only
-                # after a complete handshake. A transport error between connect
-                # and the structured response therefore cannot indicate that a
-                # dispatch happened; it is treated as the denial the broker
-                # documented for this window. Status stays "held" (never a
-                # dispatch), and the client never retries after this uncertain
-                # window -- the host owns recovery.
-                result = {"status": "held", "code": "peer_denied",
+                if (set(result) != {"status", "code", "envelope_digest", "evidence_id"}
+                        or any(not isinstance(value, str) for value in result.values())
+                        or result["status"] not in {"held", "unknown", "submitted", "not_submitted"}):
+                    raise InvalidRequest("invalid_broker_response")
+            except (OSError, InvalidRequest, ValueError, TypeError, RecursionError, OverflowError):
+                # sendall can partially succeed before raising. Receive can fail
+                # after a complete dispatch. Neither failure proves peer denial
+                # or non-submission, and no raw payload/exception crosses out.
+                result = {"status": "unknown", "code": "transport_outcome_unconfirmed",
                           "envelope_digest": "", "evidence_id": ""}
-        if (set(result) != {"status", "code", "envelope_digest", "evidence_id"}
-                or any(not isinstance(value, str) for value in result.values())
-                or result["status"] not in {"held", "unknown", "submitted", "not_submitted"}):
-            raise InvalidRequest("invalid_broker_response")
         return result
