@@ -1,0 +1,11 @@
+{
+  "mandatory_reviewers": [
+    "reviewer-a",
+    "reviewer-b"
+  ],
+  "optional_reviewers": [
+    "reviewer-c"
+  ],
+  "budget_units": 6,
+  "per_call_units": 1
+}

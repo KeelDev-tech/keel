@@ -11,6 +11,7 @@ import http.client
 from itertools import combinations
 import json
 import math
+import os
 import re
 import socket
 import sqlite3
@@ -131,7 +132,31 @@ def validate_roster_diversity(configs, registry):
             "execution_authorized": False}
 
 
+def _environment_budget():
+    """Opt-in process boundary: both variables or neither; never create scope."""
+    ledger_path = os.environ.get("KEEL_BUDGET_LEDGER")
+    scope_id = os.environ.get("KEEL_BUDGET_SCOPE")
+    if ledger_path is None and scope_id is None:
+        return None, None
+    if not ledger_path or not scope_id:
+        raise ModelError("budget_environment_incomplete")
+    from keel_efficiency.ledger import ResourceLedger
+    return ResourceLedger(ledger_path), scope_id
+
+
 def loopback_transport(config, payload, timeout_seconds):
+    """Public local dispatch boundary, governed when budget environment is set."""
+    from keel_efficiency.transport import claim_governed_loopback
+    if claim_governed_loopback(config, payload, timeout_seconds):
+        return _loopback_transport_raw(config, payload, timeout_seconds)
+    ledger, scope_id = _environment_budget()
+    if ledger is not None:
+        from keel_efficiency.transport import GovernedTransport
+        return GovernedTransport(ledger, scope_id, _loopback_transport_raw)(config, payload, timeout_seconds)
+    return _loopback_transport_raw(config, payload, timeout_seconds)
+
+
+def _loopback_transport_raw(config, payload, timeout_seconds):
     """POST to a literal IP; ignores proxies, never redirects or authenticates.
 
     A deadline watchdog also interrupts slow-drip headers and bodies. Connections
@@ -320,12 +345,16 @@ def _record(store, metadata):
             metadata["phase"], _json(metadata)))
 
 
-def run_blind_review(store, *, round_id, subject, reviewers, expires_at, clock=None, transport=None):
+def run_blind_review(store, *, round_id, subject, reviewers, expires_at, clock=None, transport=None,
+                     ledger=None, scope_id=None):
     """Create a new round and perform A -> immutable seal -> B sequentially.
 
     Operator-owned config is the only identity source. The returned evaluation
     cannot authorize execution. A failed call is a persisted ABSTAIN; no retry,
     model replacement, cloud fallback or expired-round continuation is allowed.
+    Supplying ledger/scope_id meters every attempt. Legacy callers without a
+    budget are explicitly marked ungoverned; the optional environment boundary
+    governs default loopback dispatch as well.
     """
     if not isinstance(store, ReviewStore):
         raise ValueError("ReviewStore required")
@@ -337,6 +366,16 @@ def run_blind_review(store, *, round_id, subject, reviewers, expires_at, clock=N
         raise ValueError("subject reviewer_config_sha256 must bind the exact operator roster")
     clock = clock or (lambda: datetime.now(timezone.utc))
     transport = transport or loopback_transport
+    from keel_efficiency.ledger import BudgetExceeded, LedgerError
+    from keel_efficiency.transport import GovernedTransport
+    from keel_efficiency.usage import unknown_usage, usage_from_response
+    if (ledger is None) != (scope_id is None):
+        raise ValueError("ledger and scope_id must be supplied together")
+    if ledger is None and transport is loopback_transport:
+        ledger, scope_id = _environment_budget()
+    if ledger is not None:
+        transport = GovernedTransport(ledger, scope_id, transport, binding={"round_id": round_id})
+    governed = isinstance(transport, GovernedTransport)
     created = store.create_round(round_id, subject, [r.reviewer_id for r in reviewers], expires_at, now=clock())
     digest, calls = created["subject_sha256"], []
     for phase in ("A", "B"):
@@ -350,17 +389,25 @@ def run_blind_review(store, *, round_id, subject, reviewers, expires_at, clock=N
                         "requested_model": reviewer.model, "response_id": None,
                         "response_id_kind": "created_at" if reviewer.backend == "ollama" else "id",
                         "model_identity_hardware_verified": False,
-                        "transport": "injected" if transport is not loopback_transport else "loopback_http",
+                        "transport": ("loopback_http" if transport is loopback_transport or
+                                      (governed and transport.transport is loopback_transport) else "injected"),
                         "started_at": datetime.fromtimestamp(_time(clock()), timezone.utc).isoformat(),
                         "subject_sha256": digest, "execution_authorized": False}
+            metadata.update(resource_budget_enforced=governed,
+                            resource_accounting_status="GOVERNED" if governed else "LEGACY_UNGOVERNED",
+                            resource_reservation=None, usage=unknown_usage("not_dispatched"))
             started = time.monotonic()
+            budget_stopped = False
+            dispatched = False
             try:
                 timeout = min(reviewer.timeout_seconds, _time(expires_at) - _time(clock()) - 2)
                 if timeout <= 0:
                     raise ModelError("review_deadline_near_expiry")
                 payload = _payload(reviewer, phase, view)
                 metadata["request_sha256"] = hashlib.sha256(_json(payload, limit=1048576).encode()).hexdigest()
+                dispatched = True
                 response = transport(reviewer, payload, timeout)
+                metadata["usage"] = transport.last_usage if governed else usage_from_response(reviewer, response)
                 if time.monotonic() - started > timeout:
                     raise ModelError("model_deadline_exceeded")
                 if isinstance(response, HTTPResult) and type(response.body) is bytes:
@@ -368,9 +415,14 @@ def run_blind_review(store, *, round_id, subject, reviewers, expires_at, clock=N
                 assessment, metadata["response_id"] = _assessment_from_response(reviewer, response, subject["required_claim_ids"])
                 metadata["status"] = "VALIDATED_RESPONSE"
             except (ModelError, OSError, ValueError, TypeError, KeyError, RecursionError) as exc:
-                error = str(exc) if isinstance(exc, ModelError) else "model_adapter_error"
+                budget_stopped = isinstance(exc, LedgerError)
+                error = ("resource_budget_exceeded" if isinstance(exc, BudgetExceeded) else
+                         "resource_ledger_error" if isinstance(exc, LedgerError) else
+                         str(exc) if isinstance(exc, ModelError) else "model_adapter_error")
                 assessment = {"verdict": "ABSTAIN", "covered_claim_ids": [], "findings": [error]}
                 metadata.update(status="ABSTAIN", error_code=error)
+            if governed and dispatched:
+                metadata.update(resource_reservation=transport.last_receipt, usage=transport.last_usage)
             metadata.update(duration_seconds=round(time.monotonic() - started, 6), verdict=assessment["verdict"])
             _record(store, metadata)
             calls.append(metadata)
@@ -383,6 +435,12 @@ def run_blind_review(store, *, round_id, subject, reviewers, expires_at, clock=N
                 # Trusted clock jumps/expiry cannot turn a completed model call
                 # into a valid late review. Preserve the attempted-call record.
                 return {"evaluation": store.evaluate(round_id, digest, now=clock()), "calls": calls,
-                        "execution_authorized": False, "model_quality_validated": False}
+                        "execution_authorized": False, "model_quality_validated": False,
+                        "resource_budget_enforced": governed}
+            if budget_stopped:
+                return {"evaluation": store.evaluate(round_id, digest, now=clock()), "calls": calls,
+                        "execution_authorized": False, "model_quality_validated": False,
+                        "resource_budget_enforced": governed, "stopped_reason": "resource_budget_hold"}
     return {"evaluation": store.evaluate(round_id, digest, now=clock()), "calls": calls,
-            "execution_authorized": False, "model_quality_validated": False}
+            "execution_authorized": False, "model_quality_validated": False,
+            "resource_budget_enforced": governed}
