@@ -31,7 +31,10 @@ class Lineage:
             require(current not in path,'lineage_cycle')
             if current in visited:continue
             visited.add(current)
-            require(len(visited)<=MAX_ANCESTORS,'lineage_ancestor_limit')
+            # The candidate itself is not one of its ancestors: enforce the
+            # documented MAX_ANCESTORS boundary on the ancestor set alone so
+            # exactly MAX_ANCESTORS ancestors are accepted.
+            require(len(visited-{artifact_id})<=MAX_ANCESTORS,'lineage_ancestor_limit')
             for link in self._parents(document):
                 require(link['artifact_id']!=artifact_id,'lineage_cycle')
                 row,_=super()._active(db,link['artifact_id'],('SIMULATION','PROMOTED'))
@@ -133,7 +136,8 @@ class Lineage:
                 if child not in held:
                     held.add(child);queue.append(child)
         for child in held:
-            db.execute("UPDATE artifacts SET state='HELD',reason=NULL WHERE artifact_id=? AND state!='RETIRED'",(child,))
+            # Record the cascade as the hold event for requalification evidence.
+            db.execute("UPDATE artifacts SET state='HELD',reason=NULL,updated_at=? WHERE artifact_id=? AND state!='RETIRED'",(now,child,))
         return held
 
     @contextmanager

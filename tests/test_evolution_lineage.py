@@ -129,5 +129,22 @@ class LineageTests(unittest.TestCase):
             with self.assertRaises(ValueError):self.engine.derive('child','parent',['proof'])
         self.assertNotIn('PROCEDURE:CANDIDATE',self.engine.status()['artifacts'])
 
+    def test_sixty_four_ancestors_accepted_sixty_five_rejected(self):
+        # MAX_ANCESTORS=64 bounds the ancestor set, not the traversal: the
+        # candidate itself must not consume one of the 64 slots.
+        previous='parent'
+        for index in range(1,65):
+            name='chain%d'%index
+            self.engine.derive(name,previous,['proof']);self.seed(name)
+            previous=name
+        with self.engine.db.transaction() as db:
+            row=db.execute("SELECT body_json FROM artifacts WHERE artifact_id='chain64'").fetchone()
+            ancestors=self.engine._validate_dependencies(db,json.loads(row['body_json']),'chain64')
+        self.assertEqual(len(ancestors),64)
+        # One more link exceeds the boundary: deriving the final descendant
+        # raises lineage_ancestor_limit.
+        with self.assertRaisesRegex(ValueError,'lineage_ancestor_limit'):
+            self.engine.derive('chain65','chain64',['proof'])
+
 
 if __name__=='__main__':unittest.main()

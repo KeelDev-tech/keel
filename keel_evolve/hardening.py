@@ -529,8 +529,13 @@ class Hardened:
                 ident(eid)
                 evidence = db.execute('SELECT task_family,outcome,observed_at,evidence_sha256 FROM evidence WHERE evidence_id=?',
                                       (eid,)).fetchone()
+                # Requalification evidence must postdate the hold itself: every
+                # hold path records its timestamp in the source's updated_at,
+                # so a same-family PASS observed after source creation but
+                # before the contradiction, retirement, or restore that held
+                # the source can never requalify it.
                 require(evidence is not None and evidence['task_family']==source['task_family']
-                        and evidence['outcome']=='PASS' and evidence['observed_at'] >= source['created_at']
+                        and evidence['outcome']=='PASS' and evidence['observed_at'] >= source['updated_at']
                         and evidence['evidence_sha256'] not in old_hashes,
                         'requalification_fresh_evidence_required')
             body = json.loads(source['body_json'])
@@ -592,7 +597,10 @@ class Hardened:
         restored=cls(destination,clock=clock)
         with restored._transaction() as db:
             require(db.execute('PRAGMA integrity_check').fetchone()[0]=='ok','restore_integrity_failed')
-            restored._clock(db)
-            db.execute("UPDATE artifacts SET state='HELD',reason='restored_requires_requalification'")
+            now = restored._clock(db)
+            # Record the restore as the hold event: requalification evidence
+            # must be observed at or after this timestamp.
+            db.execute("UPDATE artifacts SET state='HELD',reason='restored_requires_requalification',updated_at=?",
+                       (now,))
         restored._sync_home()
         return restored

@@ -186,5 +186,23 @@ class FrontierSecurityTests(unittest.TestCase):
             self.engine.runners('recovered')
 
 
+    def test_requalification_rejects_evidence_observed_before_hold(self):
+        # A same-family PASS recorded after source creation but before the
+        # contradiction that held the source must not requalify it: the
+        # recovery contract requires evidence observed at or after the hold.
+        self.procedure()
+        self.observe('stale','PASS')
+        self.now[0] += 1
+        self.engine.feedback('failure','procedure','bad')
+        self.now[0] += 1
+        self.observe('fresh','PASS')
+        key = self.engine.register_dataset(heldout_fixture())
+        with self.assertRaisesRegex(ValueError,'fresh_evidence'):
+            self.engine.fork_for_requalification('procedure','recovered',evidence_ids=['stale'],dataset_sha256=key)
+        recovered = self.engine.fork_for_requalification('procedure','recovered',
+            evidence_ids=['fresh'],dataset_sha256=key)
+        self.assertEqual(recovered['state'],'CANDIDATE')
+
+
 if __name__ == '__main__':
     unittest.main()
