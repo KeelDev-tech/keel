@@ -261,6 +261,14 @@ print(json.dumps({'eight_lane_imports':'PASS','synthetic_api_checks':'PASS','bro
             self.assertFalse(integrated_report['execution_authorized'])
             self.assertEqual(integrated_report['status'], 'DEMO_PASSED')
             self.assertTrue(all(integrated_report['checks'].values()))
+            frontier = subprocess.run([sys.executable, '-S', '-m', 'keel_next', 'frontier',
+                                       '--home', str(temp / 'frontier-demo')], cwd=code,
+                                      env=env, capture_output=True, text=True, timeout=30)
+            self.assertEqual(frontier.returncode, 0, frontier.stdout + frontier.stderr)
+            frontier_report=json.loads(frontier.stdout)
+            self.assertEqual(frontier_report['status'],'FRONTIER_PASSED')
+            self.assertFalse(frontier_report['production_qualified'])
+            self.assertEqual(frontier_report['reports']['sources']['scheduled']['added'],64)
             # Run the actual module entry point with third-party packages absent
             # and Python socket creation rejected. This regression guard is
             # not an operating-system network sandbox.

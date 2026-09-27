@@ -1,4 +1,4 @@
-# Artifact-bound evolution (0.3.1)
+# Artifact-bound evolution
 
 The local engine records evidence, quarantines proposed lessons/procedures, executes paired repeated trials, and admits only a closed rule interpreter. It uses Python and SQLite without a paid service. Linux/WSL is required for private filesystem checks, file locking and worker resource limits.
 
@@ -21,23 +21,38 @@ A rule has exactly `path`, `equals`, `on_match`, and `otherwise`. Paths have 1â€
 
 Promotion requires a nonsynthetic dataset, trusted host adjudication/independence attestation, at least 20 independent clusters, at least three executed repeats, positive conservative gain, no paired regressions and zero allowed false passes/errors/instability. Synthetic or unattested results cannot promote; the internal trial receipt can admit simulation only. `production_qualified` and `execution_authorized` remain false.
 
-Exact subject hashes prevent duplicate subjects, development/holdout overlap, and relabelled reuse. A holdout is consumed by one candidate/plan binding, including failed attempts. Failure scenarios containing `fixture.subject` mark that subject as development. Semantic similarity, undisclosed prior exposure and false host attestations are outside this mechanism; the trusted host must enforce those independently.
+Exact subject hashes prevent duplicate subjects, development/holdout overlap, and relabelled reuse. A holdout is consumed by one candidate/plan binding, including failed attempts. Failure scenarios mark raw subjects, `subject` members and subjects nested in responses as development. Wrapping a recorded subject differently cannot reset its partition. Semantic similarity, undisclosed prior exposure and false host attestations are outside this mechanism; the trusted host must enforce those independently.
 
 ## Retrieval and execution
 
-Retrieval checks exact typed applicability, declared invalidators, linked evidence, body integrity, lifecycle and expiry. Default/max TTL is 24 hours. Reproposal does not renew expiry. Action contracts carry simulation status, full replay bindings, expiry and required state. Validation re-reads current lifecycle and rejects held, retired, expired or changed artifacts; callers must supply fresh target, evidence, authority revision and state.
+Retrieval checks exact typed applicability, declared invalidators, linked evidence, body integrity, lifecycle and expiry. Default TTL is one hour; the maximum is 24 hours. Reproposal does not renew expiry. Action contracts carry simulation status, full replay bindings, expiry and required state. Validation re-reads current lifecycle and rejects held, retired, expired or changed artifacts; callers must supply fresh target, evidence, authority revision and state.
 
 `execute_review` performs only side-effect-free rule interpretation, with the final lifecycle check and interpretation serialized against withdrawal. It grants no browser, shell, network or financial authority. External action executors must provide their own fresh action gate; a returned contract status alone is never authorization.
 
 ## Limits and recovery
 
-All ten engine data tables have a 4,096-row limit. Aggregate logical stored values are limited to 16 MiB; SQLite page count is capped at 16,384 (64 MiB with the default 4 KiB pages). Quota failures roll back the transaction. These bounds exclude temporary journal files and Python parent-process overhead; they are not a universal filesystem quota.
+All ten engine data tables have a 4,096-row limit. Aggregate logical stored values are limited to 16 MiB; SQLite page count is capped at 16,384 (64 MiB with the default 4 KiB pages). Quota failures roll back ordinary transactions. These bounds exclude temporary journal files and Python parent-process overhead; they are not a universal filesystem quota.
 
 One evaluation worker per engine home is allowed. Each worker receives 3 CPU seconds, 512 MiB address space, 2 MiB file size, 64 file descriptors, no core dumps and an 8-second parent wall deadline. Input/output and receipts are size bounded. Unsupported platforms fail closed. This fixed-code worker is not a sandbox for arbitrary hostile code; the host code and same OS user remain trusted.
 
 Contradictory/drift/runtime-failure feedback referencing same-family failed or unknown evidence immediately holds an artifact. `rollback` selects only an older, still-active promoted artifact of the same kind/family; it cannot revive a held, retired or expired version. This is rollback selection, not a deployment manager.
 
+Withdrawal remains available when the application quota is full or was lowered. If detailed feedback, retirement or rollback metadata cannot fit, the engine commits only a byte-nonincreasing `HELD` state, clears the reason, retains the previous timestamp and returns `detail_recorded=False`. It does not discard existing evidence or feedback. Retry after capacity becomes available to persist the detail. Retirement may therefore return `HELD` instead of `RETIRED`; both prevent use of that revision. This protects application quota exhaustion, not a physically full, damaged or unwritable disk, where durable writes can still fail.
+
 `backup` makes a private consistent SQLite snapshot with a digest. `restore` verifies it, creates a new private home, checks integrity and holds EVERY restored artifact for requalification. Legacy promotions also migrate to held. The backup is not encrypted and has no external anti-rollback anchor. No existing home is overwritten.
+
+`fork_for_requalification` is the recovery path for a held revision. It requires a new artifact ID, new positive same-family evidence IDs and hashes, and an unused held-out dataset registered after the source proposal. Register the fresh holdout before creating the recovery candidate. Supply evidence actually observed after recovery; relabelling old evidence does not meet the fresh-content check. For example, after independently collecting `fresh_evidence_id` and `fresh_heldout`:
+
+```python
+holdout_sha256 = restored.register_dataset(fresh_heldout)
+candidate = restored.fork_for_requalification(
+    "old-procedure", "recovered-procedure-v2",
+    evidence_ids=[fresh_evidence_id],
+    dataset_sha256=holdout_sha256,
+)
+```
+
+The old artifact remains held. The new artifact starts `CANDIDATE`, preserves pinned parent dependencies, and binds the selected recovery dataset in its body hash. An unavailable parent prevents the fork. Old receipts cannot qualify the new ID, and another dataset cannot replace the selected recovery holdout. Run `freeze` and new trials for this candidate; nonsynthetic promotion still requires trusted adjudication and independence validation. No recovery API grants external action authority.
 
 ## Validation scope
 

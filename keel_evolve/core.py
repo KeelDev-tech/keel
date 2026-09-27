@@ -378,8 +378,20 @@ class _BaseEngine:
                 require(db.execute("SELECT 1 FROM evidence WHERE evidence_id=?",
                                    (source_evidence_id,)).fetchone() is not None,
                         "scenario_source_evidence_missing")
-            if type(fixture) is dict and 'subject' in fixture:
-                subject_hash = hashlib.sha256(_json(fixture['subject'])).hexdigest()
+            # A subject can be a raw fixture, a case's `subject`, or nested in a
+            # recorded response. Wrapper shape must not reset its partition.
+            pending, subjects = [fixture], set()
+            while pending:
+                item = pending.pop()
+                if type(item) is dict:
+                    if set(item)=={'required_claim_ids','claims','evidence'}:
+                        subjects.add(hashlib.sha256(_json(item)).hexdigest())
+                    if 'subject' in item:
+                        subjects.add(hashlib.sha256(_json(item['subject'])).hexdigest())
+                    pending.extend(item.values())
+                elif type(item) is list:
+                    pending.extend(item)
+            for subject_hash in sorted(subjects):
                 prior_subject = db.execute('SELECT split FROM evolution_subjects WHERE subject_sha256=?',
                                            (subject_hash,)).fetchone()
                 require(prior_subject is None or prior_subject[0]=='development', 'scenario_holdout_leak')
@@ -609,7 +621,8 @@ class _BaseEngine:
 
 
 from .hardening import Hardened
+from .lineage import Lineage
 
 
-class EvolutionEngine(Hardened, _BaseEngine):
+class EvolutionEngine(Lineage, Hardened, _BaseEngine):
     """Hardened public API; legacy helpers never supply promotion or replay authority."""

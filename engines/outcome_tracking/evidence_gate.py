@@ -1,229 +1,38 @@
-#!/usr/bin/env python3
-"""Evidence gate: only claims with sources count.
+"""Grade local submission claims without pretending to authenticate a provider.
 
-Public, portable version. Keeps a JSON decision log of every submission
-claim (verified / pending / unevidenced) so dashboard numbers are always
-backed by quoted evidence. Fail-closed: anything unparseable is treated
-as unverified, never as proven.
-
-Paths resolve through keel_paths; nothing is hardcoded to a workspace.
+Quotes, hashes and caller-supplied flags are evidence to review, not proof of
+provider acceptance. Local receipts support review and manual attestation;
+provider acceptance requires an explicitly injected, authenticating host adapter.
 """
-
 import argparse
+from collections import defaultdict
+from datetime import timedelta
 import json
 import os
-import re
 import sys
-from collections import defaultdict
-from datetime import datetime, timedelta, timezone
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_ENGINES = os.path.dirname(_HERE)
+_ENGINES = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ENGINES not in sys.path:
     sys.path.insert(0, _ENGINES)
-from keel_paths import DATA, TELEMETRY  # noqa: E402
-from safe_io import aware_time, digest, loads, utc_now  # noqa: E402
+from keel_paths import DATA, TELEMETRY
+from safe_io import read_json, loads, rows, atomic_json, file_lock, aware_time, utc_now, digest
 
-LEDGER_PATH = os.path.join(DATA, "ledger", "application-ledger.json")
+LEDGER_PATH = os.path.join(DATA, "application-ledger.json")
 DECISIONS_PATH = os.path.join(DATA, "state", "evidence-gate-decisions.json")
 EVENTS_PATH = os.path.join(TELEMETRY, "events.jsonl")
-
-STATUS_VERIFIED = "verified"     # claim backed by evidence
-STATUS_PENDING = "pending"       # claim awaiting evidence (24h window)
-STATUS_UNEVIDENCED = "unevidenced"  # claim with no evidence after window
-
-QUOTE_PAT = re.compile(r'"([^"]{8,})"')
+STATUS_VERIFIED, STATUS_PENDING, STATUS_UNEVIDENCED = "verified", "pending", "unevidenced"
 PENDING_WINDOW_H = 24
 
 
 def load_ledger(path=LEDGER_PATH):
-    """Ledger rows; tolerant of list, {"rows": [...]}, {"applications": [...]}."""
-    try:
-        with open(path) as f:
-            data = json.load(f)
-    except (FileNotFoundError, ValueError):
-        return []
-    if isinstance(data, dict):
-        return data.get("rows", data.get("applications", []))
-    return data if isinstance(data, list) else []
+    """Read supported row envelopes strictly; corrupt data never means empty."""
+    return rows(read_json(path, missing=[]))
 
 
-def _scan_ledger_for_quote(events_path, claim_ts, role_id, now=None):
-    """Look for a submitted event with a quoted confirmation for role_id
-    inside the evidence window (claim_ts .. claim_ts + 24h), additionally
-    bounded by the evaluation time: when `now` is given, the event must
-    also fall inside (now - 24h .. now), so stale evidence cannot verify
-    a claim evaluated later."""
-    try:
-        with open(events_path) as f:
-            lines = f.readlines()
-    except FileNotFoundError:
-        return None
-    claim_dt = None
-    try:
-        claim_dt = datetime.fromisoformat(str(claim_ts).replace("Z", "+00:00"))
-    except Exception:
-        pass
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            e = json.loads(line)
-        except Exception:
-            continue
-        if e.get("event_type") != "submitted" or e.get("role_id") != role_id:
-            continue
-        det = e.get("details") or {}
-        conf = det.get("confirmation") or det.get("evidence") or ""
-        m = QUOTE_PAT.search(str(conf))
-        if m:
-            if claim_dt is not None:
-                try:
-                    ev_dt = datetime.fromisoformat(
-                        str(e.get("ts", "")).replace("Z", "+00:00"))
-                    hours = (ev_dt - claim_dt).total_seconds() / 3600
-                    if not (0 <= hours <= PENDING_WINDOW_H):
-                        continue
-                    if now is not None:
-                        age_h = (now - ev_dt).total_seconds() / 3600
-                        if not (0 <= age_h <= PENDING_WINDOW_H):
-                            continue
-                except Exception:
-                    continue
-            return m.group(1)
-    return None
+def find_submitted_rows(records):
+    return [record for record in rows(records) if str(record.get("status", "")).upper()
+            in {"SUBMITTED", "SUBMISSION_CLAIMED"}]
 
-
-def find_submitted_rows(rows):
-    return [r for r in rows if str(r.get("status", "")).upper() == "SUBMITTED"]
-
-
-def record_gate_decision(role_id, company, claim, evidence, ts=None,
-                         path=DECISIONS_PATH):
-    """Append one decision record. Atomic-ish via tmp+rename."""
-    rec = {
-        "role_id": role_id,
-        "company": company,
-        "claim": claim,
-        "evidence": evidence,
-        "ts": ts or datetime.now(timezone.utc).isoformat(),
-    }
-    try:
-        with open(path) as f:
-            data = json.load(f)
-    except (FileNotFoundError, ValueError):
-        data = []
-    if not isinstance(data, list):
-        data = []
-    data.append(rec)
-    parent = os.path.dirname(path)
-    if parent:
-        os.makedirs(parent, exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(data, f, indent=1)
-    os.replace(tmp, path)
-    return rec
-
-
-def load_decisions(path=DECISIONS_PATH):
-    try:
-        with open(path) as f:
-            data = json.load(f)
-        return data if isinstance(data, list) else []
-    except (FileNotFoundError, ValueError):
-        return []
-
-
-def load_gate_events(events_path=EVENTS_PATH):
-    out = []
-    try:
-        with open(events_path) as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    e = json.loads(line)
-                except Exception:
-                    continue
-                if isinstance(e, dict) and e.get("event_type") in (
-                        "gate_encountered", "gate_blocked", "gate_cleared"):
-                    out.append(e)
-    except FileNotFoundError:
-        pass
-    return out
-
-
-def coverage(rows, events_path=EVENTS_PATH, *, now=None):
-    """(verified, pending, unevidenced) counts over SUBMITTED rows.
-
-    verified: a submitted telemetry event with a quoted confirmation
-      inside the 24h claim window. pending: submitted event exists but
-      no quoted confirmation yet. unevidenced: no submitted event at all.
-
-    When `now` is explicitly given, it bounds the evaluation: a quoted
-    confirmation or submitted event older than 24h before `now` no
-    longer counts (stale evidence cannot verify a claim evaluated
-    later). When `now` is omitted, only the 24h claim window applies.
-    """
-    explicit_now = now
-    now = now or utc_now()
-    if now.tzinfo is None or now.utcoffset() is None:
-        raise ValueError("now requires an explicit timezone")
-    window_start = now - timedelta(hours=PENDING_WINDOW_H)
-    verified = pending = unevidenced = 0
-    for r in find_submitted_rows(rows):
-        rid = r.get("role_id", "")
-        quote = _scan_ledger_for_quote(
-            events_path, r.get("date_submitted", ""), rid,
-            now=explicit_now)
-        if quote:
-            verified += 1
-            continue
-        has_event = False
-        try:
-            with open(events_path) as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        e = json.loads(line)
-                    except Exception:
-                        continue
-                    if (e.get("event_type") == "submitted"
-                            and e.get("role_id") == rid):
-                        if explicit_now is not None:
-                            # Stale-event bound only when evaluating at
-                            # an explicit time.
-                            try:
-                                ev_dt = datetime.fromisoformat(
-                                    str(e.get("ts", "")).replace("Z", "+00:00"))
-                            except Exception:
-                                continue
-                            if ev_dt.tzinfo is None:
-                                ev_dt = ev_dt.replace(tzinfo=timezone.utc)
-                            if not (window_start <= ev_dt <= now):
-                                continue
-                        has_event = True
-                        break
-        except FileNotFoundError:
-            pass
-        if has_event:
-            pending += 1
-        else:
-            unevidenced += 1
-    return verified, pending, unevidenced
-
-
-# --- Receipt-intake grading (ported from the evolution line) ---
-#
-# coverage_report() grades local submission claims against locally observed
-# or manually attested receipts. It never authenticates a provider: provider
-# acceptance requires an explicitly injected, authenticating host adapter
-# (provider_validators). Required by tests/test_receipt_intake_evolution.py.
 
 def events(events_path=EVENTS_PATH):
     """Stream strict JSON objects with a per-event size bound.
@@ -247,6 +56,29 @@ def events(events_path=EVENTS_PATH):
                 if not isinstance(event, dict):
                     raise ValueError("event must be an object")
                 yield event
+
+
+def load_gate_events(events_path=EVENTS_PATH):
+    return [event for event in events(events_path) if event.get("event_type") in
+            {"gate_encountered", "gate_blocked", "gate_cleared"}]
+
+
+def record_gate_decision(role_id, company, claim, evidence, ts=None, path=DECISIONS_PATH):
+    """Append a review decision; it cannot certify provider acceptance."""
+    record = {"role_id": role_id, "company": company, "claim": claim, "evidence": evidence,
+              "ts": ts or utc_now().isoformat(), "verification_status": "UNVERIFIED"}
+    aware_time(record["ts"])
+    with file_lock(os.fspath(path) + ".lock"):
+        data = read_json(path, missing=[])
+        if not isinstance(data, list) or any(not isinstance(item, dict) for item in data):
+            raise ValueError("decision log must be an array of objects")
+        data.append(record)
+        atomic_json(path, data)
+    return record
+
+
+def load_decisions(path=DECISIONS_PATH):
+    return rows(read_json(path, missing=[]))
 
 
 def _identity(value):
@@ -367,34 +199,28 @@ def coverage_report(records, events_path=EVENTS_PATH, *, now=None, receipts_path
             "telemetry_complete": complete, "warnings": sorted(set(warnings))}
 
 
+def coverage(records, events_path=EVENTS_PATH, *, now=None):
+    report = coverage_report(records, events_path, now=now)
+    return report["verified"], report["pending"], report["unevidenced"]
+
+
 def main(argv=None):
-    ap = argparse.ArgumentParser(
-        description="Evidence gate: count only evidenced submission claims.")
-    ap.add_argument("--ledger", default=LEDGER_PATH)
-    ap.add_argument("--events", default=EVENTS_PATH)
-    ap.add_argument("--decisions", default=DECISIONS_PATH)
-    ap.add_argument("--receipts",
-                    help="Local observed/manual receipts; never configures provider trust")
-    args = ap.parse_args(argv)
-
-    if args.receipts:
-        report = coverage_report(load_ledger(args.ledger), args.events,
-                                 receipts_path=args.receipts)
-        print(json.dumps({**report, "pass": False}, indent=1))
-        return 1
-
-    rows = load_ledger(args.ledger)
-    verified, pending, unevidenced = coverage(rows, args.events)
-    total = verified + pending + unevidenced
-    print(json.dumps({
-        "submitted_rows": total,
-        "verified": verified,
-        "pending": pending,
-        "unevidenced": unevidenced,
-        "gate": "verified > 0 and unevidenced == 0",
-        "pass": verified > 0 and unevidenced == 0,
-    }, indent=1))
-    return 0 if (verified > 0 and unevidenced == 0) else 1
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--ledger", default=LEDGER_PATH)
+    parser.add_argument("--events", default=EVENTS_PATH)
+    parser.add_argument("--decisions", default=DECISIONS_PATH)
+    parser.add_argument("--receipts", help="Local observed/manual receipts; never configures provider trust")
+    args = parser.parse_args(argv)
+    try:
+        if not os.path.isfile(args.ledger):
+            raise ValueError("ledger unavailable")
+        report = coverage_report(load_ledger(args.ledger), args.events, receipts_path=args.receipts)
+    except (OSError, ValueError, TypeError) as exc:
+        report = {"submission_claims": None, "verified": None, "pending": None,
+                  "unevidenced": None, "verification_available": False,
+                  "warnings": ["Ledger unavailable or malformed: " + type(exc).__name__]}
+    print(json.dumps({**report, "pass": False}, indent=2))
+    return 1
 
 
 if __name__ == "__main__":
