@@ -213,28 +213,48 @@ def main(argv=None):
     productivity_recover = sub.add_parser('productivity-recover',
         help='reconcile one recorded local run; preserve unknown usage and application holds')
     productivity_recover.add_argument('--run-id', required=True)
-    for command in (productivity_status, productivity_once, productivity_recover):
+    productivity_trial = sub.add_parser('productivity-trial',
+        help='plan or run a fixed, restart-safe cohort of public pipeline cycles')
+    productivity_trial.add_argument('--trial-id', required=True)
+    productivity_trial.add_argument('--label', default='candidate', help='operator label, not evidence of quality')
+    productivity_trial.add_argument('--max-cycles', type=int, default=3,
+                                    help='fixed cohort size, 1..100; stops early on idle or held work')
+    productivity_report = sub.add_parser('productivity-trial-report',
+        help='inspect a trial using its actual retained work receipts')
+    productivity_report.add_argument('--trial-id', required=True)
+    productivity_compare = sub.add_parser('productivity-compare',
+        help='compare actual trial cohorts; mismatched workloads cannot establish gains')
+    productivity_compare.add_argument('--baseline', required=True)
+    productivity_compare.add_argument('--candidate', required=True)
+    for command in (productivity_status, productivity_once, productivity_recover,
+                    productivity_trial, productivity_report, productivity_compare):
         command.add_argument('--budget-ledger', default=os.environ.get('KEEL_BUDGET_LEDGER'),
                              help='existing resource ledger shared with other workers')
         command.add_argument('--budget-scope', default=os.environ.get('KEEL_BUDGET_SCOPE'),
                              help='existing cumulative budget scope; never resets automatically')
-    for command in (productivity_status, productivity_once):
+    for command in (productivity_status, productivity_once, productivity_trial):
         command.add_argument('--target-verified', type=int, default=20,
                              help='pause intake at this many fresh posting-presence observations')
         command.add_argument('--backlog-limit', type=int, default=200,
                              help='pause intake when this many queue rows already exist')
-    productivity_once.add_argument('--live', action='store_true',
-                                   help='allow one public-read stage and local receipt/queue writes')
+    for command in (productivity_once, productivity_trial):
+        command.add_argument('--live', action='store_true',
+                             help='allow bounded public reads and local receipt/queue writes')
+        command.add_argument('--max-requests', type=int, default=8,
+                             help='per-cycle reader dispatch cap, excluding redirects and socket retries')
+        command.add_argument('--timeout', type=float, default=30,
+                             help='per-cycle cooperative deadline in seconds')
+        command.add_argument('--max-boards', type=int, default=2)
+        command.add_argument('--max-new', type=int, default=50)
+        command.add_argument('--verify-limit', type=int, default=100)
+        command.add_argument('--title', action='append', default=[])
+        command.add_argument('--location', action='append', default=[])
     productivity_once.add_argument('--run-id', help='stable idempotency key; required with --live')
-    productivity_once.add_argument('--max-requests', type=int, default=8,
-                                   help='reader dispatch cap, excluding redirect hops and socket retries')
-    productivity_once.add_argument('--timeout', type=float, default=30,
-                                   help='cooperative stage deadline in seconds')
-    productivity_once.add_argument('--max-boards', type=int, default=2)
-    productivity_once.add_argument('--max-new', type=int, default=50)
-    productivity_once.add_argument('--verify-limit', type=int, default=100)
-    productivity_once.add_argument('--title', action='append', default=[])
-    productivity_once.add_argument('--location', action='append', default=[])
+    receipt_review = sub.add_parser('receipt-review',
+        help='inspect exact receipt/ledger/queue binding; no provider adapter or outcome writes')
+    receipt_review.add_argument('--role-id', required=True)
+    receipt_review.add_argument('--attempt-id', required=True)
+    receipt_review.add_argument('--receipts', required=True, help='existing receipt store inside the workspace')
     source = sub.add_parser('source-add', help='register an exact employer board; no keys required')
     source.add_argument('ref', help='greenhouse:board, lever:board, lever_eu:board or ashby:board')
     source.add_argument('--company', help='your display label for this employer')
@@ -261,24 +281,41 @@ def main(argv=None):
         if args.command == 'demo':
             from first_run_demo import run_demo
             result = run_demo(args.home)
-        elif args.command in {'productivity-status', 'productivity-once', 'productivity-recover'}:
+        elif args.command == 'receipt-review':
+            import receipt_projection
+            result = receipt_projection.reconcile(args.home, role_id=args.role_id,
+                attempt_id=args.attempt_id, receipts_path=args.receipts, live=False)
+        elif args.command in {'productivity-status', 'productivity-once', 'productivity-recover',
+                              'productivity-trial', 'productivity-trial-report', 'productivity-compare'}:
             from keel_efficiency.defaults import configured_budget
             import productivity_service
             if args.budget_ledger is not None and not Path(args.budget_ledger).is_file():
                 raise ValueError('productivity requires an existing operator-created budget ledger')
             ledger, scope = configured_budget(args.budget_ledger, args.budget_scope)
             options = {'ledger': ledger, 'scope_id': scope}
-            if args.command != 'productivity-recover':
+            if args.command in {'productivity-status', 'productivity-once', 'productivity-trial'}:
                 options.update(target_verified=args.target_verified, backlog_limit=args.backlog_limit)
             if args.command == 'productivity-recover':
                 result = productivity_service.recover(args.home, run_id=args.run_id, **options)
             elif args.command == 'productivity-status':
                 result = productivity_service.status(args.home, **options)
+            elif args.command in {'productivity-trial-report', 'productivity-compare'}:
+                import productivity_trials
+                if args.command == 'productivity-trial-report':
+                    result = productivity_trials.trial_report(args.home, trial_id=args.trial_id, **options)
+                else:
+                    result = productivity_trials.compare_trials(args.home,
+                        baseline_trial_id=args.baseline, candidate_trial_id=args.candidate, **options)
             else:
-                result = productivity_service.run_once(args.home, **options, live=args.live,
-                    run_id=args.run_id, max_requests=args.max_requests, timeout=args.timeout,
+                options.update(live=args.live, max_requests=args.max_requests, timeout=args.timeout,
                     max_boards=args.max_boards, max_new=args.max_new, verify_limit=args.verify_limit,
                     titles=tuple(args.title), locations=tuple(args.location))
+                if args.command == 'productivity-trial':
+                    import productivity_trials
+                    result = productivity_trials.run_trial(args.home, trial_id=args.trial_id,
+                        label=args.label, max_cycles=args.max_cycles, **options)
+                else:
+                    result = productivity_service.run_once(args.home, run_id=args.run_id, **options)
         elif args.command in {'source-add', 'discover', 'verify', 'supply', 'prepare-role', 'flush-outbox'}:
             import pipeline_service as service
             if args.command == 'source-add':

@@ -2,6 +2,7 @@
 from pathlib import Path
 import os
 import sys
+import sqlite3
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -13,7 +14,7 @@ import log_event
 import pipeline_service as pipeline
 import productivity_service as productivity
 import queue_io
-from safe_io import atomic_json, read_json
+from safe_io import atomic_json, read_json, canonical, digest
 from keel_efficiency.ledger import ResourceLedger
 
 
@@ -52,7 +53,16 @@ class ProductivityServiceTests(unittest.TestCase):
         pipeline.add_source(self.home, ref)
 
     def journal(self):
-        return read_json(self.home / 'data/productivity/journal.json')
+        state = productivity._load(self.home / 'data/productivity/journal.json', self.now)
+        if '_history' not in state:
+            return state
+        page = state['_history'].page()
+        return {key: {record['run_id']: record['row'] for record in page['rows']} if key == 'runs' else value
+                for key, value in state.items() if not key.startswith('_')}
+
+    def corrupt_run(self, run_id, row):
+        with sqlite3.connect(self.home / 'data/productivity/history.sqlite3') as db:
+            db.execute('UPDATE runs SET body=?,body_sha256=? WHERE run_id=?', (canonical(row), digest(row), run_id))
 
     def test_real_discovery_verification_then_idle(self):
         self.source()
@@ -236,15 +246,15 @@ class ProductivityServiceTests(unittest.TestCase):
 
     def test_journal_tamper_or_symlink_is_rejected(self):
         self.cycle('idle')
-        path = self.home / 'data/productivity/journal.json'
+        path = self.home / 'data/productivity/history.sqlite3'
         state = self.journal()
         state['runs']['idle']['result']['usage']['calls'] = 99
-        atomic_json(path, state)
+        self.corrupt_run('idle', state['runs']['idle'])
         with self.assertRaisesRegex(ValueError, 'receipt_invalid'):
-            productivity.status(self.home, clock=lambda: self.now)
+            productivity.get_run(self.home, 'idle', clock=lambda: self.now)
         path.unlink()
         path.symlink_to(self.queue)
-        with self.assertRaises(OSError):
+        with self.assertRaises((ValueError, OSError)):
             productivity.status(self.home, clock=lambda: self.now)
 
     def test_initial_journal_failure_cancels_only_undispatched_reservation(self):
@@ -252,7 +262,7 @@ class ProductivityServiceTests(unittest.TestCase):
         with patch.object(productivity, '_save', side_effect=OSError('fixture no write')):
             with self.assertRaises(OSError):
                 self.cycle('unwritten')
-        self.assertFalse((self.home / 'data/productivity/journal.json').exists())
+        self.assertEqual(productivity.status(self.home, clock=lambda: self.now)['metrics']['retained_runs'], 0)
         self.assertEqual(self.ledger.snapshot('shared')['reserved']['calls'], 0)
         self.assertEqual(self.calls, [])
         self.cycle('new-id')
@@ -346,9 +356,9 @@ class ProductivityServiceTests(unittest.TestCase):
         row = state['runs']['idle']
         row['result']['usage']['calls'] = -7
         row['receipt_sha256'] = digest(row['result'])
-        atomic_json(path, state)
+        self.corrupt_run('idle', row)
         with self.assertRaisesRegex(ValueError, 'usage_invalid'):
-            productivity.status(self.home, clock=lambda: self.now)
+            productivity.get_run(self.home, 'idle', clock=lambda: self.now)
 
     def test_invalid_input_and_missing_live_budget_cannot_dispatch(self):
         for options in ({'run_id': None}, {'max_requests': True}, {'timeout': float('nan')},

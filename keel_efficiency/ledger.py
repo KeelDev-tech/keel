@@ -23,12 +23,16 @@ import re
 import sqlite3
 import stat
 import time
+import uuid
 
 
 RESOURCES = ("calls", "input_tokens", "output_tokens", "compute_ms", "external_credit_micros")
 MAX_INTEGER = 2**53 - 1
 SCHEMA = "keel.efficiency.ledger.v1"
+CHECKPOINT_SCHEMA = "keel.efficiency.checkpoint.v1"
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:/-]{0,199}\Z")
+_TOKEN = re.compile(r"[0-9a-f]{32}\Z")
+_DIGEST = re.compile(r"[0-9a-f]{64}\Z")
 
 
 class LedgerError(ValueError):
@@ -131,12 +135,26 @@ class ResourceLedger:
         else:
             os.close(fd)
         with self._transaction(initialize=True) as db:
-            db.execute("CREATE TABLE IF NOT EXISTS efficiency_meta (singleton INTEGER PRIMARY KEY CHECK(singleton=1), schema TEXT NOT NULL)")
-            row = db.execute("SELECT schema FROM efficiency_meta WHERE singleton=1").fetchone()
+            db.execute("CREATE TABLE IF NOT EXISTS efficiency_meta (singleton INTEGER PRIMARY KEY CHECK(singleton=1), schema TEXT NOT NULL, instance_id TEXT NOT NULL)")
+            columns = {column["name"]: column["type"].upper()
+                       for column in db.execute("PRAGMA table_info(efficiency_meta)")}
+            legacy_meta = "instance_id" not in columns
+            if legacy_meta:
+                db.execute("ALTER TABLE efficiency_meta ADD COLUMN instance_id TEXT")
+            else:
+                _require(columns["instance_id"] == "TEXT", "invalid ledger instance column")
+            row = db.execute("SELECT schema,instance_id FROM efficiency_meta WHERE singleton=1").fetchone()
             if row is None:
-                db.execute("INSERT INTO efficiency_meta VALUES(1,?)", (SCHEMA,))
+                db.execute("INSERT INTO efficiency_meta(singleton,schema,instance_id) VALUES(1,?,?)",
+                           (SCHEMA, uuid.uuid4().hex))
             else:
                 _require(row[0] == SCHEMA, "unsupported ledger schema")
+                if legacy_meta:
+                    db.execute("UPDATE efficiency_meta SET instance_id=? WHERE singleton=1", (uuid.uuid4().hex,))
+                else:
+                    _require(type(row["instance_id"]) is str and
+                             _TOKEN.fullmatch(row["instance_id"]) is not None,
+                             "invalid ledger instance identity")
             db.execute("""CREATE TABLE IF NOT EXISTS efficiency_scopes (
                 scope_id TEXT PRIMARY KEY, parent_id TEXT REFERENCES efficiency_scopes(scope_id),
                 limits_json TEXT NOT NULL, used_json TEXT NOT NULL, reserved_json TEXT NOT NULL,
@@ -151,19 +169,37 @@ class ResourceLedger:
             db.execute("CREATE INDEX IF NOT EXISTS efficiency_request_scope ON efficiency_requests(scope_id,state)")
             db.execute("""CREATE TABLE IF NOT EXISTS efficiency_events (
                 sequence INTEGER PRIMARY KEY AUTOINCREMENT, request_id TEXT NOT NULL,
-                event TEXT NOT NULL, payload_json TEXT NOT NULL, created_ns INTEGER NOT NULL)""")
+                event TEXT NOT NULL, payload_json TEXT NOT NULL, created_ns INTEGER NOT NULL,
+                event_id TEXT)""")
+            columns = {column["name"]: column["type"].upper()
+                       for column in db.execute("PRAGMA table_info(efficiency_events)")}
+            if "event_id" not in columns:
+                # Historical payloads are immutable. Only new events receive a
+                # nonce, distinguishing an appended branch after a DB restore.
+                db.execute("ALTER TABLE efficiency_events ADD COLUMN event_id TEXT")
+            else:
+                _require(columns["event_id"] == "TEXT", "invalid ledger event identity column")
 
     @contextmanager
-    def _transaction(self, *, initialize=False):
+    def _transaction(self, *, initialize=False, readonly=False):
         db = None
         try:
-            db = sqlite3.connect(self.path, timeout=30, isolation_level=None)
+            if readonly:
+                # mode=ro also prevents a deleted ledger from being silently
+                # recreated while a stored checkpoint is being validated.
+                db = sqlite3.connect(Path(self.path).as_uri() + "?mode=ro", uri=True,
+                                     timeout=30, isolation_level=None)
+            else:
+                db = sqlite3.connect(self.path, timeout=30, isolation_level=None)
             db.row_factory = sqlite3.Row
             db.execute("PRAGMA foreign_keys=ON")
-            db.execute("PRAGMA synchronous=FULL")
+            if readonly:
+                db.execute("PRAGMA query_only=ON")
+            else:
+                db.execute("PRAGMA synchronous=FULL")
             if initialize:
                 db.execute("PRAGMA journal_mode=WAL")
-            db.execute("BEGIN IMMEDIATE")
+            db.execute("BEGIN" if readonly else "BEGIN IMMEDIATE")
             yield db
             db.commit()
         except sqlite3.Error as exc:
@@ -220,8 +256,76 @@ class ResourceLedger:
 
     @staticmethod
     def _event(db, request_id, event, payload):
-        db.execute("INSERT INTO efficiency_events(request_id,event,payload_json,created_ns) VALUES(?,?,?,?)",
-                   (request_id, event, _dump(payload), time.time_ns()))
+        db.execute("INSERT INTO efficiency_events(request_id,event,payload_json,created_ns,event_id) VALUES(?,?,?,?,?)",
+                   (request_id, event, _dump(payload), time.time_ns(), uuid.uuid4().hex))
+
+    @staticmethod
+    def _instance_id(db):
+        row = db.execute("SELECT schema,instance_id FROM efficiency_meta WHERE singleton=1").fetchone()
+        _require(row is not None and row["schema"] == SCHEMA,
+                 "unsupported ledger schema")
+        _require(type(row["instance_id"]) is str and
+                 _TOKEN.fullmatch(row["instance_id"]) is not None,
+                 "invalid ledger instance identity")
+        return row["instance_id"]
+
+    @staticmethod
+    def _event_digest(row):
+        _require(type(row["sequence"]) is int and 0 < row["sequence"] <= MAX_INTEGER,
+                 "invalid ledger event sequence")
+        _require(row["event_id"] is None or (type(row["event_id"]) is str and
+                 _TOKEN.fullmatch(row["event_id"]) is not None),
+                 "invalid ledger event identity")
+        return hashlib.sha256(_dump(dict(row)).encode("utf-8")).hexdigest()
+
+    def checkpoint(self):
+        """Return an indexed, read-only anchor for the append-only event history.
+
+        Persist this outside the ledger and validate it before later work. The
+        instance ID detects replacement; the event anchor detects restoration
+        before that event, including a new branch that reuses its sequence.
+        This detects ordinary database restoration, not hostile table editing or
+        coordinated restoration of both the ledger and its external checkpoint.
+        An empty-ledger anchor cannot detect restoration within the empty state.
+        """
+        with self._transaction(readonly=True) as db:
+            instance_id = self._instance_id(db)
+            row = db.execute("SELECT * FROM efficiency_events ORDER BY sequence DESC LIMIT 1").fetchone()
+            return {"schema": CHECKPOINT_SCHEMA, "instance_id": instance_id,
+                    "event_sequence": row["sequence"] if row is not None else 0,
+                    "event_sha256": self._event_digest(row) if row is not None else None}
+
+    def validate_checkpoint(self, checkpoint):
+        """Validate one retained anchor with indexed lookups, without writes.
+
+        Later appended events are allowed. Missing or changed history raises
+        ConflictError; malformed checkpoint input raises LedgerError.
+        """
+        _require(type(checkpoint) is dict and set(checkpoint) ==
+                 {"schema", "instance_id", "event_sequence", "event_sha256"},
+                 "invalid ledger checkpoint")
+        _require(checkpoint["schema"] == CHECKPOINT_SCHEMA,
+                 "unsupported ledger checkpoint schema")
+        _require(type(checkpoint["instance_id"]) is str and
+                 _TOKEN.fullmatch(checkpoint["instance_id"]) is not None,
+                 "invalid checkpoint instance identity")
+        sequence = checkpoint["event_sequence"]
+        digest = checkpoint["event_sha256"]
+        _require(type(sequence) is int and 0 <= sequence <= MAX_INTEGER,
+                 "invalid checkpoint event sequence")
+        _require((sequence == 0 and digest is None) or
+                 (sequence > 0 and type(digest) is str and _DIGEST.fullmatch(digest) is not None),
+                 "invalid checkpoint event digest")
+        with self._transaction(readonly=True) as db:
+            if self._instance_id(db) != checkpoint["instance_id"]:
+                raise ConflictError("ledger instance differs from retained checkpoint")
+            if sequence:
+                row = db.execute("SELECT * FROM efficiency_events WHERE sequence=?", (sequence,)).fetchone()
+                if row is None:
+                    raise ConflictError("ledger history is missing a checkpoint event")
+                if self._event_digest(row) != digest:
+                    raise ConflictError("ledger history differs from retained checkpoint event")
+            return True
 
     def create_scope(self, scope_id, limits, parent_id=None):
         """Create or return identical immutable scope configuration."""

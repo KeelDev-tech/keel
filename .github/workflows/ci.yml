@@ -35,5 +35,7 @@ jobs:
           security/tests/test_optimization_security.py
       - name: Verify matched cache benchmark
         run: PYTHONPATH=. python3 tests/benchmark_optimization_efficiency.py
+      - name: Verify 10000 retained productivity cycles and replay
+        run: PYTHONPATH=. python3 tests/benchmark_productivity_history.py
       - name: Honesty-gates demo smoke test
         run: KEEL_DEMO_PAUSE=0 python3 demo/honesty_gates_demo.py

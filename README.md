@@ -3,7 +3,7 @@
 <!-- Repo is live at KeelDev-tech/keel. -->
 [![CI](https://github.com/KeelDev-tech/keel/actions/workflows/ci.yml/badge.svg)](.github/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.6.0-informational.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.6.1-informational.svg)](CHANGELOG.md)
 
 <p align="center"><img src="docs/assets/keel-logo.png" width="160" alt="Keel logo"></p>
 
@@ -71,11 +71,15 @@ work, preserves unattempted work under request limits, and hardens uncertain
 broker outcomes and rate-limit handling. See the [reproducible measurements
 and security boundaries](docs/OPTIMIZATION_0_5_1.md).
 
-The 0.6.0 productivity controller connects those public runtime paths to a shared
+The productivity controller connects those public runtime paths to a shared
 resource budget. Inspect with `productivity-status`, then use `productivity-once`
 to plan or run one bounded stage. It records committed progress, retains replay
 protection and pauses intake when existing work needs attention. See the
 [operator instructions and measurement limits](docs/PRODUCTIVITY.md).
+
+Version 0.6.1 adds indexed replay history, fixed trial cohorts and an exact-attempt
+receipt projection interface for qualified hosts. See the [sustained operation
+guide](docs/SUSTAINED_OPERATION.md) for setup, comparisons and migration limits.
 
 ## What it does NOT do
 

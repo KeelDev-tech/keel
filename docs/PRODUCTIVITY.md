@@ -101,15 +101,16 @@ unknown in the resource ledger even when the local work receipt is complete.
 
 ## Recovery and boundaries
 
-The bounded journal under `data/productivity` records the selected work before
+The history under `data/productivity` records the selected work before
 effects, then stores its result before settling resource usage. A durable result
 can be settled after a restart without redoing the work. An interrupted run
 without a durable result requires reconciliation; changing run IDs does not
 authorize an automatic retry or refund its reservation. Run history is retained
-to preserve replay protection. The journal retains at most 256 runs and 2 MiB;
-exhausting either limit holds new work rather than silently discarding old
-identities. There is no automatic eviction or history rotation in this release.
-Changing the budget scope does not reset this workspace-wide history limit.
+to preserve replay protection. Version 0.6.1 uses indexed SQLite storage instead
+of the 0.6.0 JSON journal's 256-run / 2 MiB lifetime limit. Reads are bounded while
+old run IDs remain retained. Disk use grows with history; storage failure holds
+new work. Changing the budget scope does not discard replay identities. See
+[migration and bounded trials](SUSTAINED_OPERATION.md).
 
 Inspect the run and its authoritative local stores before acknowledging an
 uncertain recorded result. The operator-only command is:
