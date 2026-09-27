@@ -32,6 +32,25 @@ def test_update_builds_fresh_source_without_touching_base(tmp_path):
     assert result['base_modified'] is result['production_deployed'] is False
     manifest = json.loads((output / 'MANIFEST.json').read_text())
     assert set(manifest['files']) == {'old.py', 'new.py'}
+    assert manifest['version'] == 'source-update'
+
+
+@pytest.mark.parametrize('version', [b'0.5.0\n', b'next-review.2\n', b'bad\x00version', b'\xff'])
+def test_version_comes_from_verified_payload_and_rejects_invalid_text(tmp_path, version):
+    base, update = bundle(tmp_path)
+    (update / 'changes/VERSION').write_bytes(version)
+    path = update / 'UPDATE_MANIFEST.json'
+    manifest = json.loads(path.read_text())
+    manifest['changed_files']['VERSION'] = hashlib.sha256(version).hexdigest()
+    path.write_text(json.dumps(manifest))
+    output = tmp_path / 'output'
+    if version.startswith(b'bad') or version == b'\xff':
+        with pytest.raises(ValueError):
+            apply(update, base, output)
+        assert not output.exists()
+    else:
+        apply(update, base, output)
+        assert json.loads((output / 'MANIFEST.json').read_text())['version'] == version.decode().strip()
 
 
 @pytest.mark.parametrize('change', ['base', 'patch', 'collision', 'symlink', 'traversal'])
