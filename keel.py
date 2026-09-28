@@ -299,7 +299,11 @@ def main(argv=None):
             result = run_demo(args.home)
         elif args.command == 'qresolve':
             import qresolve
-            result = qresolve.run(args.home, live=args.live, max_cards=args.max_cards)
+            try:
+                result = qresolve.console_report(qresolve.run(
+                    args.home, live=args.live, max_cards=args.max_cards))
+            except (OSError, ValueError, TypeError, KeyError, RuntimeError):
+                raise ValueError('qresolve_input_or_state_invalid') from None
         elif args.command == 'host-preflight':
             import host_readiness
             result = host_readiness.inspect(args.home, budget_ledger=args.budget_ledger,

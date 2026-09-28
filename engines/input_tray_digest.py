@@ -2,9 +2,11 @@
 """Build a local question inbox from the parked queues.
 
 Cards group matching full questions, show affected leads and bank suggestions,
-and separate applicant questions from system blockers. Bare CLI runs are
-read-only. ``--deliver`` persists the tray, recurrence history, and watermark
-under the shared queue lock with pre-write backups and atomic replacement.
+and separate applicant questions from system blockers. CLI output contains
+only fixed statuses and aggregate counts; questions and answers remain in the
+private tray file for the approval surface. Bare CLI runs are read-only.
+``--deliver`` persists the tray, recurrence history, and watermark under the
+shared queue lock with pre-write backups and atomic replacement.
 Answers are applied only through tray_answer.py and canonical verification.
 """
 import argparse
@@ -654,6 +656,7 @@ def _triage_line(c):
 
 
 def render_digest(payload):
+    """Render private card content for a trusted in-process UI, never CLI logs."""
     cards = payload['cards']
     # Digest-layer reclassification: SYSTEM-BLOCKED cards are rendered on
     # their own surface with reasons — never as numbered NEEDS-YOU questions.
@@ -757,7 +760,17 @@ def main(argv=None):
         if not fresh_payload['cards']:
             print('TRAY-QUIET')
             return 0
-        print(render_digest(fresh_payload))
+        # Cron and shell output can be retained in logs. Keep private questions,
+        # answers, employers, and evidence on the local approval surface only.
+        print(json.dumps({
+            "status": "TRAY-UPDATED" if args.deliver else "TRAY-PREVIEW",
+            "fresh_cards": len(fresh_payload['cards']),
+            "needs_you": sum(c.get('status') == 'NEEDS-YOU'
+                             for c in fresh_payload['cards']),
+            "system_blocked": sum(c.get('status') == 'SYSTEM-BLOCKED'
+                                  for c in fresh_payload['cards']),
+            "drafts": sum(c.get('draft') is not None for c in fresh_payload['cards']),
+        }, sort_keys=True))
         if args.deliver:
             seen.update(fresh_keys)
             _persist_json(WM, sorted(seen))
@@ -765,4 +778,11 @@ def main(argv=None):
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    try:
+        exit_code = main()
+    except Exception:
+        # File names, malformed JSON keys, and exception values may contain
+        # private applicant data. In-process callers still receive exceptions.
+        print("TRAY-ERROR: input unavailable or invalid", file=sys.stderr)
+        exit_code = 2
+    sys.exit(exit_code)

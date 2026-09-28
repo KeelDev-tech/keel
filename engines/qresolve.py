@@ -381,6 +381,27 @@ def decorate_card(card):
     return decorate_cards([card])[0]
 
 
+def console_report(report):
+    """Counts only: schedulers may retain stdout in broadly visible logs."""
+    counts = {action: sum(row['action'] == action for row in report['decisions'])
+              for action in ('draft', 'auto_apply', 'park', 'route')}
+    return {'schema': 'keel.qresolve.console.v1',
+            'status': 'HOLD' if report.get('status') == 'HOLD' else 'OK',
+            'mode': 'live' if report['mode'] == 'live' else 'dry_run',
+            'cards_seen': int(report['cards_seen']),
+            'cards_remaining': int(report['cards_remaining']),
+            'auto_apply_enabled': report['auto_apply_enabled'] is True,
+            'pending_intent': report['pending_intent'],
+            'outcome_uncertain': report.get('outcome_uncertain', False) is True,
+            'canonical_writes': report['canonical_writes'],
+            'decision_counts': counts,
+            'metrics': {key: report.get('metrics', {}).get(key) for key in
+                        ('auto_applied', 'drafted', 'parked', 'attached_drafts',
+                         'held_or_unconfirmed')},
+            'submission_authorized': False,
+            'private_review': 'hidden_files/input-tray.json and hidden_files/qresolve-proposals.json'}
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--live', action='store_true', help='save drafts; reuse FACTs only with explicit config authorization')
@@ -388,7 +409,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         report = run(live=args.live, max_cards=args.max_cards)
-        print(json.dumps(report, indent=2))
+        print(json.dumps(console_report(report), indent=2))
         return 1 if report.get('status') == 'HOLD' else 0
     except (OSError, ValueError, TypeError, KeyError, RuntimeError):
         print(json.dumps({'schema': 'keel.qresolve.report.v1', 'status': 'HOLD',

@@ -80,8 +80,8 @@ class QuestionResolverCLITests(unittest.TestCase):
         self.assertEqual(self.snapshot(), before)
         self.assertEqual(report['cards_seen'], 5)
         self.assertFalse(report['auto_apply_enabled'])
-        self.assertEqual({d['action'] for d in report['decisions']}, {'draft'})
-        self.assertTrue(all(d['evidence'][0]['pointer'].startswith('/answers/') for d in report['decisions']))
+        self.assertEqual(report['decision_counts']['draft'], 5)
+        self.assertNotIn('decisions', report)
 
     def test_live_default_attaches_drafts_without_mutating_bank_or_queues(self):
         before = {p: (self.home / p).read_bytes() for p in self.snapshot()}
@@ -92,6 +92,7 @@ class QuestionResolverCLITests(unittest.TestCase):
         cards = self.read('hidden_files/input-tray.json')['cards']
         self.assertEqual(len(cards), 5)
         self.assertTrue(all(c['draft']['owner'] == 'qresolve' for c in cards))
+        self.assertTrue(all(c['draft']['evidence'][0]['pointer'].startswith('/answers/') for c in cards))
         again = self.success('--live')
         self.assertEqual(again['canonical_writes'], 0)
         self.assertTrue(all(c['draft']['evidence'] for c in self.read('hidden_files/input-tray.json')['cards']))
@@ -128,7 +129,7 @@ class QuestionResolverCLITests(unittest.TestCase):
         self.write('data/answer_bank.json', self.bank)
         report = self.success('--live')
         self.assertEqual(report['canonical_writes'], 0)
-        self.assertFalse(any(d['action'] == 'auto_apply' for d in report['decisions']))
+        self.assertEqual(report['decision_counts']['auto_apply'], 0)
         self.assertEqual(self.read('data/queues/needs_input-queue.json'), self.rows)
 
     def test_structural_essay_consent_and_judgment_never_auto_apply(self):
@@ -144,7 +145,7 @@ class QuestionResolverCLITests(unittest.TestCase):
         self.write('data/answer_bank.json', self.bank)
         report = self.success('--live')
         self.assertEqual(report['canonical_writes'], 0)
-        self.assertFalse(any(d['action'] == 'auto_apply' for d in report['decisions']))
+        self.assertEqual(report['decision_counts']['auto_apply'], 0)
         self.assertEqual(self.read('data/queues/needs_input-queue.json'), rows)
 
     def test_incomplete_intent_blocks_automation_and_new_scope_is_not_hidden(self):
@@ -166,7 +167,7 @@ class QuestionResolverCLITests(unittest.TestCase):
         self.write('data/queues/needs_input-queue.json', [self.rows[0]])
         report = self.success('--live')
         self.assertEqual(report['cards_seen'], 1)
-        self.assertEqual(report['decisions'][0]['action'], 'draft')
+        self.assertEqual(report['decision_counts']['draft'], 1)
         self.assertEqual(len(self.read('hidden_files/input-tray.json')['cards']), 1)
 
     def test_invalid_limits_config_and_symlink_fail_without_canonical_writes(self):
@@ -184,6 +185,24 @@ class QuestionResolverCLITests(unittest.TestCase):
 
     def test_nonoperator_role_cannot_enable_live_resolution(self):
         self.assertEqual(self.cli('--live', role='discovery').returncode, 2)
+
+    def test_console_and_error_output_do_not_reveal_private_answers_or_evidence(self):
+        self.bank['answers']['first_name']['value'] = 'PRIVATE-ANSWER-MARKER'
+        self.bank['answers']['first_name']['provenance'] = "the applicant's own words " + date.today().isoformat() + ' PRIVATE-SOURCE-MARKER'
+        self.rows[0]['company'] = 'PRIVATE-EMPLOYER-MARKER'
+        self.write('data/answer_bank.json', self.bank)
+        self.write('data/queues/needs_input-queue.json', self.rows)
+        for args in ((), ('--live',)):
+            result = self.cli(*args)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            for secret in ('PRIVATE-ANSWER-MARKER', 'PRIVATE-SOURCE-MARKER', 'PRIVATE-EMPLOYER-MARKER', 'person@example.com'):
+                self.assertNotIn(secret, result.stdout + result.stderr)
+        self.assertIn('PRIVATE-ANSWER-MARKER', (self.home / 'hidden_files/qresolve-proposals.json').read_text())
+        (self.home / 'data/answer_bank.json').write_text('{"PRIVATE-KEY":1,"PRIVATE-KEY":2}')
+        result = self.cli('--live')
+        self.assertEqual(result.returncode, 2)
+        self.assertNotIn('PRIVATE-KEY', result.stdout + result.stderr)
+        self.assertNotIn('Traceback', result.stdout + result.stderr)
 
     def test_timeout_after_partial_write_is_unknown_and_retains_pending_intent(self):
         self.authorize()

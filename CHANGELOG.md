@@ -12,6 +12,9 @@ path. Packaged the tray dependency closure and added synthetic classification,
 provenance, crash-hold and fresh-process integration tests. Private backlog and
 real-card acceptance remain host tasks. See docs/QUESTION_RESOLUTION.md.
 
+Console output now reports counts/status without printing private questions,
+banked answers or provenance excerpts; full review data stays in private files.
+
 ## 0.6.3 — Canonical advice and process-crash qualification
 
 Added read-only `productivity-advice`, which validates retained trial evidence,

@@ -68,7 +68,10 @@ class DigestIntegrationTests(unittest.TestCase):
         before = self.snapshot()
         result = self.cli()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("preferred work location", result.stdout)
+        summary = json.loads(result.stdout)
+        self.assertEqual(summary["status"], "TRAY-PREVIEW")
+        self.assertEqual(summary["fresh_cards"], 1)
+        self.assertEqual(summary["needs_you"], 1)
         self.assertEqual(self.snapshot(), before)
         self.assertFalse(self.hdir.exists())
         delivered = self.cli("--deliver")
@@ -81,6 +84,46 @@ class DigestIntegrationTests(unittest.TestCase):
         delivered_before = self.snapshot()
         self.assertEqual(self.cli().returncode, 0)
         self.assertEqual(self.snapshot(), delivered_before)
+
+    def test_cli_summaries_never_emit_private_card_or_bank_content(self):
+        question = "SecretQuestionMarker: What is your preferred work location?"
+        row = lead("SecretRoleMarker", question=question)
+        row["employer"] = "SecretEmployerMarker"
+        row["title"] = "SecretTitleMarker"
+        self.write_leads([row])
+        answer = "SecretAnswerMarker, Example City"
+        Path(digest.BANK).write_text(json.dumps({"answers": {
+            "work_location_general": {"value": answer, "scope": "global",
+                                      "provenance": "SecretProvenanceMarker"}}}))
+        markers = [question, "SecretQuestionMarker", row["role_id"], row["employer"],
+                   row["title"], answer, "SecretProvenanceMarker", "work_location_general"]
+        for args in ((), ("--deliver",)):
+            result = self.cli(*args)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            report = json.loads(result.stdout)
+            self.assertEqual(report["drafts"], 1)
+            self.assertEqual(set(report), {"status", "fresh_cards", "needs_you",
+                                           "system_blocked", "drafts"})
+            for marker in markers:
+                self.assertNotIn(marker, result.stdout + result.stderr)
+        private = json.loads(Path(digest.TRAY_JSON).read_text())["cards"][0]
+        self.assertEqual(private["draft"]["value"], answer)
+        self.assertEqual(private["norm"], question)
+        self.assertEqual(private["leads"][0]["employer"], row["employer"])
+        quiet = self.cli()
+        self.assertEqual(quiet.returncode, 0, quiet.stderr)
+        self.assertEqual(quiet.stdout.strip(), "TRAY-QUIET")
+
+    def test_cli_errors_never_emit_private_json_keys_or_traceback(self):
+        Path(digest.BANK).write_text('{"SecretDuplicateMarker":1,"SecretDuplicateMarker":2}')
+        result = self.cli()
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(result.stderr.strip(), "TRAY-ERROR: input unavailable or invalid")
+        self.assertNotIn("SecretDuplicateMarker", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertNotIn(str(self.home), result.stderr)
+        self.assertFalse(self.hdir.exists())
 
     def test_minimum_fit_defaults_to_sixty_and_can_be_overridden(self):
         self.write_leads([lead("below", fit=59), lead("at", fit=60),
@@ -182,7 +225,7 @@ class DigestIntegrationTests(unittest.TestCase):
         os.mkfifo(queue)
         result = self.cli()
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("unsafe_or_oversized_tray_source", result.stderr)
+        self.assertEqual(result.stderr.strip(), "TRAY-ERROR: input unavailable or invalid")
         self.assertFalse(self.hdir.exists())
 
     def test_fifo_previous_tray_cannot_block_backup_under_lock(self):
@@ -190,7 +233,7 @@ class DigestIntegrationTests(unittest.TestCase):
         os.mkfifo(digest.TRAY_JSON)
         result = self.cli("--deliver")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("unsafe_or_oversized_tray_source", result.stderr)
+        self.assertEqual(result.stderr.strip(), "TRAY-ERROR: input unavailable or invalid")
         self.assertFalse(Path(digest.WM).exists())
         self.assertFalse(list(self.hdir.glob("_backup-input-tray.json-*")))
 

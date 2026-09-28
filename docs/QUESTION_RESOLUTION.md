@@ -9,7 +9,7 @@ its automatic authority.
 ## Run against an existing workspace
 
 ```bash
-# Read-only: classify cards and inspect exact evidence pointers.
+# Read-only: classify cards and report counts without logging private data.
 python3 keel.py --home /path/to/workspace qresolve
 
 # Save proposals and refresh the existing tray; default configuration cannot
@@ -22,6 +22,12 @@ CLI; they do not authenticate a person or isolate direct Python execution.
 The fit threshold defaults to 60 and can be set with `KEEL_TRAY_MIN_FIT` in
 the inclusive range 0–100. Digest `--min-fit` affects that invocation only;
 use the environment setting consistently across scheduled workers.
+
+CLI output contains counts and status only: scheduled-job logs must not contain
+private questions, answer values, employers or evidence excerpts. Inspect the
+private `hidden_files/input-tray.json` and `qresolve-proposals.json` files after
+`--live` to review exact quotes and pointers. Trusted in-process callers can
+use `qresolve.inspect()` for a full read-only report without persisting it.
 
 The digest and applier now share `KEEL_HOME`: queues live in `data/queues`,
 the bank in `data/answer_bank.json`, and tray metadata in `hidden_files`.
@@ -125,7 +131,7 @@ preserved only for the same full prompt and role set.
 `qresolve-resolved.json` holds receipt-bound historical resolutions;
 `qresolve-metrics.jsonl` reports observed draft/park/application counts. These
 files contain private applicant information and must remain private. Read-only
-runs print their report and write no metrics. File reads and corpus indexing
+runs print a redacted summary and write no metrics. File reads and corpus indexing
 are bounded; malformed, unsafe or oversized evidence is reported as incomplete
 and blocks application.
 
