@@ -3,7 +3,7 @@
 <!-- Repo is live at KeelDev-tech/keel. -->
 [![CI](https://github.com/KeelDev-tech/keel/actions/workflows/ci.yml/badge.svg)](.github/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.6.4-informational.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.6.5-informational.svg)](CHANGELOG.md)
 
 <p align="center"><img src="docs/assets/keel-logo.png" width="160" alt="Keel logo"></p>
 

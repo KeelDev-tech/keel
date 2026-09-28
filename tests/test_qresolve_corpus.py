@@ -17,6 +17,21 @@ import qresolve_corpus as qc
 
 
 class CorpusTests(unittest.TestCase):
+    def test_provenance_uses_same_utc_day_across_local_midnight(self):
+        from datetime import date, datetime, timezone
+        class LocalDate(date):
+            @classmethod
+            def today(cls):
+                return cls(2026, 9, 27)
+        class UTCClock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return cls(2026, 9, 28, 1, tzinfo=timezone.utc)
+        with mock.patch.object(qc, 'date', LocalDate), mock.patch.object(qc, 'datetime', UTCClock):
+            self.assertEqual(qc._provenance_date("the applicant's own words 2026-09-28"),
+                             '2026-09-28')
+            self.assertIsNone(qc._provenance_date("the applicant's own words 2026-09-29"))
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

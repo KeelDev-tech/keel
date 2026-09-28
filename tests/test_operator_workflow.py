@@ -94,9 +94,11 @@ class OperatorTests(unittest.TestCase):
 class AsyncTests(unittest.TestCase):
     def test_async_reads_use_the_checked_transport(self):
         response=safe_http.Response(b'{}',200,{},'https://example.org/final')
-        # Keep URL admission real but make its DNS dependency deterministic.
-        # This transport-wiring test must not contact public DNS before its mock.
-        with patch.object(async_verify.http_policy, 'resolve_public',
+        # Select direct admission regardless of the host's proxy environment.
+        # Keep URL admission real but never contact public DNS before its mock.
+        with patch.object(async_verify.http_policy.urllib.request, 'getproxies',
+                          return_value={}), \
+                patch.object(async_verify.http_policy, 'resolve_public',
                           return_value=['93.184.216.34']) as resolved, \
                 patch.object(async_verify,'safe_urlopen',return_value=response) as opened:
             async_verify._global_sem=None;async_verify._semaphores.clear()
@@ -104,6 +106,23 @@ class AsyncTests(unittest.TestCase):
             self.assertEqual((status,body,url),(200,b'{}','https://example.org/final'))
             opened.assert_called_once()
             resolved.assert_called_once()
+
+    def test_proxy_admission_still_uses_the_checked_transport(self):
+        response=safe_http.Response(b'{}',200,{},'https://example.org/final')
+        # Proxy admission skips only this preliminary DNS check; it must not
+        # bypass the checked transport or depend on inherited NO_PROXY values.
+        with patch.object(async_verify.http_policy.urllib.request, 'getproxies',
+                          return_value={'https': 'http://proxy.fixture.invalid:8080'}), \
+                patch.object(async_verify.http_policy.urllib.request, 'proxy_bypass',
+                             return_value=False), \
+                patch.object(async_verify.http_policy, 'resolve_public',
+                             side_effect=AssertionError('unexpected direct DNS')) as resolved, \
+                patch.object(async_verify,'safe_urlopen',return_value=response) as opened:
+            async_verify._global_sem=None;async_verify._semaphores.clear()
+            status,body,url=asyncio.run(async_verify._get(None,'https://example.org/start',1))
+            self.assertEqual((status,body,url),(200,b'{}','https://example.org/final'))
+            opened.assert_called_once()
+            resolved.assert_not_called()
 
     def test_batch_cannot_silently_overwrite_duplicate_roles(self):
         entries=[('standard',{'role_id':'R'}),('strategic',{'role_id':'R'})]

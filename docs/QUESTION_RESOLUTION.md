@@ -13,7 +13,7 @@ its automatic authority.
 python3 keel.py --home /path/to/workspace qresolve
 
 # Save proposals and refresh the existing tray; default configuration cannot
-# clear a queue blocker. Existing approve/edit flow remains available.
+# clear a queue blocker. Exact draft approval is a separate operator action.
 python3 keel.py --home /path/to/workspace qresolve --live --max-cards 50
 ```
 
@@ -28,6 +28,29 @@ private questions, answer values, employers or evidence excerpts. Inspect the
 private `hidden_files/input-tray.json` and `qresolve-proposals.json` files after
 `--live` to review exact quotes and pointers. Trusted in-process callers can
 use `qresolve.inspect()` for a full read-only report without persisting it.
+
+## Approve an exact reviewed draft
+
+Review the answer, evidence, question and target roles in the private proposal
+file, then use its full `decision_id`:
+
+```bash
+# Revalidate without writing anything, including lock diagnostics.
+python3 keel.py --home /path/to/workspace qresolve-approve --decision-id DECISION_ID
+
+# Explicitly approve that exact draft for those exact current roles.
+python3 keel.py --home /path/to/workspace qresolve-approve --decision-id DECISION_ID --live
+```
+
+Only FACT and JUDGMENT drafts can use this command. STRUCTURAL and TRENT-ONLY
+cards, including protected consent and certification questions, remain refused.
+Approval is revalidated while holding the queue and answer-bank locks. Changed
+evidence, answers, question context, target roles or configuration invalidate the
+proposal. The original bank and provenance remain unchanged; the journal records
+a separate approval and `human_applied` completion. Approval never becomes
+standing global permission, and CLI role labels are not human authentication.
+To change an answer, use the existing explicit manual-answer workflow; this
+command cannot edit or bank a quote under a new source attribution.
 
 The digest and applier now share `KEEL_HOME`: queues live in `data/queues`,
 the bank in `data/answer_bank.json`, and tray metadata in `hidden_files`.
@@ -91,17 +114,31 @@ quotes with dated own-words provenance no older than 90 days. The request is
 recomputed from current canonical data inside the applier's queue lock. An
 uploaded proposal, hash, note, or confidence value cannot grant authority.
 
-All blocker changes go through `tray_answer.py --live --qresolve-request`.
-This mode cannot write or overwrite the answer bank. Notes identify reused
+Automatic blocker changes go through `tray_answer.py --live --qresolve-request`;
+explicit draft approval uses `tray_answer.py --approve-qresolve`. These modes
+cannot write or overwrite the answer bank. Notes identify reused
 evidence and retain its original provenance. The manual human-answer path
 remains available; structural blockers are now refused there too.
 
 The applier creates backups under the queue lock, durably records `INTENT`,
 writes through `queue_io.atomic_write_json`, verifies exact blocker removals,
 then records `auto_applied`. A crash or ambiguous receipt leaves a hold;
-pending intents block further automated applications. Do not delete an intent
-to force a retry: reconcile the retained backup, queues and evidence on the
-host. No automatic reconciliation or cross-file transaction is claimed.
+pending intents block further applications through these two modes. Inspect an
+interrupted operation before attempting another application:
+
+```bash
+python3 keel.py --home /path/to/workspace qresolve-recover
+python3 keel.py --home /path/to/workspace qresolve-recover --decision-id DECISION_ID --live
+```
+
+Recovery defaults to read-only inspection. The live command selects one intent
+and closes it only when retained evidence proves either no queue write occurred
+or the planned operation fully completed. A cancelled untouched intent can be
+replanned against current evidence; a recovered completion cannot apply twice.
+Partial, conflicting or damaged state stays held. Recovery does not replay
+queue writes, roll back queues, delete intent history or declare leads READY.
+Do not delete a journal entry to force a retry. The journal is not a cross-file
+transaction or protection against a privileged workspace writer.
 
 Cleared leads retain their existing queue/status and become eligible for the
 canonical `verify_retry` worker where its genuine-blocker check permits it.
@@ -134,6 +171,16 @@ files contain private applicant information and must remain private. Read-only
 runs print a redacted summary and write no metrics. File reads and corpus indexing
 are bounded; malformed, unsafe or oversized evidence is reported as incomplete
 and blocks application.
+
+`qresolve-schedule.json` retains hashed card identities, revisions and scan
+progress. Live runs reserve capacity for the least recently inspected cards,
+while also prioritizing new or changed work. Repeated high-ranked human-only
+cards therefore cannot monopolize every batch. Dry runs inspect the next batch
+without advancing progress. Previously planned active drafts remain available
+and are revalidated before display or approval. Corrupt or oversized scheduling
+state holds the run rather than silently resetting fairness history.
+`--max-cards` bounds new planning decisions; it does not bound all corpus reads
+or tray-decoration work. No measured compute or credit saving is claimed.
 
 A host can schedule the same command every 15 minutes using its existing
 scheduler. No cron entry is installed by this release. The queue lock and

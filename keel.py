@@ -238,6 +238,16 @@ def main(argv=None):
     question_resolver.add_argument('--live', action='store_true',
         help='save drafts; automatic FACT reuse additionally requires explicit local authorization')
     question_resolver.add_argument('--max-cards', type=int, default=50)
+    question_recover = sub.add_parser('qresolve-recover',
+        help='inspect interrupted answer applications; close only proven outcomes')
+    question_recover.add_argument('--decision-id')
+    question_recover.add_argument('--live', action='store_true',
+        help='record a proven recovery for one selected decision; never replay queue writes')
+    question_approve = sub.add_parser('qresolve-approve',
+        help='approve an exact reviewed FACT or JUDGMENT draft without changing its source')
+    question_approve.add_argument('--decision-id', required=True)
+    question_approve.add_argument('--live', action='store_true',
+        help='apply this exact draft to its current target roles after evidence revalidation')
     for command in (host_preflight, productivity_status, productivity_once, productivity_recover,
                     productivity_trial, productivity_report, productivity_compare, productivity_advice):
         command.add_argument('--budget-ledger', default=os.environ.get('KEEL_BUDGET_LEDGER'),
@@ -297,6 +307,20 @@ def main(argv=None):
         if args.command == 'demo':
             from first_run_demo import run_demo
             result = run_demo(args.home)
+        elif args.command == 'qresolve-approve':
+            import tray_answer
+            try:
+                return tray_answer.main(['--approve-qresolve', args.decision_id] +
+                                        (['--live'] if args.live else []))
+            except (OSError, ValueError, TypeError, KeyError, RuntimeError):
+                raise ValueError('qresolve_approval_input_or_state_invalid') from None
+        elif args.command == 'qresolve-recover':
+            import qresolve_recovery
+            try:
+                result = qresolve_recovery.recover(
+                    args.home, decision_id=args.decision_id, live=args.live)
+            except (OSError, ValueError, TypeError, KeyError, RuntimeError):
+                raise ValueError('qresolve_recovery_input_or_state_invalid') from None
         elif args.command == 'qresolve':
             import qresolve
             try:
@@ -397,7 +421,7 @@ def main(argv=None):
             return 0 if result['local_checks_passed'] else 1
         if args.command == 'productivity-advice':
             return 1 if result['status'] == 'HOLD' else 0
-        if args.command == 'qresolve':
+        if args.command in {'qresolve', 'qresolve-recover'}:
             return 1 if result.get('status') == 'HOLD' else 0
         return 1 if args.command == 'doctor' and not result['ready_for_local_preparation'] else 0
     except (OSError, ValueError, TypeError, KeyError, RuntimeError) as exc:

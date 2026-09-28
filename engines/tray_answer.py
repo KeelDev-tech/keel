@@ -23,6 +23,8 @@ Usage:
   tray_answer.py --live --key <k> --answer "..." --bank-key existing_key
   tray_answer.py --qresolve-request request.json         # read-only validation
   tray_answer.py --live --qresolve-request request.json  # authorized bank reuse
+  tray_answer.py --approve-qresolve <decision-id>        # read-only draft check
+  tray_answer.py --live --approve-qresolve <decision-id> # approve exact saved draft
   tray_answer.py --live --key <k> --answer "..." --bank-new sms_x \
       --scope employer:Acme          # scoped (non-global) bank write
 
@@ -36,6 +38,11 @@ FACT decision from qresolve.py. It never writes the answer bank or invents new
 human provenance. It journals intent before changing queues, keeps unresolved
 posting liveness pending, and leaves canonical verify_retry to its existing
 schedule. It does not launch network verification or submissions.
+
+The --approve-qresolve mode explicitly approves a current persisted FACT or
+JUDGMENT draft for exactly its existing targets. Original bank provenance stays
+unchanged; a separate approval receipt records the decision. Protected human-only
+questions and structural routes are refused by this mode.
 
 SAFETY (mirrors input_resolution/apply.py):
   - Backup of both queue files + answer bank BEFORE any write (--live only).
@@ -51,6 +58,7 @@ import argparse
 import hashlib
 import json
 import os
+from pathlib import Path
 import stat
 import sys
 import tempfile
@@ -287,7 +295,9 @@ def _qresolve_journal(path):
     rows = []
     for line in raw.splitlines():
         row = queue_io.strict_loads(line)
-        if (not isinstance(row, dict) or row.get("action") not in {"INTENT", "auto_applied", "held"}
+        if (not isinstance(row, dict) or row.get("action") not in {
+                "INTENT", "auto_applied", "human_applied", "held",
+                "recovered_applied", "cancelled_unwritten"}
                 or not isinstance(row.get("decision_id"), str)):
             raise ValueError("invalid_audit_record")
         rows.append(row)
@@ -352,7 +362,7 @@ def _qresolve_queues():
     return queues
 
 
-def _qresolve_changes(card, targets, queues, decision):
+def _qresolve_changes(card, targets, queues, decision, *, approval=None):
     """Prepare an exact, reversible mutation without claiming posting liveness."""
     expected = json.loads(json.dumps(queues))
     counts = {"removed_blockers": 0, "changed_leads": 0,
@@ -375,8 +385,10 @@ def _qresolve_changes(card, targets, queues, decision):
         if not removed:
             raise ValueError("no_exact_blocker_removed")
         row["unresolved"] = kept
+        action_note = ("explicit approval of existing bank quotation" if approval
+                       else "reuse of approved bank evidence")
         row["queue_notes"] = qn_with_notes(row, [
-            f"qresolve: blocker cleared by reuse of approved bank evidence; "
+            f"qresolve: blocker cleared by {action_note}; "
             f"decision {decision['decision_id']}; source answer_bank[{decision['bank_key']}]"
         ])
         row["status_updated"] = datetime.now(timezone.utc).isoformat()
@@ -405,7 +417,7 @@ def _qresolve_changes(card, targets, queues, decision):
     return expected, counts
 
 
-def apply_qresolve(request_path, bank_path, *, live=False):
+def apply_qresolve(request_path, bank_path, *, live=False, approval_id=None):
     """Only sanctioned QRESOLVE queue actuator; offline and bank-read-only.
 
     INTENT precedes canonical writes. A process crash can leave multiple files at
@@ -414,18 +426,35 @@ def apply_qresolve(request_path, bank_path, *, live=False):
     """
     decision_id = None
     try:
-        request = queue_io.strict_loads(_bounded_read(request_path, 2 * 1024 * 1024)[0])
-        if (not isinstance(request, dict)
-                or request.get("schema") != "keel.qresolve.request.v1"
-                or not isinstance(request.get("decision"), dict)):
-            raise ValueError("invalid_request")
-        decision = request["decision"]
+        root = Path(NI_Q).absolute().parents[2]
+        if Path(bank_path).absolute() != root / "data/answer_bank.json":
+            raise ValueError("qresolve_requires_canonical_bank")
+        if approval_id is not None:
+            if request_path is not None:
+                raise ValueError("conflicting_request_modes")
+            from qresolve import _root
+            root = _root()
+            if Path(bank_path).absolute() != root / "data/answer_bank.json":
+                raise ValueError("approval_requires_canonical_bank")
+            from qresolve_approval import load_proposal, validate_approval
+            request = None
+            validator = validate_approval
+            decision = {"decision_id": approval_id}
+        else:
+            request = queue_io.strict_loads(_bounded_read(request_path, 2 * 1024 * 1024)[0])
+            from qresolve import validate_application
+            validator = validate_application
+            if (not isinstance(request, dict)
+                    or request.get("schema") != "keel.qresolve.request.v1"
+                    or not isinstance(request.get("decision"), dict)):
+                raise ValueError("invalid_request")
+            decision = request["decision"]
         decision_id = decision.get("decision_id")
         if (not isinstance(decision_id, str) or len(decision_id) != 64
                 or any(char not in "0123456789abcdef" for char in decision_id)):
             raise ValueError("invalid_decision_id")
         card_key = decision.get("card_key")
-        if not isinstance(card_key, str) or not card_key:
+        if approval_id is None and (not isinstance(card_key, str) or not card_key):
             raise ValueError("invalid_card_key")
     except (OSError, ValueError, TypeError, KeyError, RecursionError):
         return _qresolve_receipt("HOLD", reason="invalid_request")
@@ -434,12 +463,20 @@ def apply_qresolve(request_path, bank_path, *, live=False):
     # Dry runs do not acquire queue_lock(): lock diagnostics themselves write.
     if not live:
         try:
+            if approval_id:
+                from qresolve_recovery import journal_state
+                pending, completed = journal_state(_qresolve_journal(journal))
+                if pending:
+                    return _qresolve_receipt("HOLD", decision_id, "incomplete_prior_intent")
+                if decision_id in completed:
+                    return _qresolve_receipt("NO_CHANGE", decision_id, "already_recorded")
+                request = load_proposal(approval_id, bank_path)
+                card_key = request["decision"]["card_key"]
             _qresolve_queues()
             card, targets, _ = find_targets(key=card_key)
             if card is None:
                 raise ValueError("card_missing")
-            from qresolve import validate_application
-            validate_application(request, card, targets, bank_path)
+            validator(request, card, targets, bank_path)
             if _structural_guard(card, targets):
                 raise ValueError("structural_blocker")
         except (OSError, ValueError, TypeError, KeyError):
@@ -448,37 +485,48 @@ def apply_qresolve(request_path, bank_path, *, live=False):
                                  proposed_target_count=len(targets))
 
     try:
+        from qresolve_recovery import preflight_locks
+        preflight_locks(root)
         # Queue writers and confirm-answer use different canonical locks. Hold
         # both, in queue -> bank order, through evidence validation and commit.
         with queue_io.queue_lock(owner="tray_answer:qresolve"), safe_io.file_lock(str(bank_path) + ".lock"):
             try:
                 records = _qresolve_journal(journal)
-                completed = {r.get("decision_id") for r in records
-                             if r.get("action") == "auto_applied"}
-                pending = {r.get("decision_id") for r in records
-                           if r.get("action") == "INTENT"} - completed
+                from qresolve_recovery import journal_state
+                pending, completed = journal_state(records)
                 if pending:
                     return _qresolve_receipt("HOLD", decision_id, "incomplete_prior_intent")
                 if decision_id in completed:
                     return _qresolve_receipt("NO_CHANGE", decision_id, "already_recorded")
+                if approval_id:
+                    request = load_proposal(approval_id, bank_path)
+                    card_key = request["decision"]["card_key"]
                 queues = _qresolve_queues()
                 card, targets, _ = find_targets(key=card_key)
                 if card is None:
                     raise ValueError("card_missing")
-                from qresolve import validate_application
-                decision = validate_application(request, card, targets, bank_path)
-                if (decision.get("class") != "FACT" or decision.get("action") != "auto_apply"
+                decision = validator(request, card, targets, bank_path)
+                authorized = ((decision.get("class") in {"FACT", "JUDGMENT"}
+                               and decision.get("action") == "draft") if approval_id else
+                              (decision.get("class") == "FACT"
+                               and decision.get("action") == "auto_apply"))
+                if (not authorized
                         or not decision.get("evidence") or not decision.get("bank_key")
                         or not isinstance(decision.get("answer"), str)
                         or _structural_guard(card, targets)):
                     raise ValueError("application_not_authorized")
+                approval = None
+                if approval_id:
+                    from qresolve_approval import approval_receipt
+                    approval = approval_receipt(decision)
                 try:
                     resolved = queue_io.strict_loads(_bounded_read(resolved_path, 16 * 1024 * 1024)[0])
                 except FileNotFoundError:
                     resolved = {}
                 if not isinstance(resolved, dict):
                     raise ValueError("invalid_resolved_map")
-                expected, counts = _qresolve_changes(card, targets, queues, decision)
+                expected, counts = _qresolve_changes(card, targets, queues, decision,
+                                                     approval=approval)
                 # Keep the evidence and exact removal plan in the durable intent.
                 backup = _durable_backup(bank_path)
                 intent = {"ts": datetime.now(timezone.utc).isoformat(),
@@ -488,6 +536,8 @@ def apply_qresolve(request_path, bank_path, *, live=False):
                           "queue_before_sha256": _qresolve_digest(expected),
                           "queue_after_sha256": _qresolve_digest(queues)}
                 intent["action"] = "INTENT"
+                if approval:
+                    intent["approval"] = approval
                 _qresolve_append(journal, intent)
                 # No writes outside sanctioned queue/bank paths; bank is never changed.
                 for path, rows in queues.items():
@@ -514,12 +564,15 @@ def apply_qresolve(request_path, bank_path, *, live=False):
                     "target_post_sha256": snapshots,
                     "ts": datetime.now(timezone.utc).isoformat(),
                 }
+                if approval:
+                    resolved[decision_id]["approval"] = approval
                 queue_io.atomic_write_json(resolved_path, resolved)
                 revival = ("queued_for_canonical_verify_retry" if counts["fully_unblocked"]
                            else "still_blocked_for_review")
                 _qresolve_append(journal, {
-                    **resolved[decision_id], "action": "auto_applied", **counts,
-                    "class": "FACT", "confidence": decision["confidence"],
+                    **resolved[decision_id],
+                    "action": "human_applied" if approval else "auto_applied", **counts,
+                    "class": decision["class"], "confidence": decision["confidence"],
                     "revival": revival, "ready_verified": False,
                 })
                 return _qresolve_receipt("APPLIED", decision_id, **counts, revival=revival)
@@ -535,7 +588,7 @@ def apply_qresolve(request_path, bank_path, *, live=False):
                 except (OSError, ValueError, TypeError):
                     pass
                 return _qresolve_receipt("HOLD", decision_id, "revalidation_or_write_failed")
-    except (OSError, RuntimeError):
+    except (OSError, ValueError, RuntimeError):
         return _qresolve_receipt("HOLD", decision_id, "lock_unavailable")
 
 
@@ -546,6 +599,8 @@ def main(argv=None):
     g.add_argument("--family", help="decision family, e.g. travel_commitment/general")
     g.add_argument("--qresolve-request", metavar="PATH",
                    help="revalidate and reuse an authorized evidence-bound FACT")
+    g.add_argument("--approve-qresolve", metavar="DECISION_ID",
+                   help="approve an exact persisted FACT/JUDGMENT draft for its current targets")
     ap.add_argument("--answer", help="the applicant's verbatim answer")
     ap.add_argument("--live", action="store_true", help="apply (default: dry run)")
     ap.add_argument("--bank-new", metavar="KEY",
@@ -560,10 +615,11 @@ def main(argv=None):
     ap.add_argument("--bank", metavar="PATH", default=DEFAULT_BANK,
                     help="answer-bank JSON path (default: <keel-home>/data/answer_bank.json)")
     args = ap.parse_args(argv)
-    if args.qresolve_request:
+    if args.qresolve_request or args.approve_qresolve:
         if args.answer is not None or args.bank_new or args.bank_key or args.scope:
-            ap.error("--qresolve-request cannot supply an answer, bank write, or scope")
-        return apply_qresolve(args.qresolve_request, args.bank, live=args.live)
+            ap.error("QRESOLVE application cannot supply an answer, bank write, or scope")
+        return apply_qresolve(args.qresolve_request, args.bank, live=args.live,
+                              approval_id=args.approve_qresolve)
     if args.answer is None:
         ap.error("manual --key/--family requires --answer")
 
