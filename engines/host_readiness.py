@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections import Counter
 from datetime import datetime, timezone
+import math
 import os
 from pathlib import Path
 import stat
@@ -175,7 +176,7 @@ def _history(root, now):
     return state, detail
 
 
-def _budget(root, ledger_path, scope_id):
+def _budget(root, ledger_path, scope_id, estimate=DEFAULT_ESTIMATE):
     _require(ledger_path is not None and scope_id is not None)
     raw = os.fspath(ledger_path.path if isinstance(ledger_path, ResourceLedger) else ledger_path)
     _require(type(raw) is str and raw and '\x00' not in raw and '..' not in Path(raw).parts)
@@ -201,14 +202,18 @@ def _budget(root, ledger_path, scope_id):
         current = item['parent_id']
     available = {name: min(item['available'][name] for item in chain) for name in RESOURCES}
     locked = any(item['locked'] for item in chain)
-    enough = not locked and all(available[name] >= value for name, value in DEFAULT_ESTIMATE.items())
+    enough = not locked and all(available[name] >= value for name, value in estimate.items())
     return ledger, {'ancestor_count': len(chain) - 1, 'locked': locked, 'available': available,
                     'default_cycle_estimate': dict(DEFAULT_ESTIMATE),
-                    'default_cycle_fits_observed_budget': enough,
+                    'default_cycle_fits_observed_budget': not locked and all(
+                        available[name] >= value for name, value in DEFAULT_ESTIMATE.items()),
+                    'requested_cycle_estimate': dict(estimate),
+                    'requested_cycle_fits_observed_budget': enough,
                     'reservation_created': False, 'atomic_ancestor_snapshot': False}
 
 
-def inspect(workspace, *, budget_ledger=None, budget_scope=None, clock=time.time):
+def inspect(workspace, *, budget_ledger=None, budget_scope=None, target_verified=20,
+            backlog_limit=200, max_requests=8, timeout=30, clock=time.time):
     """Return sanitized observations; PASS is local evidence, never permission.
 
     All budgets are re-opened without initialization, even if a caller supplied
@@ -229,7 +234,8 @@ def inspect(workspace, *, budget_ledger=None, budget_scope=None, clock=time.time
                                'receipt_telemetry_sink', 'filesystem_permissions_and_capacity',
                                'network_and_host_cooldowns',
                                'external_board_content', 'actual_credit_usage')],
-              'scope': 'observations_before_public_trial_with_default_cycle_limits'}
+              'policy': None, 'cycle_limits': None,
+              'scope': 'observations_before_public_trial_with_requested_cycle_limits'}
 
     def check(name, callback, reason):
         try:
@@ -240,6 +246,19 @@ def inspect(workspace, *, budget_ledger=None, budget_scope=None, clock=time.time
         report['checks'].append({'id': name, 'status': 'PASS', 'reason': 'observed_valid'})
         return result
 
+    def requested_policy():
+        policy = productivity._policy(target_verified, backlog_limit)
+        pipeline._bounded(max_requests, 'max_requests', 1000)
+        pipeline._budget(timeout)
+        estimate = {**DEFAULT_ESTIMATE, 'calls': max_requests, 'compute_ms': math.ceil(timeout * 1000)}
+        return policy, estimate
+
+    requested = check('requested_policy', requested_policy, 'requested_policy_or_limits_invalid')
+    if requested is None:
+        return report
+    policy, estimate = requested
+    report['policy'] = dict(policy)
+    report['cycle_limits'] = {'max_requests': max_requests, 'timeout': timeout}
     root = check('workspace', lambda: _root(workspace), 'workspace_missing_or_not_real')
     if root is None:
         return report
@@ -268,19 +287,20 @@ def inspect(workspace, *, budget_ledger=None, budget_scope=None, clock=time.time
         _require(value['inflight'] is None)
         return value
     schedule = check('source_scheduler', scheduler, 'scheduler_invalid_or_recovery_required')
-    budget = check('resource_ledger', lambda: _budget(root, budget_ledger, budget_scope),
+    budget = check('resource_ledger', lambda: _budget(root, budget_ledger, budget_scope, estimate),
                    'existing_budget_and_scope_missing_unsafe_or_invalid')
     if budget is not None:
         ledger, report['budget'] = budget
-        check('default_cycle_budget', lambda: _require(report['budget']['default_cycle_fits_observed_budget']),
-              'default_cycle_exceeds_available_budget_or_scope_locked')
+        budget_check = 'default_cycle_budget' if estimate == DEFAULT_ESTIMATE else 'requested_cycle_budget'
+        check(budget_check, lambda: _require(report['budget']['requested_cycle_fits_observed_budget']),
+              'requested_cycle_exceeds_available_budget_or_scope_locked')
         if history is not None:
             check('history_accounting', lambda: productivity._validate_accounting(state, ledger, readonly=True),
                   'selected_ledger_history_anchor_or_receipt_invalid')
             report['history']['accounting_coverage'] = 'selected_ledger_only; other_ledger_namespaces_unverified'
     if report['supply'] is not None and history is not None and schedule is not None:
-        stage, reason = productivity._choice(report['supply'], POLICY, state, now)
-        report['suggested_stage'] = {'stage': stage, 'reason': reason, 'policy': dict(POLICY),
+        stage, reason = productivity._choice(report['supply'], policy, state, now)
+        report['suggested_stage'] = {'stage': stage, 'reason': reason, 'policy': dict(policy),
                                      'dispatch_authorized': False, 'admission_recheck_required': True}
         if stage == 'discover':
             sources = documents[2]

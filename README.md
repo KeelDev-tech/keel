@@ -3,7 +3,7 @@
 <!-- Repo is live at KeelDev-tech/keel. -->
 [![CI](https://github.com/KeelDev-tech/keel/actions/workflows/ci.yml/badge.svg)](.github/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.6.2-informational.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.6.3-informational.svg)](CHANGELOG.md)
 
 <p align="center"><img src="docs/assets/keel-logo.png" width="160" alt="Keel logo"></p>
 
@@ -84,6 +84,10 @@ guide](docs/SUSTAINED_OPERATION.md) for setup, comparisons and migration limits.
 Version 0.6.2 adds `host-preflight`, a synthetic controller rehearsal, read-only
 budget inspection and recovery fixes. The [host handoff](docs/HOST_HANDOFF.md)
 separates observed local checks from live deployment and provider qualification.
+
+Version 0.6.3 adds `productivity-advice` and actual-controller process-crash
+qualification. The [evidence loop guide](docs/EVIDENCE_LOOP.md) explains measured
+bottlenecks, conservative follow-up budgets and the five restart boundaries.
 
 ## What it does NOT do
 

@@ -224,6 +224,45 @@ class HostReadinessTests(unittest.TestCase):
         self.assertEqual(report['budget']['ancestor_count'], 1)
         self.assertEqual(self.check(report, 'default_cycle_budget')['status'], 'BLOCKED')
 
+    def test_requested_limits_use_exact_reservation_and_preserve_default_diagnostics(self):
+        self.ledger.create_scope('small', {'calls': 1, 'compute_ms': 1001})
+        before = self.business_files()
+        report = self.inspect(budget_scope='small', max_requests=1, timeout=1.0001)
+        self.assertTrue(report['local_checks_passed'])
+        self.assertEqual(report['budget']['requested_cycle_estimate']['compute_ms'], 1001)
+        self.assertTrue(report['budget']['requested_cycle_fits_observed_budget'])
+        self.assertFalse(report['budget']['default_cycle_fits_observed_budget'])
+        self.assertEqual(report['budget']['default_cycle_estimate']['calls'], 8)
+        self.assertEqual(self.check(report, 'requested_cycle_budget')['status'], 'PASS')
+        self.assertEqual(self.business_files(), before)
+        larger = self.inspect(budget_scope='small', max_requests=1, timeout=1.0011)
+        self.assertFalse(larger['local_checks_passed'])
+        self.assertEqual(larger['budget']['requested_cycle_estimate']['compute_ms'], 1002)
+
+    def test_requested_policy_changes_observed_choice_without_queue_mutation(self):
+        self.source()
+        row = {**self.row(), 'human_hold': True}
+        atomic_json(self.queue, [row])
+        before = self.business_files()
+        self.assertEqual(self.inspect()['suggested_stage']['stage'], 'discover')
+        report = self.inspect(backlog_limit=1, target_verified=7)
+        self.assertEqual(report['suggested_stage']['stage'], 'idle')
+        self.assertEqual(report['suggested_stage']['reason'], 'queue_backlog_limit')
+        self.assertEqual(report['suggested_stage']['policy'], {'backlog_limit': 1, 'target_verified': 7})
+        self.assertEqual(self.business_files(), before)
+
+    def test_invalid_requested_options_block_before_reading_workspace(self):
+        invalid = ({'max_requests': True}, {'max_requests': 0}, {'max_requests': 1001},
+                   {'timeout': 0}, {'timeout': float('nan')}, {'timeout': 901},
+                   {'target_verified': 0}, {'target_verified': 10001}, {'backlog_limit': False})
+        for options in invalid:
+            with self.subTest(options=options), patch.object(host_readiness, '_root',
+                    side_effect=AssertionError('workspace read before option validation')):
+                report = self.inspect(**options)
+                self.assertFalse(report['local_checks_passed'])
+                self.assertIsNone(report['suggested_stage'])
+                self.assertEqual(self.check(report, 'requested_policy')['status'], 'BLOCKED')
+
     def test_unknown_scope_and_invalid_stored_vectors_block(self):
         self.assertEqual(self.check(self.inspect(budget_scope='absent'), 'resource_ledger')['status'], 'BLOCKED')
         with sqlite3.connect(self.ledger.path) as db:

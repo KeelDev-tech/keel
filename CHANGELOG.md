@@ -1,3 +1,16 @@
+## 0.6.3 — Canonical advice and process-crash qualification
+
+Added read-only `productivity-advice`, which validates retained trial evidence,
+reports observed bottlenecks and bounds proposed follow-up cohorts by remaining
+allowance across ancestor scopes. It preserves work settings and transport,
+reserves nothing and declines proposals when evidence is incomplete or work
+needs investigation. No causal improvement or credit savings are inferred.
+
+Added five actual SIGKILL/restart scenarios for the public controller's
+reservation, intent, queue commit, receipt and accounting boundaries. Preflight
+now validates the requested policy and reservation limits, keeping the original
+default diagnostics separate. See docs/EVIDENCE_LOOP.md.
+
 ## 0.6.2 — Host qualification and recovery fixes
 
 Added offline `host-preflight` checks and an isolated synthetic productivity

@@ -165,6 +165,23 @@ class ProfilePackagingTests(unittest.TestCase):
                 cwd=temp, env=env, capture_output=True, text=True, timeout=30)
             self.assertEqual(rehearsal.returncode, 0, rehearsal.stdout + rehearsal.stderr)
             self.assertEqual(json.loads(rehearsal.stdout)['status'], 'PASS')
+            budget_path = home / 'data/inspection-budget.sqlite3'
+            budget_setup = subprocess.run([sys.executable, '-S', '-c',
+                'import sys; sys.path.insert(0, sys.argv[1]); '
+                'from keel_efficiency.ledger import ResourceLedger; '
+                'ResourceLedger(sys.argv[2]).create_scope("inspection", {"calls":16,"compute_ms":120000})',
+                str(code), str(budget_path)], cwd=temp, env=env, capture_output=True, text=True, timeout=30)
+            self.assertEqual(budget_setup.returncode, 0, budget_setup.stdout + budget_setup.stderr)
+            budget_args = ('--budget-ledger', str(budget_path), '--budget-scope', 'inspection')
+            cli('productivity-trial', '--trial-id', 'cold-advice', '--max-cycles', '2', '--live', *budget_args)
+            advice = cli('productivity-advice', '--trial-id', 'cold-advice', *budget_args)
+            self.assertEqual(advice['status'], 'NO_SPEND')
+            self.assertFalse(advice['execution_authorized'])
+            faultlab = subprocess.run([sys.executable, '-S',
+                str(code / 'tools/run_productivity_faultlab.py'), '--out', str(temp / 'faultlab')],
+                cwd=temp, env=env, capture_output=True, text=True, timeout=60)
+            self.assertEqual(faultlab.returncode, 0, faultlab.stdout + faultlab.stderr)
+            self.assertEqual(json.loads(faultlab.stdout)['status'], 'PASS')
             demo = cli('demo', workspace=temp / 'offline-demo')
             self.assertTrue(all(demo['checks'].values()))
             self.assertEqual(demo['external_network_requests'], 0)
