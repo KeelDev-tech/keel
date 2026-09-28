@@ -5,6 +5,10 @@ They use Python 3.11+ and the standard library, without paid services. Neither
 command deploys a private executor, authenticates provider receipts, submits an
 application, or grants approval.
 
+Version 0.6.3 adds [canonical trial advice and process-crash qualification](EVIDENCE_LOOP.md).
+Preflight can inspect requested targets, request caps and deadlines; the default
+values remain unchanged.
+
 ## Rehearse the public controller
 
 From the reviewed checkout, select a **new** output directory:

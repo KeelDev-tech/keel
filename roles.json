@@ -25,7 +25,8 @@
         "productivity-compare",
         "receipt-review",
         "productivity-trial",
-        "host-preflight"
+        "host-preflight",
+        "productivity-advice"
       ],
       "responsibility": "Applicant truth, scope and release decisions; resolve conflicts using evidence."
     },
@@ -42,7 +43,8 @@
         "productivity-compare",
         "receipt-review",
         "productivity-trial",
-        "host-preflight"
+        "host-preflight",
+        "productivity-advice"
       ],
       "responsibility": "Source identity, freshness, deduplication and permitted public reads; no claims of submission."
     },
@@ -58,7 +60,8 @@
         "productivity-trial-report",
         "productivity-compare",
         "receipt-review",
-        "host-preflight"
+        "host-preflight",
+        "productivity-advice"
       ],
       "responsibility": "Materials and question coverage; no answer invention or legal commitments."
     },
@@ -73,7 +76,8 @@
         "productivity-trial-report",
         "productivity-compare",
         "receipt-review",
-        "host-preflight"
+        "host-preflight",
+        "productivity-advice"
       ],
       "responsibility": "Distinguish claims, correlation and verification; require a trusted receipt adapter for verified outcomes."
     },
@@ -87,7 +91,8 @@
         "productivity-trial-report",
         "productivity-compare",
         "receipt-review",
-        "host-preflight"
+        "host-preflight",
+        "productivity-advice"
       ],
       "responsibility": "Adversarial cases, reproducibility, concurrency, recovery and source-bound test evidence."
     },
@@ -101,7 +106,8 @@
         "productivity-trial-report",
         "productivity-compare",
         "receipt-review",
-        "host-preflight"
+        "host-preflight",
+        "productivity-advice"
       ],
       "responsibility": "Review network, file, credential and authority boundaries; test bypass attempts."
     },
@@ -115,7 +121,8 @@
         "productivity-trial-report",
         "productivity-compare",
         "receipt-review",
-        "host-preflight"
+        "host-preflight",
+        "productivity-advice"
       ],
       "responsibility": "Clear next actions, honest empty/error states, keyboard and small-screen use."
     },
@@ -130,7 +137,8 @@
         "productivity-trial-report",
         "productivity-compare",
         "receipt-review",
-        "host-preflight"
+        "host-preflight",
+        "productivity-advice"
       ],
       "responsibility": "State invariants, recoverability, bounded work and truthful observability."
     }

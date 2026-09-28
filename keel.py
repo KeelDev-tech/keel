@@ -228,17 +228,26 @@ def main(argv=None):
         help='compare actual trial cohorts; mismatched workloads cannot establish gains')
     productivity_compare.add_argument('--baseline', required=True)
     productivity_compare.add_argument('--candidate', required=True)
+    productivity_advice = sub.add_parser('productivity-advice',
+        help='diagnose canonical trial evidence and propose a budget-bounded next cohort; no dispatch')
+    productivity_advice.add_argument('--trial-id', required=True)
+    productivity_advice.add_argument('--max-cycles', type=int, default=3,
+                                      help='upper bound on proposed follow-up cycles, 1..100')
     for command in (host_preflight, productivity_status, productivity_once, productivity_recover,
-                    productivity_trial, productivity_report, productivity_compare):
+                    productivity_trial, productivity_report, productivity_compare, productivity_advice):
         command.add_argument('--budget-ledger', default=os.environ.get('KEEL_BUDGET_LEDGER'),
                              help='existing resource ledger shared with other workers')
         command.add_argument('--budget-scope', default=os.environ.get('KEEL_BUDGET_SCOPE'),
                              help='existing cumulative budget scope; never resets automatically')
-    for command in (productivity_status, productivity_once, productivity_trial):
+    for command in (host_preflight, productivity_status, productivity_once, productivity_trial):
         command.add_argument('--target-verified', type=int, default=20,
                              help='pause intake at this many fresh posting-presence observations')
         command.add_argument('--backlog-limit', type=int, default=200,
                              help='pause intake when this many queue rows already exist')
+    host_preflight.add_argument('--max-requests', type=int, default=8,
+                                help='requested per-cycle reader dispatch cap to inspect')
+    host_preflight.add_argument('--timeout', type=float, default=30,
+                                help='requested cooperative cycle deadline in seconds')
     for command in (productivity_once, productivity_trial):
         command.add_argument('--live', action='store_true',
                              help='allow bounded public reads and local receipt/queue writes')
@@ -286,7 +295,14 @@ def main(argv=None):
         elif args.command == 'host-preflight':
             import host_readiness
             result = host_readiness.inspect(args.home, budget_ledger=args.budget_ledger,
-                                            budget_scope=args.budget_scope)
+                budget_scope=args.budget_scope, target_verified=args.target_verified,
+                backlog_limit=args.backlog_limit, max_requests=args.max_requests, timeout=args.timeout)
+        elif args.command == 'productivity-advice':
+            from keel_efficiency.defaults import configured_budget
+            import productivity_advisor
+            ledger, scope = configured_budget(args.budget_ledger, args.budget_scope, readonly=True)
+            result = productivity_advisor.diagnose(args.home, trial_id=args.trial_id,
+                ledger=ledger, scope_id=scope, max_cycles=args.max_cycles)
         elif args.command == 'receipt-review':
             import receipt_projection
             result = receipt_projection.reconcile(args.home, role_id=args.role_id,
@@ -367,6 +383,8 @@ def main(argv=None):
         print(json.dumps(result, indent=2))
         if args.command == 'host-preflight':
             return 0 if result['local_checks_passed'] else 1
+        if args.command == 'productivity-advice':
+            return 1 if result['status'] == 'HOLD' else 0
         return 1 if args.command == 'doctor' and not result['ready_for_local_preparation'] else 0
     except (OSError, ValueError, TypeError, KeyError, RuntimeError) as exc:
         print(json.dumps({'error': str(exc), 'action': args.command}), file=sys.stderr)
