@@ -1,63 +1,40 @@
 #!/usr/bin/env python3
-"""Input-tray digest v2 (2026-09-16): a best-in-class human-in-the-loop surface.
+"""Build a local question inbox from the parked queues.
 
-Competitor gap analysis (Simplify / LazyApply / Sonara / Teal / LoopCV /
-JobCopilot / Massive + LangGraph / Temporal / OpenAI-Agents HITL patterns;
-full report in ~/workspace/research_notes/input-tray-competitor-research-20260916-2032/report.md)
-found NO product with a true centralized question inbox. This tray closes
-that gap:
-
-  - Family-grouped cards: one card per decision family / deduplicated
-    question across ALL blocked leads (answer once, unblock N) -- the
-    compounding pattern LazyApply documents and no competitor surfaces.
-  - Unblock-value ordering: cards sorted by leads-unblocked x fit weight,
-    so the highest-leverage answer comes first (Massive-style triage:
-    each card decidable in seconds on a phone).
-  - Aging: every card shows how long it has waited (oldest parked lead).
-  - Draft-first: when a banked answer fuzzy-matches the question, the card
-    carries the draft for approve/edit -- never auto-applied (LangGraph /
-    OpenAI Agents SDK approve-edit-reject loop, productized).
-  - Status taxonomy: NEEDS-YOU cards vs SYSTEM-BLOCKED counts are separate
-    surfaces, so the applicant never confuses "answer me" with "fix the robot"
-    (applypilot Pending/Needs-user/Skipped/Blocked taxonomy).
-  - Machine-readable tray: hidden_files/input-tray.json carries every card
-    (keys, families, leads, drafts, ages, recurrence) for the dashboard and
-    the answer applier -- the tray is a first-class surface, not a printout.
-  - Watermark gating: the watermark advances ONLY with --deliver (the cron
-    delivery wrapper). Bare runs are dry-runs: digest printed, nothing
-    advanced. The manual-run watermark footgun is now impossible in code.
-  - Recurrence instrumentation: family sightings accumulate across runs;
-    families seen >= PROMOTE_THRESHOLD times surface as "promote to
-    profile" candidates -- the setup-interview decay pattern (canerpiskin /
-    LazyApply): the tray gets quieter every week, and trusted families can
-    graduate toward always-answer (OpenAI Agents SDK always_approve).
-
-NON-BLOCKING GUARANTEE: this script is read-only on the queues. Parked
-leads never gate the apply loop (never-halt lane + C-19 tripwire); the
-tray only asks, never stalls. Answers flow back through tray_answer.py,
-which resolves blockers and lets the canonical verify path revive leads.
-
-Integrity filters (2026-09-15): only fit>=75 leads reach the applicant's attention;
-within a lead, near-duplicate blocker wordings collapse to one; items the
-standing D1 policy already decides (explicit 4/5-day or full-time on-site)
-never become tray questions -- they park, not prompt.
+Cards group matching full questions, show affected leads and bank suggestions,
+and separate applicant questions from system blockers. Bare CLI runs are
+read-only. ``--deliver`` persists the tray, recurrence history, and watermark
+under the shared queue lock with pre-write backups and atomic replacement.
+Answers are applied only through tray_answer.py and canonical verification.
 """
 import argparse
+import copy
 import hashlib
 import json
+import math
 import os
 import re
 import sys
-import tray_sources  # Keel 0.4 P3 (2026-09-17): blocker-source taxonomy
+import stat
+import tempfile
+from contextlib import nullcontext
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
-BASE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-QDIR = os.path.join(BASE, 'queue')
+try:
+    from . import tray_sources
+    from .keel_paths import HOME, DATA
+except ImportError:
+    import tray_sources
+    from keel_paths import HOME, DATA
+
+BASE = HOME
+QDIR = os.path.join(DATA, 'queues')
 HDIR = os.path.join(BASE, 'hidden_files')
 WM = os.path.join(HDIR, 'input-tray-logged.json')
 TRAY_JSON = os.path.join(HDIR, 'input-tray.json')
 FAM_HIST = os.path.join(HDIR, 'input-tray-families.json')
-BANK = os.path.join(BASE, 'engines', 'application-executor', 'answer_bank.json')
+BANK = os.path.join(DATA, 'answer_bank.json')
 
 # Integrity-terminal bank keys (2026-09-17, J-20260917-1230-gate-1423):
 # standing DO-NOT rules, not answers (the applicant's own words — the
@@ -132,12 +109,55 @@ def dedupe(blocks):
     return kept
 
 
-def load(path, default=None):
+MAX_TRAY_FILE_BYTES = 32 * 1024 * 1024
+
+
+def _read_bytes(path, limit=MAX_TRAY_FILE_BYTES):
+    """Read only bounded regular files, pinning no-follow directory descriptors."""
+    path = Path(os.path.abspath(path))
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_NONBLOCK
+    parent = os.open(path.anchor, flags)
+    fd = None
     try:
-        with open(path) as f:
-            return json.load(f)
-    except Exception:
+        for part in path.parts[1:-1]:
+            child = os.open(part, flags, dir_fd=parent)
+            os.close(parent)
+            parent = child
+        fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                     dir_fd=parent)
+        before = os.fstat(fd)
+        if not stat.S_ISREG(before.st_mode) or before.st_size > limit:
+            raise ValueError("unsafe_or_oversized_tray_source")
+        chunks, count = [], 0
+        while True:
+            chunk = os.read(fd, min(65536, limit + 1 - count))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            count += len(chunk)
+            if count > limit:
+                raise ValueError("tray_source_byte_limit")
+        after = os.fstat(fd)
+        if (before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
+                after.st_size, after.st_mtime_ns, after.st_ctime_ns):
+            raise ValueError("tray_source_changed_during_read")
+        return b"".join(chunks)
+    finally:
+        if fd is not None:
+            os.close(fd)
+        os.close(parent)
+
+
+def load(path, default=None):
+    """Missing optional state is empty; malformed or unsafe existing state fails closed."""
+    try:
+        raw = _read_bytes(path)
+    except FileNotFoundError:
         return default if default is not None else []
+    result = _queue_io().strict_loads(raw)
+    if isinstance(default, (list, dict)) and not isinstance(result, type(default)):
+        raise ValueError("unexpected_tray_source_shape")
+    return result
 
 
 def genuine_blockers(entry):
@@ -250,9 +270,6 @@ def normalize_question(text):
     t = FAMILY_TAIL_PAT.sub('', t)
     t = re.sub(r'\s+', ' ', t).strip()
     t = re.sub(r'^[:\-–—]\s*', '', t)  # separator left behind by the FAMILY header
-    # FAMILY entries lead with an all-caps decision prompt; keep the first
-    # sentence as the card question.
-    t = re.split(r'(?<=[.!?])\s+(?=[A-Z])', t)[0]
     return t
 
 
@@ -386,8 +403,22 @@ def fmt_age(hours):
     return f"{int(hours // 24)}d"
 
 
-def collect_cards():
-    """Scan queues -> family-grouped cards (all items, fresh or not)."""
+def _min_fit(value=None):
+    value = os.environ.get("KEEL_TRAY_MIN_FIT", "60") if value is None else value
+    if isinstance(value, bool):
+        raise ValueError("minimum fit must be a finite number from 0 to 100")
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("minimum fit must be a finite number from 0 to 100") from exc
+    if not math.isfinite(number) or not 0 <= number <= 100:
+        raise ValueError("minimum fit must be a finite number from 0 to 100")
+    return number
+
+
+def collect_cards(min_fit=None):
+    """Scan queues into cards; KEEL_TRAY_MIN_FIT defaults to the current bar, 60."""
+    min_fit = _min_fit(min_fit)
     banked = load_bank()
     cards = {}  # card_key -> card dict
     for fname in ('needs_input-queue.json', 'standard-queue.json'):
@@ -396,10 +427,10 @@ def collect_cards():
                 continue
             try:
                 fit = float(e.get('fit_score') or 0)
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, OverflowError):
                 fit = 0
-            if fit < 75:
-                continue  # below the binding bar -- never consumes the applicant's attention
+            if not math.isfinite(fit) or not 0 <= fit <= 100 or fit < min_fit:
+                continue
             rid, blocks = genuine_blockers(e)
             age = parse_age_h(e.get('status_updated'))
             employer = e.get('employer') or e.get('company') or ''
@@ -443,7 +474,35 @@ def collect_cards():
     return cards
 
 
-def update_family_history(cards, fresh_keys, now_iso, delivered):
+def _queue_io():
+    try:
+        from . import queue_io
+    except ImportError:
+        import queue_io
+    return queue_io
+
+
+def _persist_json(path, payload):
+    """Back up the exact previous bytes before a lock-protected atomic write."""
+    io = _queue_io()
+    with io.queue_lock(owner="input_tray_digest:persist"):
+        os.makedirs(HDIR, exist_ok=True)
+        try:
+            previous = _read_bytes(path)
+        except FileNotFoundError:
+            previous = None
+        if previous is not None:
+            fd, backup = tempfile.mkstemp(
+                prefix="_backup-" + os.path.basename(path) + "-", dir=HDIR)
+            with os.fdopen(fd, "wb") as saved:
+                saved.write(previous)
+                saved.flush()
+                os.fsync(saved.fileno())
+            io._dir_fsync(HDIR)
+        io.atomic_write_json(path, payload)
+
+
+def update_family_history(cards, fresh_keys, now_iso, delivered, *, persist=True):
     """Recurrence history. times_seen counts DELIVERIES only -- a dry run
     must never inflate it (that once fabricated 84 'recurring' candidates)."""
     hist = load(FAM_HIST, {})
@@ -459,15 +518,42 @@ def update_family_history(cards, fresh_keys, now_iso, delivered):
             rec['times_seen'] = rec.get('times_seen', 0) + 1
         rec['last_unblock_leads'] = card['unblock_leads']
         hist[ck] = rec
-    os.makedirs(HDIR, exist_ok=True)
-    tmp = FAM_HIST + '.tmp'
-    with open(tmp, 'w') as f:
-        json.dump(hist, f, indent=1, sort_keys=True)
-    os.replace(tmp, FAM_HIST)
+    if persist:
+        _persist_json(FAM_HIST, hist)
     return hist
 
 
-def write_tray_json(cards, fresh_keys, hist, system_blocked, now_iso):
+def _decorate_cards(cards):
+    """Refresh evidence-bound QRESOLVE drafts without making their service mandatory."""
+    original = copy.deepcopy(cards)
+    try:
+        if __package__:
+            from .qresolve import decorate_cards
+        else:
+            from qresolve import decorate_cards
+        decorated = decorate_cards(copy.deepcopy(cards))
+        if (not isinstance(decorated, list)
+                or len(decorated) != len(cards)
+                or any(not isinstance(card, dict) for card in decorated)
+                or [card.get("key") for card in decorated] != [card["key"] for card in cards]):
+            raise ValueError("invalid proposal decoration")
+        cards = decorated
+    except Exception:
+        # An unavailable resolver must not leave an apparently valid resolver-owned
+        # answer behind. Existing human/bank suggestions are outside its ownership.
+        cards = original
+        for card in cards:
+            draft = card.get("draft")
+            if isinstance(draft, dict) and draft.get("owner") == "qresolve":
+                card["draft"] = None
+    for card, before in zip(cards, original):
+        if before.get("status") == "SYSTEM-BLOCKED":
+            card["status"] = "SYSTEM-BLOCKED"
+            card["draft"] = None
+    return cards
+
+
+def write_tray_json(cards, fresh_keys, hist, system_blocked, now_iso, *, persist=True):
     payload_cards = []
     for ck, card in cards.items():
         if ck in RETIRED_CARD_KEYS:
@@ -498,12 +584,12 @@ def write_tray_json(cards, fresh_keys, hist, system_blocked, now_iso):
             tax_reason = tray_sources.SYSTEM_REASONS[source]
             blocked_reason = (tax_reason if not blocked_reason
                               else f"{tax_reason}; also: {blocked_reason}")
-        draft = (integrity_safe_draft(card['draft']) if blocked_reason
-                 else card['draft'])
+        draft = None if blocked_reason else integrity_safe_draft(card['draft'])
         payload_cards.append({
             'key': ck,
             'family': card['family'],
             'question': card['question'],
+            'norm': card.get('norm', card['question']),
             'status': 'SYSTEM-BLOCKED' if blocked_reason else 'NEEDS-YOU',
             'blocked_reason': blocked_reason,
             'source': source,
@@ -522,13 +608,17 @@ def write_tray_json(cards, fresh_keys, hist, system_blocked, now_iso):
                 for l in card['leads']
             ],
         })
+    payload_cards = _decorate_cards(payload_cards)
     # unblock-value ordering: most leverage first
     payload_cards.sort(key=lambda c: (-c['unblock_fit'], -(c['oldest_parked_h'] or 0)))
+    answerable_keys = {c['key'] for c in payload_cards if c['status'] == 'NEEDS-YOU'}
     promote = [
         {'key': ck, 'family': r.get('family'), 'question': r.get('question'),
          'times_seen': r.get('times_seen', 0)}
         for ck, r in hist.items()
         if r.get('times_seen', 0) >= PROMOTE_THRESHOLD and ck in cards
+        and ck not in RETIRED_CARD_KEYS
+        and ck in answerable_keys
     ]
     promote.sort(key=lambda p: -p['times_seen'])
     payload = {
@@ -540,10 +630,8 @@ def write_tray_json(cards, fresh_keys, hist, system_blocked, now_iso):
                  "are robot problems on a separate surface. Answering one card "
                  "clears every lead on it (tray_answer.py)."),
     }
-    tmp = TRAY_JSON + '.tmp'
-    with open(tmp, 'w') as f:
-        json.dump(payload, f, indent=1)
-    os.replace(tmp, TRAY_JSON)
+    if persist:
+        _persist_json(TRAY_JSON, payload)
     return payload
 
 
@@ -638,43 +726,41 @@ def render_digest(payload):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="Input-tray digest v2.")
+    ap = argparse.ArgumentParser(description="Input-tray digest.")
     ap.add_argument('--deliver', action='store_true',
-                    help='Advance the watermark (delivery wrapper only). '
-                         'Without it this is a dry run: digest printed, '
-                         'nothing advanced.')
+                    help='Persist the tray, history, and delivery watermark. '
+                         'Without this flag no workspace files are changed.')
+    ap.add_argument('--min-fit', type=float, default=None,
+                    help='Minimum fit from 0 to 100 (default KEEL_TRAY_MIN_FIT or 60).')
     args = ap.parse_args(argv)
+    try:
+        minimum = _min_fit(args.min_fit)
+    except ValueError as exc:
+        ap.error(str(exc))
 
-    now_iso = datetime.now(timezone.utc).isoformat()
-    cards = collect_cards()
-
-    wm = load(WM, [])
-    seen = set(wm if isinstance(wm, list) else [])
-    fresh_keys = set()
-    for card in cards.values():
-        for k in card['item_keys']:
-            if k not in seen:
-                fresh_keys.add(k)
-
-    hist = update_family_history(cards, fresh_keys, now_iso, args.deliver)
-    sb = system_blocked_counts()
-    payload = write_tray_json(cards, fresh_keys, hist, sb, now_iso)
-
-    fresh_payload = dict(payload)
-    fresh_payload['cards'] = [c for c in payload['cards'] if c['fresh']]
-    if not fresh_payload['cards']:
-        print('TRAY-QUIET')
-        return 0
-
-    print(render_digest(fresh_payload))
-
-    if args.deliver:
-        seen.update(fresh_keys)
-        os.makedirs(HDIR, exist_ok=True)
-        tmp = WM + '.tmp'
-        with open(tmp, 'w') as f:
-            json.dump(sorted(seen), f)
-        os.replace(tmp, WM)
+    lock = (_queue_io().queue_lock(owner="input_tray_digest:deliver")
+            if args.deliver else nullcontext())
+    with lock:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        cards = collect_cards(min_fit=minimum)
+        wm = load(WM, [])
+        seen = set(wm if isinstance(wm, list) else [])
+        fresh_keys = {k for card in cards.values() for k in card['item_keys']
+                      if k not in seen}
+        hist = update_family_history(cards, fresh_keys, now_iso, args.deliver,
+                                     persist=args.deliver)
+        payload = write_tray_json(cards, fresh_keys, hist,
+                                  system_blocked_counts(), now_iso,
+                                  persist=args.deliver)
+        fresh_payload = dict(payload)
+        fresh_payload['cards'] = [c for c in payload['cards'] if c['fresh']]
+        if not fresh_payload['cards']:
+            print('TRAY-QUIET')
+            return 0
+        print(render_digest(fresh_payload))
+        if args.deliver:
+            seen.update(fresh_keys)
+            _persist_json(WM, sorted(seen))
     return 0
 
 

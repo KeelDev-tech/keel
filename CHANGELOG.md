@@ -1,3 +1,17 @@
+## 0.6.4 — Evidence-backed question resolution
+
+Added offline QRESOLVE retrieval, conservative classification and exact scoped
+answer proposals. Automatic factual reuse remains opt-in and is revalidated
+inside the sanctioned tray actuator's queue lock. Reuse preserves provenance;
+durable intents and verified completion receipts keep interrupted writes held.
+
+Unified digest/applier workspace paths, retained full prompts, made the tray
+fit threshold configurable (default 60), and made bare digest runs read-only.
+Structural cards cannot carry drafts or be cleared through the manual answer
+path. Packaged the tray dependency closure and added synthetic classification,
+provenance, crash-hold and fresh-process integration tests. Private backlog and
+real-card acceptance remain host tasks. See docs/QUESTION_RESOLUTION.md.
+
 ## 0.6.3 — Canonical advice and process-crash qualification
 
 Added read-only `productivity-advice`, which validates retained trial evidence,

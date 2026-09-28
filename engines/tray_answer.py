@@ -21,6 +21,8 @@ Usage:
   tray_answer.py --live --family travel_commitment/general --answer "..."
   tray_answer.py --live --key <k> --answer "..." --bank-new willing_overtime
   tray_answer.py --live --key <k> --answer "..." --bank-key existing_key
+  tray_answer.py --qresolve-request request.json         # read-only validation
+  tray_answer.py --live --qresolve-request request.json  # authorized bank reuse
   tray_answer.py --live --key <k> --answer "..." --bank-new sms_x \
       --scope employer:Acme          # scoped (non-global) bank write
 
@@ -28,6 +30,12 @@ Banking is OPT-IN (--bank-new / --bank-key). Without it, blockers resolve on
 the matched leads but no standing answer is created -- the human (relaying
 the applicant) decides what becomes permanent. Never invents: the answer text comes
 from the applicant's reply verbatim.
+
+The separate --qresolve-request mode accepts only a current evidence-bound
+FACT decision from qresolve.py. It never writes the answer bank or invents new
+human provenance. It journals intent before changing queues, keeps unresolved
+posting liveness pending, and leaves canonical verify_retry to its existing
+schedule. It does not launch network verification or submissions.
 
 SAFETY (mirrors input_resolution/apply.py):
   - Backup of both queue files + answer bank BEFORE any write (--live only).
@@ -40,10 +48,12 @@ SAFETY (mirrors input_resolution/apply.py):
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
-import shutil
+import stat
 import sys
+import tempfile
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -53,7 +63,9 @@ sys.path.insert(0, ENGINES)
 import input_tray_digest as tray
 from genuine_pat import is_verify_only
 import queue_io
+import safe_io
 import bank_scope as bs
+from qresolve_corpus import _read as _bounded_read, _open_parent
 
 PDT = ZoneInfo("America/Los_Angeles")
 STAMP = datetime.now(PDT).strftime("%Y-%m-%d %H:%M PDT")
@@ -66,16 +78,12 @@ ANSWERS_LOG = os.path.join(HOME, "hidden_files", "tray-answers.jsonl")
 
 
 def load_list(path):
-    with open(path, encoding="utf-8") as f:
-        q = json.load(f)
+    q = queue_io.strict_loads(_bounded_read(path, 16 * 1024 * 1024)[0])
     return q if isinstance(q, list) else []
 
 
 def save_list(path, rows):
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(rows, f, indent=1, ensure_ascii=False)
-    os.replace(tmp, path)
+    queue_io.atomic_write_json(path, rows)
 
 
 def qn_with_notes(rec, notes):
@@ -215,10 +223,7 @@ def apply_bank_write(bank_path, banked_key, answer, scope_arg, card,
             banked = True
         meta = bank.setdefault("_meta", {})
         meta["last_updated"] = datetime.now(PDT).strftime("%Y-%m-%d")
-        tmp = bank_path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(bank, f, indent=1, ensure_ascii=False)
-        os.replace(tmp, bank_path)
+        queue_io.atomic_write_json(bank_path, bank)
     except Exception as e:  # scope-check failure: fail to quarantine + continue
         try:
             with open(bank_path, encoding="utf-8") as f:
@@ -233,14 +238,305 @@ def apply_bank_write(bank_path, banked_key, answer, scope_arg, card,
                        "fail-closed to quarantine"),
         }
         try:
-            tmp = bank_path + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(bank, f, indent=1, ensure_ascii=False)
-            os.replace(tmp, bank_path)
+            queue_io.atomic_write_json(bank_path, bank)
         except Exception:
             pass
         quarantined, scope = True, bs.SCOPE_AMBIGUOUS
     return banked, quarantined, scope
+
+
+def _structural_guard(card, targets):
+    """A factual or human answer cannot repair an operational route blocker."""
+    from qresolve_semantics import classify
+    result = classify(card, contexts=[entry for _, entry, _ in targets])
+    return result["class"] == "STRUCTURAL"
+
+
+def _durable_backup(bank_path):
+    """Create a unique fsynced pre-write snapshot while the queue lock is held."""
+    parent = os.path.dirname(os.path.abspath(NI_Q))
+    backup = tempfile.mkdtemp(prefix="_backup-tray-answer-", dir=parent)
+    for path in (STD_Q, NI_Q, bank_path):
+        if os.path.exists(path):
+            value = queue_io.strict_loads(_bounded_read(path, 16 * 1024 * 1024)[0])
+            queue_io.atomic_write_json(os.path.join(backup, os.path.basename(path)), value)
+    queue_io._dir_fsync(backup)
+    queue_io._dir_fsync(parent)
+    return backup
+
+
+def _qresolve_paths():
+    hidden = os.path.dirname(ANSWERS_LOG)
+    return (os.path.join(hidden, "qresolve-resolutions.jsonl"),
+            os.path.join(hidden, "qresolve-resolved.json"))
+
+
+def _qresolve_digest(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"),
+                                     ensure_ascii=False, allow_nan=False).encode()).hexdigest()
+
+
+def _qresolve_journal(path):
+    """Refuse damaged audit state instead of guessing after a partial write."""
+    try:
+        raw = _bounded_read(path, 16 * 1024 * 1024)[0]
+    except FileNotFoundError:
+        return []
+    if raw and not raw.endswith("\n"):
+        raise ValueError("incomplete_audit_record")
+    rows = []
+    for line in raw.splitlines():
+        row = queue_io.strict_loads(line)
+        if (not isinstance(row, dict) or row.get("action") not in {"INTENT", "auto_applied", "held"}
+                or not isinstance(row.get("decision_id"), str)):
+            raise ValueError("invalid_audit_record")
+        rows.append(row)
+    return rows
+
+
+def _qresolve_append(path, record):
+    """Append one durable regular-file event through a pinned parent descriptor."""
+    payload = (json.dumps(record, sort_keys=True, ensure_ascii=False,
+                          allow_nan=False) + "\n").encode("utf-8")
+    if len(payload) > 2 * 1024 * 1024:
+        raise ValueError("audit_event_too_large")
+    parent, name = _open_parent(path)
+    fd = None
+    try:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW | os.O_NONBLOCK
+        fd = os.open(name, flags, 0o600, dir_fd=parent)
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_size + len(payload) > 16 * 1024 * 1024:
+            raise ValueError("unsafe_or_oversized_audit")
+        remaining = memoryview(payload)
+        while remaining:
+            count = os.write(fd, remaining)
+            if count <= 0:
+                raise OSError("incomplete_audit_write")
+            remaining = remaining[count:]
+        os.fsync(fd)
+        os.fsync(parent)
+    finally:
+        if fd is not None:
+            os.close(fd)
+        os.close(parent)
+
+
+def _qresolve_receipt(status, decision_id=None, reason=None, **fields):
+    value = {"schema": "keel.qresolve.apply.v1", "status": status,
+             "decision_id": decision_id, "removed_blockers": 0,
+             "changed_leads": 0, "fully_unblocked": 0, "role_ids": [],
+             "ready_verified": False}
+    if reason:
+        value["reason"] = reason
+    value.update(fields)
+    print(json.dumps(value, sort_keys=True, allow_nan=False))
+    return 0 if status in {"APPLIED", "NO_CHANGE"} else 3
+
+
+def _qresolve_queues():
+    queues = {}
+    identities = set()
+    for path in (NI_Q, STD_Q):
+        rows = queue_io.strict_loads(_bounded_read(path, 16 * 1024 * 1024)[0])
+        if not isinstance(rows, list):
+            raise ValueError("invalid_queue_shape")
+        for row in rows:
+            if not isinstance(row, dict):
+                raise ValueError("invalid_queue_row")
+            identity = row.get("role_id")
+            if not isinstance(identity, str) or not identity.strip() or identity in identities:
+                raise ValueError("missing_or_duplicate_role_id")
+            identities.add(identity)
+        queues[path] = rows
+    return queues
+
+
+def _qresolve_changes(card, targets, queues, decision):
+    """Prepare an exact, reversible mutation without claiming posting liveness."""
+    expected = json.loads(json.dumps(queues))
+    counts = {"removed_blockers": 0, "changed_leads": 0,
+              "fully_unblocked": 0, "role_ids": []}
+    seen = set()
+    for fname, entry, matched in targets:
+        path = NI_Q if fname == "needs_input" else STD_Q
+        rid = entry.get("role_id")
+        if rid in seen:
+            raise ValueError("duplicate_target")
+        seen.add(rid)
+        matches = [row for row in queues[path] if row.get("role_id") == rid]
+        if len(matches) != 1 or matches[0] != entry:
+            raise ValueError("target_snapshot_changed")
+        row = matches[0]
+        unresolved = row.get("unresolved")
+        if not isinstance(unresolved, list) or not all(isinstance(u, str) for u in unresolved):
+            raise ValueError("invalid_blockers")
+        removed, kept = resolve_unresolved(unresolved, card["key"], matched)
+        if not removed:
+            raise ValueError("no_exact_blocker_removed")
+        row["unresolved"] = kept
+        row["queue_notes"] = qn_with_notes(row, [
+            f"qresolve: blocker cleared by reuse of approved bank evidence; "
+            f"decision {decision['decision_id']}; source answer_bank[{decision['bank_key']}]"
+        ])
+        row["status_updated"] = datetime.now(timezone.utc).isoformat()
+        if not kept:
+            trial = dict(row)
+            trial["status_reason"] = (
+                f"qresolve: all input blockers cleared; decision {decision['decision_id']}; "
+                "liveness unverified — queued for verification")
+            gate = row.get("gate_note") or ""
+            if not isinstance(gate, str):
+                raise ValueError("invalid_gate_note")
+            trial["gate_note"] = "\n".join(
+                line for line in gate.splitlines() if not any(text in line for text in removed)
+            ).strip() or "qresolve: no open input blockers; liveness unverified"
+            if is_verify_only(trial):
+                row["status_reason"] = trial["status_reason"]
+                row["gate_note"] = trial["gate_note"]
+                row["last_verify_attempt"] = None
+                counts["fully_unblocked"] += 1
+        counts["removed_blockers"] += len(removed)
+        counts["changed_leads"] += 1
+        counts["role_ids"].append(rid)
+    if not counts["removed_blockers"] or set(counts["role_ids"]) != set(decision["target_role_ids"]):
+        raise ValueError("target_accounting_mismatch")
+    counts["role_ids"].sort()
+    return expected, counts
+
+
+def apply_qresolve(request_path, bank_path, *, live=False):
+    """Only sanctioned QRESOLVE queue actuator; offline and bank-read-only.
+
+    INTENT precedes canonical writes. A process crash can leave multiple files at
+    different stages; pending intent blocks subsequent application until explicit
+    reconciliation. This is a crash journal, not a multi-file transaction.
+    """
+    decision_id = None
+    try:
+        request = queue_io.strict_loads(_bounded_read(request_path, 2 * 1024 * 1024)[0])
+        if (not isinstance(request, dict)
+                or request.get("schema") != "keel.qresolve.request.v1"
+                or not isinstance(request.get("decision"), dict)):
+            raise ValueError("invalid_request")
+        decision = request["decision"]
+        decision_id = decision.get("decision_id")
+        if (not isinstance(decision_id, str) or len(decision_id) != 64
+                or any(char not in "0123456789abcdef" for char in decision_id)):
+            raise ValueError("invalid_decision_id")
+        card_key = decision.get("card_key")
+        if not isinstance(card_key, str) or not card_key:
+            raise ValueError("invalid_card_key")
+    except (OSError, ValueError, TypeError, KeyError, RecursionError):
+        return _qresolve_receipt("HOLD", reason="invalid_request")
+
+    journal, resolved_path = _qresolve_paths()
+    # Dry runs do not acquire queue_lock(): lock diagnostics themselves write.
+    if not live:
+        try:
+            _qresolve_queues()
+            card, targets, _ = find_targets(key=card_key)
+            if card is None:
+                raise ValueError("card_missing")
+            from qresolve import validate_application
+            validate_application(request, card, targets, bank_path)
+            if _structural_guard(card, targets):
+                raise ValueError("structural_blocker")
+        except (OSError, ValueError, TypeError, KeyError):
+            return _qresolve_receipt("HOLD", decision_id, "revalidation_failed")
+        return _qresolve_receipt("NO_CHANGE", decision_id, "dry_run",
+                                 proposed_target_count=len(targets))
+
+    try:
+        # Queue writers and confirm-answer use different canonical locks. Hold
+        # both, in queue -> bank order, through evidence validation and commit.
+        with queue_io.queue_lock(owner="tray_answer:qresolve"), safe_io.file_lock(str(bank_path) + ".lock"):
+            try:
+                records = _qresolve_journal(journal)
+                completed = {r.get("decision_id") for r in records
+                             if r.get("action") == "auto_applied"}
+                pending = {r.get("decision_id") for r in records
+                           if r.get("action") == "INTENT"} - completed
+                if pending:
+                    return _qresolve_receipt("HOLD", decision_id, "incomplete_prior_intent")
+                if decision_id in completed:
+                    return _qresolve_receipt("NO_CHANGE", decision_id, "already_recorded")
+                queues = _qresolve_queues()
+                card, targets, _ = find_targets(key=card_key)
+                if card is None:
+                    raise ValueError("card_missing")
+                from qresolve import validate_application
+                decision = validate_application(request, card, targets, bank_path)
+                if (decision.get("class") != "FACT" or decision.get("action") != "auto_apply"
+                        or not decision.get("evidence") or not decision.get("bank_key")
+                        or not isinstance(decision.get("answer"), str)
+                        or _structural_guard(card, targets)):
+                    raise ValueError("application_not_authorized")
+                try:
+                    resolved = queue_io.strict_loads(_bounded_read(resolved_path, 16 * 1024 * 1024)[0])
+                except FileNotFoundError:
+                    resolved = {}
+                if not isinstance(resolved, dict):
+                    raise ValueError("invalid_resolved_map")
+                expected, counts = _qresolve_changes(card, targets, queues, decision)
+                # Keep the evidence and exact removal plan in the durable intent.
+                backup = _durable_backup(bank_path)
+                intent = {"ts": datetime.now(timezone.utc).isoformat(),
+                          "action": "INTENT", **decision,
+                          "planned_counts": counts,
+                          "backup": os.path.basename(backup),
+                          "queue_before_sha256": _qresolve_digest(expected),
+                          "queue_after_sha256": _qresolve_digest(queues)}
+                intent["action"] = "INTENT"
+                _qresolve_append(journal, intent)
+                # No writes outside sanctioned queue/bank paths; bank is never changed.
+                for path, rows in queues.items():
+                    if rows != expected[path]:
+                        queue_io.atomic_write_json(path, rows)
+                actual = _qresolve_queues()
+                if actual != queues:
+                    raise ValueError("postwrite_queue_changed")
+                if sum(len(row.get("unresolved") or []) for rows in expected.values() for row in rows) - sum(
+                        len(row.get("unresolved") or []) for rows in actual.values() for row in rows
+                ) != counts["removed_blockers"]:
+                    raise ValueError("postwrite_accounting_mismatch")
+                snapshots = {row["role_id"]: _qresolve_digest(row)
+                             for rows in actual.values() for row in rows
+                             if row["role_id"] in counts["role_ids"]}
+                resolved[decision_id] = {
+                    "decision_id": decision_id, "fingerprint": decision["fingerprint"],
+                    "card_key": card_key, "answer": decision["answer"],
+                    "bank_key": decision["bank_key"], "evidence": decision["evidence"],
+                    "context_sha256": decision["context_sha256"],
+                    "evidence_sha256": decision["evidence_sha256"],
+                    "config_sha256": decision["config_sha256"],
+                    "target_role_ids": counts["role_ids"],
+                    "target_post_sha256": snapshots,
+                    "ts": datetime.now(timezone.utc).isoformat(),
+                }
+                queue_io.atomic_write_json(resolved_path, resolved)
+                revival = ("queued_for_canonical_verify_retry" if counts["fully_unblocked"]
+                           else "still_blocked_for_review")
+                _qresolve_append(journal, {
+                    **resolved[decision_id], "action": "auto_applied", **counts,
+                    "class": "FACT", "confidence": decision["confidence"],
+                    "revival": revival, "ready_verified": False,
+                })
+                return _qresolve_receipt("APPLIED", decision_id, **counts, revival=revival)
+            except (OSError, ValueError, TypeError, KeyError, RuntimeError):
+                # A failed append can leave an ambiguous final line. Never retry it
+                # in this process or claim a completed application without receipt.
+                try:
+                    _qresolve_append(journal, {
+                        "ts": datetime.now(timezone.utc).isoformat(),
+                        "decision_id": decision_id, "card_key": card_key,
+                        "action": "held", "reason": "revalidation_or_write_failed",
+                    })
+                except (OSError, ValueError, TypeError):
+                    pass
+                return _qresolve_receipt("HOLD", decision_id, "revalidation_or_write_failed")
+    except (OSError, RuntimeError):
+        return _qresolve_receipt("HOLD", decision_id, "lock_unavailable")
 
 
 def main(argv=None):
@@ -248,7 +544,9 @@ def main(argv=None):
     g = ap.add_mutually_exclusive_group(required=True)
     g.add_argument("--key", help="tray card key from the digest / input-tray.json")
     g.add_argument("--family", help="decision family, e.g. travel_commitment/general")
-    ap.add_argument("--answer", required=True, help="the applicant's verbatim answer")
+    g.add_argument("--qresolve-request", metavar="PATH",
+                   help="revalidate and reuse an authorized evidence-bound FACT")
+    ap.add_argument("--answer", help="the applicant's verbatim answer")
     ap.add_argument("--live", action="store_true", help="apply (default: dry run)")
     ap.add_argument("--bank-new", metavar="KEY",
                     help="also bank as new answer_bank key KEY")
@@ -262,6 +560,12 @@ def main(argv=None):
     ap.add_argument("--bank", metavar="PATH", default=DEFAULT_BANK,
                     help="answer-bank JSON path (default: <keel-home>/data/answer_bank.json)")
     args = ap.parse_args(argv)
+    if args.qresolve_request:
+        if args.answer is not None or args.bank_new or args.bank_key or args.scope:
+            ap.error("--qresolve-request cannot supply an answer, bank write, or scope")
+        return apply_qresolve(args.qresolve_request, args.bank, live=args.live)
+    if args.answer is None:
+        ap.error("manual --key/--family requires --answer")
 
     card, targets, err = find_targets(key=args.key, family=args.family)
     if card is None:
@@ -290,6 +594,9 @@ def main(argv=None):
         print("REFUSED: blocker-source classification failed — fail closed.")
         return 3
 
+    if _structural_guard(card, targets):
+        print("REFUSED: structural blocker requires its designated route")
+        return 3
     total_blockers = sum(len(m) for _, _, m in targets)
     print(f"card: [{card['family']}] {card['question'][:100]}")
     print(f"key: {card['key']}")
@@ -302,15 +609,18 @@ def main(argv=None):
         return 0
 
     # ---- live path ----
-    bkdir = os.path.join(DATA, "queues",
-                         f"_backup-{datetime.now(PDT).strftime('%Y%m%dT%H%M%S')}-tray-answer")
-    os.makedirs(bkdir, exist_ok=True)
-    for src in (STD_Q, NI_Q, args.bank):
-        if os.path.exists(src):
-            shutil.copy2(src, os.path.join(bkdir, os.path.basename(src)))
-    print(f"backup: {bkdir}")
-
+    # Targets and pre-write snapshots must belong to the same locked read.
     with queue_io.queue_lock(owner="tray_answer:apply"):
+        card, targets, err = find_targets(key=args.key, family=args.family)
+        if card is None:
+            print(f"NO-MATCH: {err}")
+            return 2
+        if _structural_guard(card, targets):
+            print("REFUSED: structural blocker requires its designated route")
+            return 3
+        total_blockers = sum(len(m) for _, _, m in targets)
+        bkdir = _durable_backup(args.bank)
+        print(f"backup: {bkdir}")
         queues = {NI_Q: load_list(NI_Q), STD_Q: load_list(STD_Q)}
         changed = {"needs_input": 0, "standard": 0}
         fully = 0

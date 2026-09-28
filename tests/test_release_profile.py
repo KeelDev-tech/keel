@@ -160,6 +160,12 @@ class ProfilePackagingTests(unittest.TestCase):
             host = cli('host-preflight', expected=1)
             self.assertFalse(host['local_checks_passed'])  # no operator-created budget
             self.assertFalse(host['execution_authorized'])
+            questions = cli('qresolve')
+            self.assertFalse(questions['auto_apply_enabled'])
+            self.assertEqual(questions['canonical_writes'], 0)
+            drafts = cli('qresolve', '--live')
+            self.assertEqual(drafts['canonical_writes'], 0)
+            self.assertFalse(drafts['submission_authorized'])
             rehearsal = subprocess.run([sys.executable, '-S',
                 str(code / 'tools/run_productivity_rehearsal.py'), '--out', str(temp / 'rehearsal')],
                 cwd=temp, env=env, capture_output=True, text=True, timeout=30)

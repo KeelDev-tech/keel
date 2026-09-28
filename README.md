@@ -3,7 +3,7 @@
 <!-- Repo is live at KeelDev-tech/keel. -->
 [![CI](https://github.com/KeelDev-tech/keel/actions/workflows/ci.yml/badge.svg)](.github/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.6.3-informational.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.6.4-informational.svg)](CHANGELOG.md)
 
 <p align="center"><img src="docs/assets/keel-logo.png" width="160" alt="Keel logo"></p>
 
@@ -262,3 +262,5 @@ Apache-2.0 — see [LICENSE](LICENSE).
 &nbsp;
 <a href="https://similarlabs.com" target="_blank" rel="nofollow"><img src="https://similarlabs.com/similarlabs-embed-badge-light.svg" alt="List on SimilarLabs" width="124" height="40" /></a>
 </p>
+
+QRESOLVE retrieves evidence-backed answers for the question tray, with factual reuse off by default. See [question resolution](docs/QUESTION_RESOLUTION.md) for local commands, authorization and recovery behavior.
