@@ -233,6 +233,11 @@ def main(argv=None):
     productivity_advice.add_argument('--trial-id', required=True)
     productivity_advice.add_argument('--max-cycles', type=int, default=3,
                                       help='upper bound on proposed follow-up cycles, 1..100')
+    question_resolver = sub.add_parser('qresolve',
+        help='find exact scoped answers in local evidence; dry-run by default')
+    question_resolver.add_argument('--live', action='store_true',
+        help='save drafts; automatic FACT reuse additionally requires explicit local authorization')
+    question_resolver.add_argument('--max-cards', type=int, default=50)
     for command in (host_preflight, productivity_status, productivity_once, productivity_recover,
                     productivity_trial, productivity_report, productivity_compare, productivity_advice):
         command.add_argument('--budget-ledger', default=os.environ.get('KEEL_BUDGET_LEDGER'),
@@ -292,6 +297,13 @@ def main(argv=None):
         if args.command == 'demo':
             from first_run_demo import run_demo
             result = run_demo(args.home)
+        elif args.command == 'qresolve':
+            import qresolve
+            try:
+                result = qresolve.console_report(qresolve.run(
+                    args.home, live=args.live, max_cards=args.max_cards))
+            except (OSError, ValueError, TypeError, KeyError, RuntimeError):
+                raise ValueError('qresolve_input_or_state_invalid') from None
         elif args.command == 'host-preflight':
             import host_readiness
             result = host_readiness.inspect(args.home, budget_ledger=args.budget_ledger,
@@ -385,6 +397,8 @@ def main(argv=None):
             return 0 if result['local_checks_passed'] else 1
         if args.command == 'productivity-advice':
             return 1 if result['status'] == 'HOLD' else 0
+        if args.command == 'qresolve':
+            return 1 if result.get('status') == 'HOLD' else 0
         return 1 if args.command == 'doctor' and not result['ready_for_local_preparation'] else 0
     except (OSError, ValueError, TypeError, KeyError, RuntimeError) as exc:
         print(json.dumps({'error': str(exc), 'action': args.command}), file=sys.stderr)
