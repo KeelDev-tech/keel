@@ -1,5 +1,6 @@
 """Exact provider receipt projection, entirely local synthetic host fixtures."""
 import copy
+from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 import json
@@ -399,6 +400,84 @@ class ReceiptProjectionTests(unittest.TestCase):
                 self.assertTrue(result['queue_committed'])
                 self.assertEqual(self.run_projection()['status'], 'REPLAYED')
                 self.assertEqual(len(self.event_rows()), 1)
+
+    def test_ack_lock_timeout_preserves_known_commit_and_replay_deduplicates(self):
+        real_lock = queue_io.queue_lock
+
+        @contextmanager
+        def unavailable_ack(*args, **kwargs):
+            if kwargs.get('owner') == 'receipt-projection:ack':
+                raise TimeoutError('synthetic private lock detail')
+            with real_lock(*args, **kwargs):
+                yield
+
+        with patch.object(queue_io, 'queue_lock', unavailable_ack):
+            result = self.run_projection()
+        self.assertEqual(result['status'], 'PROJECTED')
+        self.assertEqual(result['reason'], 'acknowledgment_unavailable')
+        self.assertTrue(result['queue_committed'])
+        self.assertTrue(result['event_pending'])
+        self.assertEqual(result['telemetry_error'], 'TimeoutError')
+        self.assertNotIn('synthetic private lock detail', str(result))
+        self.assertIn(projection.OUTBOX, self.queue_entry())
+        self.assertEqual(len(self.event_rows()), 1)
+        replay = self.run_projection()
+        self.assertEqual(replay['status'], 'REPLAYED')
+        self.assertFalse(replay['event_pending'])
+        self.assertEqual(replay['event_id'], result['event_id'])
+        self.assertEqual(len(self.event_rows()), 1)
+
+    def test_ack_read_failure_preserves_known_commit_and_replay_deduplicates(self):
+        real_read, real_log = projection._read, log_event.log
+        event_appended = False
+
+        def appended(**kwargs):
+            nonlocal event_appended
+            receipt = real_log(**kwargs)
+            event_appended = True
+            return receipt
+
+        def unreadable_ack(path):
+            if event_appended and path == self.queue:
+                raise OSError('synthetic private filesystem detail')
+            return real_read(path)
+
+        with patch.object(log_event, 'log', appended), patch.object(projection, '_read', unreadable_ack):
+            result = self.run_projection()
+        self.assertEqual(result['status'], 'PROJECTED')
+        self.assertEqual(result['reason'], 'acknowledgment_unavailable')
+        self.assertTrue(result['queue_committed'])
+        self.assertTrue(result['event_pending'])
+        self.assertEqual(result['telemetry_error'], 'OSError')
+        self.assertNotIn('synthetic private filesystem detail', str(result))
+        self.assertIn(projection.OUTBOX, self.queue_entry())
+        self.assertEqual(len(self.event_rows()), 1)
+        replay = self.run_projection()
+        self.assertEqual(replay['status'], 'REPLAYED')
+        self.assertFalse(replay['event_pending'])
+        self.assertEqual(replay['event_id'], result['event_id'])
+        self.assertEqual(len(self.event_rows()), 1)
+
+    def test_ack_unlock_failure_after_write_keeps_outcome_unknown(self):
+        real_lock = queue_io.queue_lock
+
+        @contextmanager
+        def uncertain_ack(*args, **kwargs):
+            with real_lock(*args, **kwargs):
+                yield
+            if kwargs.get('owner') == 'receipt-projection:ack':
+                raise OSError('synthetic acknowledgment unlock uncertainty')
+
+        with patch.object(queue_io, 'queue_lock', uncertain_ack):
+            result = self.run_projection()
+        self.assertEqual(result['status'], 'UNKNOWN')
+        self.assertEqual(result['reason'], 'acknowledgment_write_outcome_unknown')
+        self.assertTrue(result['queue_committed'])
+        self.assertIsNone(result['event_pending'])
+        self.assertEqual(result['error_class'], 'OSError')
+        self.assertNotIn(projection.OUTBOX, self.queue_entry())
+        self.assertEqual(self.run_projection()['status'], 'REPLAYED')
+        self.assertEqual(len(self.event_rows()), 1)
 
     def test_retained_marker_or_pending_payload_tampering_is_held(self):
         with patch.object(log_event, 'log', side_effect=OSError('keep outbox')):

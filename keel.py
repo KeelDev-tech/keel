@@ -206,6 +206,8 @@ def main(argv=None):
     validate.add_argument('packet')
     sub.add_parser('roles', help='show review roles and their supported CLI actions')
     sub.add_parser('supply', help='disjoint supply states and exact question groups; no inferred answers')
+    host_preflight = sub.add_parser('host-preflight',
+        help='offline, non-migrating checks before a bounded public trial')
     productivity_status = sub.add_parser('productivity-status',
         help='inspect live pipeline bottlenecks and recorded efficiency; no network reads')
     productivity_once = sub.add_parser('productivity-once',
@@ -226,7 +228,7 @@ def main(argv=None):
         help='compare actual trial cohorts; mismatched workloads cannot establish gains')
     productivity_compare.add_argument('--baseline', required=True)
     productivity_compare.add_argument('--candidate', required=True)
-    for command in (productivity_status, productivity_once, productivity_recover,
+    for command in (host_preflight, productivity_status, productivity_once, productivity_recover,
                     productivity_trial, productivity_report, productivity_compare):
         command.add_argument('--budget-ledger', default=os.environ.get('KEEL_BUDGET_LEDGER'),
                              help='existing resource ledger shared with other workers')
@@ -281,6 +283,10 @@ def main(argv=None):
         if args.command == 'demo':
             from first_run_demo import run_demo
             result = run_demo(args.home)
+        elif args.command == 'host-preflight':
+            import host_readiness
+            result = host_readiness.inspect(args.home, budget_ledger=args.budget_ledger,
+                                            budget_scope=args.budget_scope)
         elif args.command == 'receipt-review':
             import receipt_projection
             result = receipt_projection.reconcile(args.home, role_id=args.role_id,
@@ -291,7 +297,11 @@ def main(argv=None):
             import productivity_service
             if args.budget_ledger is not None and not Path(args.budget_ledger).is_file():
                 raise ValueError('productivity requires an existing operator-created budget ledger')
-            ledger, scope = configured_budget(args.budget_ledger, args.budget_scope)
+            read_only = args.command in {'productivity-status', 'productivity-trial-report',
+                                         'productivity-compare'} or (
+                args.command in {'productivity-once', 'productivity-trial'} and not args.live)
+            ledger, scope = configured_budget(args.budget_ledger, args.budget_scope,
+                                              readonly=read_only)
             options = {'ledger': ledger, 'scope_id': scope}
             if args.command in {'productivity-status', 'productivity-once', 'productivity-trial'}:
                 options.update(target_verified=args.target_verified, backlog_limit=args.backlog_limit)
@@ -355,6 +365,8 @@ def main(argv=None):
         else:
             result = roles
         print(json.dumps(result, indent=2))
+        if args.command == 'host-preflight':
+            return 0 if result['local_checks_passed'] else 1
         return 1 if args.command == 'doctor' and not result['ready_for_local_preparation'] else 0
     except (OSError, ValueError, TypeError, KeyError, RuntimeError) as exc:
         print(json.dumps({'error': str(exc), 'action': args.command}), file=sys.stderr)

@@ -111,6 +111,16 @@ def _dump(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
 
 
+def _filesystem_path(path):
+    try:
+        raw = os.fspath(path)
+    except TypeError as exc:
+        raise LedgerError("ledger requires a filesystem path") from exc
+    _require(type(raw) is str and raw and "\x00" not in raw and raw != ":memory:" and
+             not raw.startswith("file:"), "ledger requires a persistent filesystem path")
+    return str(Path(raw).absolute())
+
+
 class ResourceLedger:
     """SQLite transactions serialize reservations across threads and processes.
 
@@ -120,13 +130,8 @@ class ResourceLedger:
     """
 
     def __init__(self, path):
-        try:
-            raw = os.fspath(path)
-        except TypeError as exc:
-            raise LedgerError("ledger requires a filesystem path") from exc
-        _require(type(raw) is str and raw and "\x00" not in raw and raw != ":memory:" and
-                 not raw.startswith("file:"), "ledger requires a persistent filesystem path")
-        self.path = str(Path(raw).absolute())
+        self.path = _filesystem_path(path)
+        self._readonly = False
         Path(self.path).parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         try:
             fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -180,8 +185,59 @@ class ResourceLedger:
             else:
                 _require(columns["event_id"] == "TEXT", "invalid ledger event identity column")
 
+    @classmethod
+    def open_readonly(cls, path):
+        """Open an existing current-schema ledger without initialization or repair.
+
+        No scope, event, schema or accounting state is written. SQLite may need
+        access to WAL coordination sidecars; this is not a guarantee of zero
+        filesystem activity. Do not use immutable mode for a changing ledger.
+        Legacy schema migration remains an explicit writable-host operation.
+        """
+        ledger = cls.__new__(cls)
+        ledger.path = _filesystem_path(path)
+        ledger._readonly = True
+        try:
+            info = os.stat(ledger.path)
+        except OSError as exc:
+            raise LedgerError("existing resource ledger is unavailable") from exc
+        _require(stat.S_ISREG(info.st_mode), "ledger path is not a regular file")
+        with ledger._transaction(readonly=True) as db:
+            ledger._validate_readonly_schema(db)
+            ledger._instance_id(db)
+        return ledger
+
+    @staticmethod
+    def _validate_readonly_schema(db):
+        # Only fixed, bounded metadata is inspected. This is schema admission,
+        # not a claim that every historical row passed an integrity audit.
+        required = {
+            "efficiency_meta": {"singleton": "INTEGER", "schema": "TEXT", "instance_id": "TEXT"},
+            "efficiency_scopes": {"scope_id": "TEXT", "parent_id": "TEXT", "limits_json": "TEXT",
+                                  "used_json": "TEXT", "reserved_json": "TEXT", "locked": "INTEGER",
+                                  "lock_reason": "TEXT", "created_ns": "INTEGER"},
+            "efficiency_requests": {"request_id": "TEXT", "scope_id": "TEXT", "binding": "TEXT",
+                                    "estimate_json": "TEXT", "metadata_json": "TEXT", "state": "TEXT",
+                                    "usage_json": "TEXT", "remaining_json": "TEXT", "overages_json": "TEXT",
+                                    "reason": "TEXT", "created_ns": "INTEGER", "updated_ns": "INTEGER"},
+            "efficiency_events": {"sequence": "INTEGER", "request_id": "TEXT", "event": "TEXT",
+                                  "payload_json": "TEXT", "created_ns": "INTEGER", "event_id": "TEXT"},
+        }
+        for name, expected in required.items():
+            table = db.execute("SELECT type FROM sqlite_master WHERE name=?", (name,)).fetchone()
+            _require(table is not None and table["type"] == "table",
+                     "resource ledger schema is incomplete; writable host validation required")
+            columns = {row["name"]: row["type"].upper()
+                       for row in db.execute("SELECT name,type FROM pragma_table_info(?)", (name,))}
+            if ((name == "efficiency_meta" and "instance_id" not in columns) or
+                    (name == "efficiency_events" and "event_id" not in columns)):
+                raise LedgerError("resource ledger migration required; read-only inspection cannot migrate")
+            _require(all(columns.get(column) == kind for column, kind in expected.items()),
+                     "resource ledger schema is incompatible; writable host validation required")
+
     @contextmanager
     def _transaction(self, *, initialize=False, readonly=False):
+        _require(not self._readonly or readonly, "read-only ledger cannot mutate state")
         db = None
         try:
             if readonly:
@@ -491,14 +547,14 @@ class ResourceLedger:
 
     def request(self, request_id):
         _ident(request_id)
-        with self._transaction() as db:
+        with self._transaction(readonly=True) as db:
             return self._request_dict(self._request_row(db, request_id))
 
     def snapshot(self, scope_id=None):
         """Return an atomic accounting snapshot; scopes include descendant usage."""
         if scope_id is not None:
             _ident(scope_id)
-        with self._transaction() as db:
+        with self._transaction(readonly=True) as db:
             if scope_id is not None:
                 return self._scope_dict(self._scope(db, scope_id))
             scopes = db.execute("SELECT * FROM efficiency_scopes ORDER BY scope_id").fetchall()

@@ -1,3 +1,16 @@
+## 0.6.2 — Host qualification and recovery fixes
+
+Added offline `host-preflight` checks and an isolated synthetic productivity
+rehearsal with explicit live-host unknowns. Budget inspection now opens existing
+ledgers read-only without schema initialization or migration; reads no longer
+take immediate writer transactions. SQLite WAL coordination sidecars remain a
+filesystem consideration.
+
+Fixed completed trial replay after an unrelated shared-budget lock, and receipt
+acknowledgment lock/read failures after a known queue commit. Recovery preserves
+canonical evidence, pending outboxes and uncertain write outcomes. No new paid
+service, private executor or submission authority. See docs/HOST_HANDOFF.md.
+
 ## 0.6.1 — Sustained public operation
 
 Replaced the 256-run productivity journal ceiling with indexed, retained replay history and restart-safe migration. Ledger checkpoints detect replacement and rollback without rescanning every historical request. Added fixed, resumable trial cohorts with actual workload/build fingerprints and evidence-based reports; unknown or mismatched observations cannot establish gains.

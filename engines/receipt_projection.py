@@ -326,25 +326,33 @@ def _deliver(root, path, marker, reply):
                  'receipt_projection_telemetry_receipt_missing')
     except Exception as exc:
         return {**reply, 'event_pending': True, 'telemetry_error': type(exc).__name__}
-    with queue_io.queue_lock(timeout=10, owner='receipt-projection:ack'):
-        document = _read(_regular(root, path))
-        matching = [entry for entry in rows(document) if entry.get('role_id') == marker['role_id']]
-        try:
-            current_key = _exact_key(matching[0]) if len(matching) == 1 else None
-        except (ValueError, TypeError):
-            current_key = None
-        if (len(matching) != 1 or matching[0].get(MARKER) != marker
-                or matching[0].get(OUTBOX) != event or matching[0].get('attempt_id') != marker['attempt_id']
-                or list(current_key or ()) != marker['posting_identity']
-                or matching[0].get('application_id') not in (None, '', marker['application_id'])
-                or matching[0].get('status') != 'SUBMITTED'):
-            return {**reply, 'event_pending': True, 'telemetry_error': 'acknowledgment_conflict'}
-        matching[0].pop(OUTBOX)
-        try:
+    acknowledgment_write_attempted = False
+    try:
+        with queue_io.queue_lock(timeout=10, owner='receipt-projection:ack'):
+            document = _read(_regular(root, path))
+            matching = [entry for entry in rows(document) if entry.get('role_id') == marker['role_id']]
+            try:
+                current_key = _exact_key(matching[0]) if len(matching) == 1 else None
+            except (ValueError, TypeError):
+                current_key = None
+            if (len(matching) != 1 or matching[0].get(MARKER) != marker
+                    or matching[0].get(OUTBOX) != event or matching[0].get('attempt_id') != marker['attempt_id']
+                    or list(current_key or ()) != marker['posting_identity']
+                    or matching[0].get('application_id') not in (None, '', marker['application_id'])
+                    or matching[0].get('status') != 'SUBMITTED'):
+                return {**reply, 'event_pending': True, 'telemetry_error': 'acknowledgment_conflict'}
+            matching[0].pop(OUTBOX)
+            acknowledgment_write_attempted = True
             atomic_json(path, document)
-        except Exception as exc:
+    except Exception as exc:
+        if acknowledgment_write_attempted:
             return {**reply, 'status': 'UNKNOWN', 'reason': 'acknowledgment_write_outcome_unknown',
                     'event_pending': None, 'error_class': type(exc).__name__}
+        # The projection and event append already succeeded. Failure to reach
+        # the acknowledgment writer must preserve that known outcome and leave
+        # the durable outbox available for a freshly validated replay.
+        return {**reply, 'reason': 'acknowledgment_unavailable', 'event_pending': True,
+                'telemetry_error': type(exc).__name__}
     return {**reply, 'event_pending': False}
 
 

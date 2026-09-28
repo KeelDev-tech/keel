@@ -30,14 +30,15 @@ def open_default_budget(home):
     return ledger, DEFAULT_SCOPE
 
 
-def configured_budget(path, scope_id):
+def configured_budget(path, scope_id, *, readonly=False):
+    """Open an explicit existing scope; inspection can refuse all state writes."""
     if (path is None) != (scope_id is None):
         raise ValueError("budget ledger and scope must be supplied together")
     if path is None:
         return None, None
     if not path or not scope_id:
         raise ValueError("budget ledger and scope cannot be empty")
-    ledger = ResourceLedger(path)
+    ledger = ResourceLedger.open_readonly(path) if readonly else ResourceLedger(path)
     ledger.snapshot(scope_id)  # Existing operator-created scope required.
     return ledger, scope_id
 
