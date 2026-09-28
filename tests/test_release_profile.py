@@ -157,6 +157,14 @@ class ProfilePackagingTests(unittest.TestCase):
             trial = cli('productivity-trial', '--trial-id', 'offline-release-check')
             self.assertTrue(trial['dry_run'])
             self.assertFalse(trial['execution_authorized'])
+            host = cli('host-preflight', expected=1)
+            self.assertFalse(host['local_checks_passed'])  # no operator-created budget
+            self.assertFalse(host['execution_authorized'])
+            rehearsal = subprocess.run([sys.executable, '-S',
+                str(code / 'tools/run_productivity_rehearsal.py'), '--out', str(temp / 'rehearsal')],
+                cwd=temp, env=env, capture_output=True, text=True, timeout=30)
+            self.assertEqual(rehearsal.returncode, 0, rehearsal.stdout + rehearsal.stderr)
+            self.assertEqual(json.loads(rehearsal.stdout)['status'], 'PASS')
             demo = cli('demo', workspace=temp / 'offline-demo')
             self.assertTrue(all(demo['checks'].values()))
             self.assertEqual(demo['external_network_requests'], 0)

@@ -109,6 +109,119 @@ class ProductivityTrialsTests(unittest.TestCase):
                     self.run_trial(**options)
         self.assertEqual(self.calls, [])
 
+    def lock_scope_with_unrelated_overage(self):
+        self.ledger.reserve('unrelated-work', 'shared', {'calls': 1})
+        self.ledger.mark_dispatched('unrelated-work')
+        self.ledger.settle('unrelated-work', {'calls': 2})
+        self.assertTrue(self.ledger.snapshot('shared')['locked'])
+
+    def test_completed_trial_replay_ignores_later_unrelated_scope_lock(self):
+        pipeline.add_source(self.home, 'greenhouse:fixture')
+        first = self.run_trial(max_cycles=2)
+        manifest = self.manifest().read_bytes()
+        self.lock_scope_with_unrelated_overage()
+        accounting = self.ledger.snapshot('shared')
+
+        replay = self.run_trial(max_cycles=2)
+
+        self.assertEqual(replay['measurement_status'], 'COMPLETE')
+        self.assertEqual(replay['receipts'], first['receipts'])
+        self.assertEqual(self.report()['receipts'], first['receipts'])
+        self.assertEqual(self.manifest().read_bytes(), manifest)
+        self.assertEqual(self.ledger.snapshot('shared'), accounting)
+        self.assertEqual(len(self.calls), 2)
+
+    def test_partial_trial_with_later_scope_lock_stops_at_unattempted_run(self):
+        pipeline.add_source(self.home, 'greenhouse:fixture')
+        original = service.run_once
+        invocations = 0
+
+        def interrupt_second(*args, **kwargs):
+            nonlocal invocations
+            invocations += 1
+            if invocations == 2:
+                raise SystemExit('synthetic interruption between cycles')
+            return original(*args, **kwargs)
+
+        with patch.object(service, 'run_once', side_effect=interrupt_second):
+            with self.assertRaises(SystemExit):
+                self.run_trial(max_cycles=3)
+        first_receipts = self.report()['receipts']
+        self.lock_scope_with_unrelated_overage()
+        accounting = self.ledger.snapshot('shared')
+
+        resumed = self.run_trial(max_cycles=3)
+
+        self.assertEqual(resumed['measurement_status'], 'INCONCLUSIVE')
+        self.assertEqual(resumed['stop_reason'], 'HELD_BUDGET')
+        self.assertEqual(resumed['stop']['index'], 1)
+        self.assertEqual(resumed['stop_evidence'], 'local_stop_record_only')
+        self.assertEqual(resumed['receipts'], first_receipts)
+        self.assertEqual(len(resumed['planned_not_dispatched']), 2)
+        self.assertEqual(self.report()['receipts'], first_receipts)
+        self.assertEqual(self.ledger.snapshot('shared'), accounting)
+        self.assertEqual(len(self.calls), 1)
+
+    def test_completed_trial_replay_ignores_later_reconciliation_of_unknown_usage(self):
+        pipeline.add_source(self.home, 'greenhouse:fixture')
+        first = self.run_trial(max_cycles=2)
+        manifest = self.manifest().read_bytes()
+        request_id = first['receipts'][0]['request_id']
+        self.ledger.reconcile(request_id, {'external_credit_micros': 1})
+        self.assertTrue(self.ledger.snapshot('shared')['locked'])
+        accounting = self.ledger.snapshot('shared')
+
+        replay = self.run_trial(max_cycles=2)
+
+        self.assertEqual(replay['measurement_status'], 'COMPLETE')
+        self.assertEqual(replay['receipts'], first['receipts'])
+        self.assertEqual(self.report()['receipts'], first['receipts'])
+        self.assertEqual(self.manifest().read_bytes(), manifest)
+        self.assertEqual(self.ledger.snapshot('shared'), accounting)
+        self.assertEqual(len(self.calls), 2)
+
+    def test_actual_cycle_overage_stops_before_next_dispatch(self):
+        pipeline.add_source(self.home, 'greenhouse:fixture')
+        moments = iter((0.0, 0.0, 31.0))
+
+        result = self.run_trial(max_cycles=2, monotonic=lambda: next(moments))
+
+        self.assertEqual(result['stop_reason'], 'HELD_BUDGET')
+        self.assertEqual(result['stop']['index'], 0)
+        self.assertEqual(result['measurement_status'], 'STOPPED')
+        self.assertEqual(result['stop_evidence'], 'canonical_run_receipt')
+        request = self.ledger.request(result['receipts'][0]['request_id'])
+        self.assertEqual(request['overages'], {'compute_ms': 1000})
+        self.assertEqual(result['stages']['discover']['compute_ms'], 31000)
+        self.assertEqual(len(self.calls), 1)
+
+    def test_replay_recovers_actual_overage_stop_after_plan_write_interruption(self):
+        pipeline.add_source(self.home, 'greenhouse:fixture')
+        original = trials.atomic_json
+
+        def interrupt_stop(path, document):
+            if document.get('stop') is not None:
+                raise OSError('synthetic stop publication interruption')
+            return original(path, document)
+
+        moments = iter((0.0, 0.0, 31.0))
+        with patch.object(trials, 'atomic_json', side_effect=interrupt_stop):
+            with self.assertRaises(OSError):
+                self.run_trial(max_cycles=2, monotonic=lambda: next(moments))
+        self.assertIsNone(read_json(self.manifest())['stop'])
+        accounting = self.ledger.snapshot('shared')
+
+        resumed = self.run_trial(max_cycles=2)
+
+        self.assertEqual(resumed['stop_reason'], 'HELD_BUDGET')
+        self.assertEqual(resumed['stop']['index'], 0)
+        self.assertEqual(resumed['measurement_status'], 'STOPPED')
+        self.assertEqual(resumed['stop_evidence'], 'canonical_run_receipt')
+        self.assertEqual(resumed['receipt_runs'], 1)
+        self.assertEqual(resumed['stages']['discover']['compute_ms'], 31000)
+        self.assertEqual(self.ledger.snapshot('shared'), accounting)
+        self.assertEqual(len(self.calls), 1)
+
     def test_invalid_cycle_counts_and_missing_budget_fail_before_manifest(self):
         for value in (0, 101, True, 1.5):
             with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'cycle_limit'):

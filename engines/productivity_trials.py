@@ -237,6 +237,17 @@ def run_trial(workspace, *, trial_id, label='candidate', max_cycles=3, ledger=No
             result = service.run_once(root, run_id=run_id, ledger=ledger, scope_id=scope_id,
                                       live=True, fetcher=fetcher, clock=clock, monotonic=monotonic, **options)
             locked = ledger.snapshot(scope_id)['locked']
+            if locked and result.get('replayed'):
+                # Another request may have locked the shared scope after this
+                # receipt was recorded. Do not insert a historical stop before
+                # already completed later cycles. A real overage on this exact
+                # request still reconstructs a stop lost before plan publication.
+                request_id = result.get('request_id')
+                request = ledger.request(request_id) if request_id else None
+                # Unknown usage can also be reconciled after later cycles ran;
+                # only dimensions measured in this receipt establish its stop.
+                locked = bool(request and any(result.get('usage', {}).get(name) is not None
+                                               for name in request['overages']))
             if _stop(result) or locked:
                 stop = 'HELD_BUDGET' if locked else result['status']
                 document['stop'] = {'run_id': run_id, 'index': index, 'status': stop,

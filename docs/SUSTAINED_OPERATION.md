@@ -7,6 +7,9 @@ service, start a daemon or submit applications.
 
 ## Prepare the existing host
 
+For the non-migrating `host-preflight` command, isolated rehearsal and a concrete
+operator handoff, see [HOST_HANDOFF.md](HOST_HANDOFF.md).
+
 Keep code separate from private workspace data. Back up the workspace and its
 resource ledger together using a coherent snapshot while writers are stopped.
 Confirm the host's queue writers cooperate with the same queue lock before
