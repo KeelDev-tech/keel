@@ -166,6 +166,10 @@ class ProfilePackagingTests(unittest.TestCase):
             drafts = cli('qresolve', '--live')
             self.assertEqual(drafts['canonical_writes'], 0)
             self.assertFalse(drafts['submission_authorized'])
+            recovery = cli('qresolve-recover')
+            self.assertNotEqual(recovery['status'], 'HOLD')
+            refused = cli('qresolve-approve', '--decision-id', 'a' * 64, expected=3)
+            self.assertEqual(refused['status'], 'HOLD')
             rehearsal = subprocess.run([sys.executable, '-S',
                 str(code / 'tools/run_productivity_rehearsal.py'), '--out', str(temp / 'rehearsal')],
                 cwd=temp, env=env, capture_output=True, text=True, timeout=30)

@@ -19,6 +19,7 @@ import sys
 import queue_io
 from qresolve_corpus import Corpus
 from qresolve_semantics import canonical_fingerprint, classify
+import qresolve_schedule
 
 POLICY_VERSION = 'qresolve.v1'
 MAX_BYTES = 16 * 1024 * 1024
@@ -101,17 +102,10 @@ def _for_card(card, contexts):
 
 
 def _pending(root):
+    from qresolve_recovery import journal_state
     events = _read(root / 'hidden_files/qresolve-resolutions.jsonl', [], lines=True)
-    pending = set()
-    for event in events:
-        if type(event) is not dict or not isinstance(event.get('decision_id'), str):
-            raise ValueError('invalid qresolve journal event')
-        action = event.get('action')
-        if action == 'INTENT':
-            pending.add(event['decision_id'])
-        elif action == 'auto_applied':
-            pending.discard(event['decision_id'])
-    return pending
+    pending, _ = journal_state(events)
+    return set(pending)
 
 
 def _fresh(hit, today):
@@ -201,26 +195,77 @@ def _snapshot_cards(root):
                   key=lambda card: (-card['unblock_fit'], -(card.get('oldest_parked_h') or 0), card['key']))
 
 
-def inspect(workspace=None, *, max_cards=50):
+def _inspect(workspace=None, *, max_cards=50):
     if type(max_cards) is not int or not 1 <= max_cards <= 500:
         raise ValueError('max_cards must be between 1 and 500')
     root = _root(workspace)
     config = _config(root)
     contexts = _contexts(root)
     cards = _snapshot_cards(root)
+    schedule = qresolve_schedule.validate(_read(root / 'hidden_files/qresolve-schedule.json',
+                                               qresolve_schedule.empty_state()))
     corpus = Corpus(root)
     pending = bool(_pending(root))
+    # Derived tray timestamps must not make every unchanged card look new.
+    # Canonical queue rows are hashed per card below; other source revisions
+    # (including bank changes) can request priority but never grant authority.
+    derived = {str(root / name) for name in ('hidden_files/input-tray.json',
+               'data/queues/needs_input-queue.json', 'data/queues/standard-queue.json')}
+    sources = digest({path: value for path, value in corpus.snapshot.items() if path not in derived})
+    candidates = [(digest({'card_key': card['key']}), digest({
+        'question': card.get('norm') or card.get('question'), 'family': card.get('family'),
+        'contexts': _for_card(card, contexts), 'config': config, 'sources': sources,
+        'policy': POLICY_VERSION})) for card in cards]
+    selected, next_schedule, scheduling = qresolve_schedule.plan(candidates, schedule, max_cards)
     decisions = [plan_card(card, _for_card(card, contexts), corpus, config, pending=pending)
-                 for card in cards[:max_cards]]
-    if not corpus.verify_snapshot() or contexts != _contexts(root) or config != _config(root):
+                 for card in (cards[index] for index in selected)]
+    if (not corpus.verify_snapshot() or contexts != _contexts(root) or config != _config(root)
+            or schedule != _read(root / 'hidden_files/qresolve-schedule.json',
+                                 qresolve_schedule.empty_state())):
         raise ValueError('canonical evidence changed during inspection')
-    return {'schema': 'keel.qresolve.report.v1', 'mode': 'dry_run',
+    report = {'schema': 'keel.qresolve.report.v1', 'mode': 'dry_run',
             'cards_seen': len(decisions), 'cards_remaining': max(0, len(cards) - len(decisions)),
             'decisions': decisions, 'corpus_diagnostics': corpus.errors,
+            'scheduling': scheduling,
             'auto_apply_enabled': config.get('AUTO_APPLY_FACTS', False),
             'pending_intent': pending, 'network_calls': 0, 'model_calls': 0,
             'submission_authorized': False, 'canonical_writes': 0,
             'actual_ready_transitions': None, 'actual_credit_savings': None}
+    return report, next_schedule, {card['key'] for card in cards}
+
+
+def inspect(workspace=None, *, max_cards=50):
+    """Preview the next fair inspection batch without advancing durable state."""
+    return _inspect(workspace, max_cards=max_cards)[0]
+
+
+def _merge_proposals(root, decisions, active_keys):
+    """Keep active earlier drafts reviewable as the planning batch rotates."""
+    saved = _read(root / 'hidden_files/qresolve-proposals.json', {
+        'schema': 'keel.qresolve.proposals.v1', 'decisions': []})
+    if (type(saved) is not dict or set(saved) != {'schema', 'decisions'}
+            or saved['schema'] != 'keel.qresolve.proposals.v1'
+            or type(saved['decisions']) is not list
+            or len(saved['decisions']) > qresolve_schedule.MAX_CARDS):
+        raise ValueError('invalid qresolve proposal store')
+    previous = {}
+    for decision in saved['decisions']:
+        if (type(decision) is not dict or type(decision.get('card_key')) is not str
+                or not decision['card_key'] or decision['card_key'] in previous
+                or type(decision.get('decision_id')) is not str
+                or len(decision['decision_id']) != 64
+                or digest({key: value for key, value in decision.items() if key != 'decision_id'})
+                    != decision['decision_id']
+                or decision.get('action') not in {'auto_apply', 'draft', 'park', 'route'}):
+            raise ValueError('invalid or duplicate qresolve proposal')
+        previous[decision['card_key']] = decision
+    merged = {key: value for key, value in previous.items() if key in active_keys}
+    merged.update({decision['card_key']: decision for decision in decisions})
+    value = {'schema': 'keel.qresolve.proposals.v1',
+             'decisions': [merged[key] for key in sorted(merged)]}
+    if len(json.dumps(value, indent=1).encode('utf-8')) > MAX_BYTES:
+        raise ValueError('qresolve proposals exceed metadata capacity')
+    return value
 
 
 def _write_metadata(path, value):
@@ -251,14 +296,21 @@ def run(workspace=None, *, live=False, max_cards=50):
     root = _root(workspace)
     if not live:
         return inspect(root, max_cards=max_cards)
+    from qresolve_recovery import preflight_locks
+    preflight_locks(root)
     report = inspect(root, max_cards=max_cards)
     with queue_io.queue_lock(owner='qresolve:proposals'):
         # Recompute after lock acquisition. A proposal is never an authority token.
-        report = inspect(root, max_cards=max_cards)
+        report, next_schedule, active_keys = _inspect(root, max_cards=max_cards)
         folder = _safe_path(root / 'hidden_files')
         folder.mkdir(mode=0o700, exist_ok=True)
-        _write_metadata(folder / 'qresolve-proposals.json', {
-            'schema': 'keel.qresolve.proposals.v1', 'decisions': report['decisions']})
+        proposals = _merge_proposals(root, report['decisions'], active_keys)
+        _write_metadata(folder / 'qresolve-proposals.json', proposals)
+        # Only inspection metadata advances here. Interrupted actuator work
+        # remains exclusively owned by the independent resolution journal.
+        # Replace the bounded active-card state without per-turn backups.
+        queue_io.atomic_write_json(str(_safe_path(folder / 'qresolve-schedule.json')), next_schedule)
+        report['scheduling']['state_advanced'] = True
     receipts = []
     for decision in report['decisions']:
         if decision['action'] != 'auto_apply':
@@ -326,6 +378,9 @@ def run(workspace=None, *, live=False, max_cards=50):
         metrics['attached_drafts'] = sum(isinstance(card.get('draft'), dict)
                                          and card['draft'].get('owner') == 'qresolve'
                                          for card in payload['cards'])
+        # Retained proposals are freshly checked on the whole tray surface;
+        # max_cards limits new planning, not this separate validation work.
+        metrics['tray_revalidated_cards'] = sum('qresolve' in card for card in payload['cards'])
         _append_metrics(folder / 'qresolve-metrics.jsonl', metrics)
     report['metrics'] = metrics
     return report
@@ -390,13 +445,14 @@ def console_report(report):
             'mode': 'live' if report['mode'] == 'live' else 'dry_run',
             'cards_seen': int(report['cards_seen']),
             'cards_remaining': int(report['cards_remaining']),
+            'scheduling': report['scheduling'],
             'auto_apply_enabled': report['auto_apply_enabled'] is True,
             'pending_intent': report['pending_intent'],
             'outcome_uncertain': report.get('outcome_uncertain', False) is True,
             'canonical_writes': report['canonical_writes'],
             'decision_counts': counts,
             'metrics': {key: report.get('metrics', {}).get(key) for key in
-                        ('auto_applied', 'drafted', 'parked', 'attached_drafts',
+                        ('auto_applied', 'drafted', 'parked', 'attached_drafts', 'tray_revalidated_cards',
                          'held_or_unconfirmed')},
             'submission_authorized': False,
             'private_review': 'hidden_files/input-tray.json and hidden_files/qresolve-proposals.json'}

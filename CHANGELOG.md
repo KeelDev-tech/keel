@@ -1,3 +1,17 @@
+## 0.6.5 — Recoverable and fair question resolution
+
+- Add conservative interrupted-intent inspection and explicit recovery. Proven
+  untouched or completed operations can close their holds; partial/conflicted
+  operations remain held without replay or rollback.
+- Add exact FACT/JUDGMENT draft approval that revalidates source, context and
+  scope, preserves bank provenance, and records human approval separately.
+- Add persistent fair scan selection with changed-work priority and retained
+  active proposals so repeated high-ranked cards cannot starve older work.
+- Reject unsafe lock/diagnostic paths before QRESOLVE live operations and align
+  provenance date admission with the resolver's UTC freshness clock.
+- Keep all new commands offline and read-only by default. No new service or
+  runtime dependency; no submission authority or production improvement claim.
+
 ## 0.6.4 — Evidence-backed question resolution
 
 Added offline QRESOLVE retrieval, conservative classification and exact scoped

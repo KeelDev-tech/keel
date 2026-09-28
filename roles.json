@@ -27,7 +27,9 @@
         "productivity-trial",
         "host-preflight",
         "productivity-advice",
-        "qresolve"
+        "qresolve",
+        "qresolve-recover",
+        "qresolve-approve"
       ],
       "responsibility": "Applicant truth, scope and release decisions; resolve conflicts using evidence."
     },

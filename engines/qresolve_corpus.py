@@ -14,7 +14,7 @@ import os
 from pathlib import Path
 import re
 import stat
-from datetime import date
+from datetime import date, datetime, timezone
 
 import answer_resolver
 import queue_io
@@ -176,7 +176,8 @@ def _provenance_date(provenance):
         return None
     for match in _DATE_RE.finditer(provenance):
         try:
-            if date.fromisoformat(match.group(1)) <= date.today():
+            # Match the resolver's UTC freshness clock across worker timezones.
+            if date.fromisoformat(match.group(1)) <= datetime.now(timezone.utc).date():
                 return match.group(1)
         except ValueError:
             pass
