@@ -35,6 +35,7 @@
   "docs/SOURCE_FEEDBACK.md",
   "docs/SOURCE_SCHEDULER.md",
   "docs/SUPPLY_ACCEPTANCE.md",
+  "docs/SUPPLY_MEASUREMENTS.md",
   "docs/SUSTAINED_OPERATION.md",
   "docs/VERIFICATION_READY_VALIDATION.json",
   "docs/VERIFICATION_READY_VALIDATION.md",
@@ -111,6 +112,7 @@
   "engines/staged-launch-preflight.py",
   "engines/status_matchers.py",
   "engines/submit_intent.py",
+  "engines/supply_measurements.py",
   "engines/supply_recovery.py",
   "engines/task_liveness.py",
   "engines/tray_answer.py",
@@ -350,6 +352,7 @@
   "tests/test_source_scheduler.py",
   "tests/test_staged_admission_recovery.py",
   "tests/test_supply_acceptance.py",
+  "tests/test_supply_measurements.py",
   "tests/test_sustained_cli.py",
   "tests/test_task_liveness_repair.py",
   "tests/test_verification_transport_contract.py",
@@ -361,6 +364,7 @@
   "tools/run_productivity_faultlab.py",
   "tools/run_productivity_rehearsal.py",
   "tools/run_supply_acceptance.py",
+  "tools/run_supply_replay.py",
   "tools/run_tests.py",
   "tools/transfer_reader.py"
 ]

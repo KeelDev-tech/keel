@@ -35,7 +35,8 @@
         "supply-plan",
         "supply-reconcile",
         "supply-canary",
-        "qresolve-supply"
+        "qresolve-supply",
+        "supply-measurements"
       ],
       "responsibility": "Applicant truth, scope and release decisions; resolve conflicts using evidence."
     },
@@ -58,7 +59,8 @@
         "muse-census",
         "supply-plan",
         "supply-reconcile",
-        "supply-canary"
+        "supply-canary",
+        "supply-measurements"
       ],
       "responsibility": "Source identity, freshness, deduplication and permitted public reads; no claims of submission."
     },
@@ -79,7 +81,8 @@
         "pipeline-doctor",
         "muse-census",
         "supply-plan",
-        "supply-reconcile"
+        "supply-reconcile",
+        "supply-measurements"
       ],
       "responsibility": "Materials and question coverage; no answer invention or legal commitments."
     },
@@ -99,7 +102,8 @@
         "pipeline-doctor",
         "muse-census",
         "supply-plan",
-        "supply-reconcile"
+        "supply-reconcile",
+        "supply-measurements"
       ],
       "responsibility": "Distinguish claims, correlation and verification; require a trusted receipt adapter for verified outcomes."
     },
@@ -118,7 +122,8 @@
         "pipeline-doctor",
         "muse-census",
         "supply-plan",
-        "supply-reconcile"
+        "supply-reconcile",
+        "supply-measurements"
       ],
       "responsibility": "Adversarial cases, reproducibility, concurrency, recovery and source-bound test evidence."
     },
@@ -137,7 +142,8 @@
         "pipeline-doctor",
         "muse-census",
         "supply-plan",
-        "supply-reconcile"
+        "supply-reconcile",
+        "supply-measurements"
       ],
       "responsibility": "Review network, file, credential and authority boundaries; test bypass attempts."
     },
@@ -156,7 +162,8 @@
         "pipeline-doctor",
         "muse-census",
         "supply-plan",
-        "supply-reconcile"
+        "supply-reconcile",
+        "supply-measurements"
       ],
       "responsibility": "Clear next actions, honest empty/error states, keyboard and small-screen use."
     },
@@ -176,7 +183,8 @@
         "pipeline-doctor",
         "muse-census",
         "supply-plan",
-        "supply-reconcile"
+        "supply-reconcile",
+        "supply-measurements"
       ],
       "responsibility": "State invariants, recoverability, bounded work and truthful observability."
     }
