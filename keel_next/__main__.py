@@ -2,7 +2,7 @@
 import argparse
 import json
 import sys
-from .workflow import demo, doctor
+from .workflow import demo, doctor, storage_ancestor_report
 
 
 def main(argv=None):
@@ -33,6 +33,9 @@ def main(argv=None):
         return 3 if result.get('status') in ('DEMO_FAILED','BENCHMARK_FAILED','QUALIFICATION_FAILED','EVOLUTION_DEMO_FAILED','FRONTIER_FAILED') else 0
     except (OSError,ValueError,TypeError,KeyError,RuntimeError):
         print('keel-next: blocked input or host; demo needs a new directory under an existing owner-controlled parent; writable non-sticky ancestors are forbidden',file=sys.stderr)
+        storage = storage_ancestor_report(args.home)
+        if storage['status'] != 'ANCESTORS_ACCEPTED':
+            print(json.dumps({'advanced_storage_ancestors': storage}, sort_keys=True), file=sys.stderr)
         return 2
 
 

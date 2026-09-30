@@ -31,28 +31,60 @@ side. They will be closed.
 
 ## Dev setup
 
-Python 3.11+. The local runtime uses the standard library. Development tests
-use the free dependencies in `requirements-dev.txt`; CI tests Python 3.11 and
-3.12. Install them with `python3 -m pip install -r requirements-dev.txt`.
+Python 3.11+ on Linux; CI tests 3.11 and 3.12. Use a separate virtual
+environment with the same complete pinned dependency set as CI:
 
 ```bash
-./setup.sh          # "Make it mine" — copies examples into data/, walks you
-                    # through identity fields. Non-interactive shells skip
-                    # the prompts; edit data/ with YOUR truth afterward.
-./start.sh          # status overview: answer bank, queues, ledger, dashboard
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -r requirements-validation.lock
+.venv/bin/python -m pip check
+source .venv/bin/activate
 ```
 
-Then, from the repo root:
+Select an installed Python 3.11 interpreter instead if validating that CI leg.
+Use the virtual environment explicitly in every new shell; an install script's
+PATH changes do not prove that later sessions use it. Recheck the pins and run
+the workflow commands after a fresh environment launch. Cloud configuration
+must be reviewed/published separately; a successful current-session install
+does not establish persistence.
+
+`setup.sh` initializes applicant workspace templates; it does **not** install
+test dependencies or prompt for identity. For a synthetic first-run check, use
+a separate temporary directory, never a live workspace or the source tree:
 
 ```bash
-KEEL_HOME=$PWD python3 engines/score_roles.py --in sample_data/discovered_roles.example.json --out data/scored.json
-KEEL_HOME=$PWD python3 engines/apply_loop.py          # build one launch packet
-KEEL_HOME=$PWD python3 engines/build_dashboard.py    # render the dashboard
-python3 -m unittest discover -s tests                 # unittest suite
-python3 -m pytest -q tests/test_optimization_*.py security/tests/test_optimization_security.py
-python3 -m pytest -q tests/test_security_boundary_peer_denial.py
-python3 -m py_compile engines/*.py                    # syntax check
+KEEL_CHECK_PARENT="$(mktemp -d)"
+KEEL_PYTHON="$PWD/.venv/bin/python" ./setup.sh "$KEEL_CHECK_PARENT/fresh"
+KEEL_PYTHON="$PWD/.venv/bin/python" ./start.sh "$KEEL_CHECK_PARENT/fresh"
+# Expected exit 1: first_name, last_name and email remain unknown.
+.venv/bin/python -S keel.py --home "$KEEL_CHECK_PARENT/demo" demo
+.venv/bin/python -m keel_next doctor --home "$KEEL_CHECK_PARENT/advanced"
 ```
+
+The advanced storage diagnostic is read-only: it reports the production
+ancestor guard's result and observed owner/mode metadata without creating a
+workspace or opening its databases. `ANCESTORS_ACCEPTED` checks only that chain;
+it does not prove private storage permissions, writable storage, or execution
+authority. A BLOCKED/UNAVAILABLE result requires a compatible host. Every
+ancestor, including `/`, must have an allowed owner. Changing TMPDIR alone
+cannot fix an untrusted root owner. Do not relax the guard, change ownership or
+permissions, or skip the failing tests to manufacture readiness.
+
+Run the exact commands in `.github/workflows/ci.yml` and
+`.github/workflows/recovery-profile.yml` with temporary `KEEL_HOME` and
+`RUNNER_TEMP` directories. CI explicitly selects pytest function tests because
+unittest discovery omits them, including operational control/runtime and
+machine contracts. The broad `tools/run_tests.py` runner requires its separately
+supplied audit guard; do not bypass that refusal or describe direct CI commands
+as verified audit-hook isolation. Record unavailable suites and skips.
+
+Keep host integration separate from development. Do not inspect existing Muse
+state with a writable `Coordinator`: another controller advances the generation
+and fences leases. Only `Coordinator.open_readonly`, `inspect_home`, or the
+snapshot CLI are passive inspection interfaces. Follow
+[the Muse handoff](docs/MUSE_HANDOFF.md) and [host handoff](docs/HOST_HANDOFF.md):
+port against the actual host tree, stop on conflicts, and preserve host config.
+Offline development grants no live provider or submission authority.
 
 Conventions that matter:
 
