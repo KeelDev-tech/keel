@@ -197,6 +197,13 @@ class ProfilePackagingTests(unittest.TestCase):
                 self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
                 return json.loads(result.stdout)
 
+            acceptance = subprocess.run([sys.executable, '-S', str(code / 'tools/run_supply_acceptance.py'),
+                '--out', str(temp / 'supply-acceptance')], cwd=temp, env=env,
+                capture_output=True, text=True, timeout=30)
+            self.assertEqual(acceptance.returncode, 0, acceptance.stdout + acceptance.stderr)
+            acceptance_report = json.loads((temp / 'supply-acceptance/acceptance.json').read_text())
+            self.assertEqual(acceptance_report['checks_passed'], 23)
+            self.assertFalse(acceptance_report['live_muse_verified'])
             cli('init')
             census = cli('muse-census')
             self.assertIsNone(census['launchable_ready'])
