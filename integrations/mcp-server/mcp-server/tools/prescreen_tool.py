@@ -31,6 +31,8 @@ def keel_prescreen_packet(packet_brief: str, company: str = "",
             posting_text_source, posting_text_url. Completeness must be explicit;
             the production gate checks shapes, bounds and exact URL binding.
             Caller-supplied evidence is not authenticated by this diagnostic.
+            Missing form_intel.source_url binds to ats_url; explicit bindings
+            are preserved and checked by the production gate.
     Returns {"verdict": "CLEAN"|"PARK", "reasons": [...]}. PARK means a human
     must review a genuine blocker; missing evidence instead requires verification
     recovery. This diagnostic never authorizes preparation or submission.
@@ -46,6 +48,10 @@ def keel_prescreen_packet(packet_brief: str, company: str = "",
         fields = ("ats_url", "form_intel", "form_intel_complete", "posting_text",
                   "posting_text_complete", "posting_text_source", "posting_text_url")
         packet.update({key: packet_evidence[key] for key in fields if key in packet_evidence})
+        # Match screen_entry_prepromotion without mutating caller-owned evidence.
+        if isinstance(packet.get("form_intel"), dict):
+            packet["form_intel"] = dict(packet["form_intel"])
+            packet["form_intel"].setdefault("source_url", packet.get("ats_url"))
     # Explicit empty patterns: the production employer-pattern file lives in
     # the operator's private pipeline tree and is never loaded here.
     result = keel_bridge.prescreen_mod.screen_packet(packet, bank, employer_patterns={})

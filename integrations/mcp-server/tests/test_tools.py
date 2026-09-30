@@ -2,6 +2,8 @@
 the explicitly live-HTTP tools, which are tested only for contract shape
 with a guaranteed-dead URL)."""
 import sys
+
+import pytest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "mcp-server"))
@@ -188,3 +190,32 @@ def test_prescreen_evidence_cannot_inject_writeback_identity(monkeypatch):
 def test_prescreen_malformed_evidence_stays_parked():
     out = prescreen_tool.keel_prescreen_packet("", packet_evidence=[])
     assert out["verdict"] == "PARK" and out["execution_authorized"] is False
+
+
+@pytest.mark.parametrize("ats,url", [
+    ("greenhouse", "https://boards.greenhouse.io/synthetic/jobs/123"),
+    ("lever", "https://jobs.lever.co/synthetic/123"),
+])
+def test_prescreen_accepts_probe_result_without_source_url(monkeypatch, ats, url):
+    from tools import honesty
+    probe = {"ats": ats, "form_url": url, "extraction_complete": True,
+             "rendered_option_fetch_needed": [], "questions": []}
+    monkeypatch.setattr(keel_bridge.form_intel_mod, "probe_url", lambda _: probe)
+    evidence = _complete_packet_evidence()
+    evidence.update(ats_url=url, posting_text_url=url,
+                    form_intel=honesty.keel_probe_form(url))
+    out = prescreen_tool.keel_prescreen_packet("", packet_evidence=evidence)
+    assert out["verdict"] == "CLEAN"
+    assert out["execution_authorized"] is False
+    assert "source_url" not in probe
+    assert "source_url" not in evidence["form_intel"]
+
+
+@pytest.mark.parametrize("source_url", ["https://example.invalid/jobs/another", "", None])
+def test_prescreen_preserves_explicit_invalid_form_binding(source_url):
+    evidence = _complete_packet_evidence()
+    evidence["form_intel"]["source_url"] = source_url
+    out = prescreen_tool.keel_prescreen_packet("", packet_evidence=evidence)
+    assert out["verdict"] == "PARK"
+    assert out["execution_authorized"] is False
+    assert evidence["form_intel"]["source_url"] == source_url
