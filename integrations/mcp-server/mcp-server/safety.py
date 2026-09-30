@@ -10,6 +10,7 @@ Non-negotiable invariants:
 from __future__ import annotations
 
 import os
+import ipaddress
 from pathlib import Path
 
 # Directories that are permanently off-limits, matched by path prefix.
@@ -67,3 +68,20 @@ def check_no_external_action(action: str) -> None:
     allowed = {"http-get", "read-file", "list-dir"}
     if action not in allowed:
         raise SafetyError(f"external action '{action}' is not permitted by this server")
+
+
+def loopback_host(value: str) -> str:
+    """Accept literal loopback addresses only; never resolve caller hostnames.
+
+    This adapter has no authentication layer. A nonlocal bind must not expose
+    its tools or caller-supplied data to the network.
+    """
+    import argparse
+    try:
+        address = ipaddress.ip_address(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("host must be a literal loopback IP address") from None
+    if (not address.is_loopback or "%" in value
+            or (isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None)):
+        raise argparse.ArgumentTypeError("unauthenticated MCP server requires a loopback IP address")
+    return str(address)

@@ -41,6 +41,7 @@ jobs:
           tests/test_fit_policy_contract.py
           tests/test_muse_supply_recovery.py
           tests/test_supply_acceptance.py
+          tests/test_supply_measurements.py
       - name: Run offline supply acceptance
         run: python -S tools/run_supply_acceptance.py --out "${RUNNER_TEMP}/keel-supply-acceptance"
       - name: Retain supply acceptance evidence

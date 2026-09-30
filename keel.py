@@ -220,6 +220,10 @@ def main(argv=None):
     supply_canary.add_argument('--max-requests', type=int, default=10)
     supply_canary.add_argument('--timeout', type=int, default=30)
     supply_canary.add_argument('--live', action='store_true', help='persist journal and posting observations only')
+    measurements = sub.add_parser('supply-measurements', help='read-only pseudonymous stages and retained request evidence')
+    measurements.add_argument('--key-file', required=True, help='32-byte correlation key inside workspace')
+    measurements.add_argument('--before', help='previous metadata snapshot inside workspace')
+    measurements.add_argument('--failure-cases', action='store_true', help='export bounded synthetic replay recipes')
     sub.add_parser('supply-reconcile', help='inspect an interrupted canary; no automatic closure or replay')
     host_preflight = sub.add_parser('host-preflight',
         help='offline, non-migrating checks before a bounded public trial')
@@ -421,6 +425,11 @@ def main(argv=None):
         elif args.command == 'pipeline-doctor':
             import pipeline_doctor
             result = pipeline_doctor.report(args.home)
+        elif args.command == 'supply-measurements':
+            import supply_measurements
+            if args.before and args.failure_cases:
+                raise ValueError('choose comparison or failure cases')
+            result = supply_measurements.report(args.home, key_file=args.key_file, before_file=args.before, cases=args.failure_cases)
         elif args.command == 'muse-census':
             import muse_bridge
             result = muse_bridge.census(args.home, host_snapshot=args.host_snapshot)

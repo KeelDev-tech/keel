@@ -30,8 +30,12 @@ def test_truthfulness_check_empty_inputs():
     assert out["gap_count"] == 0
 
 
-def test_probe_form_unknown_ats_graceful():
-    # example.invalid never resolves; probe_url must degrade, not raise.
+def test_probe_form_unknown_ats_graceful(monkeypatch):
+    # Offline failure fixture: never rely on DNS or a live network timeout.
+    from urllib.error import URLError
+    def unavailable(*args, **kwargs):
+        raise URLError("synthetic unavailable")
+    monkeypatch.setattr(honesty.keel_bridge.form_intel_mod, "probe_url", unavailable)
     out = honesty.keel_probe_form("https://example.invalid/jobs/123")
     assert isinstance(out, dict)
     assert out['status'] == 'UNAVAILABLE'
