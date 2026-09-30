@@ -14,7 +14,7 @@ verification → launch packets — with honest automation as the product: it on
 ever claims what you tell it is true.
 
 Keel is the public half of a real production pipeline that holds
-**208 verified submissions** in its ledger (ledger-verified, as of 2026-09-23)
+**278 verified submissions** in its ledger (ledger-verified, as of 2026-09-30)
 using this exact discipline: fit scoring, truthfulness gates, clean-form
 checks, and fail-closed handling.
 The execution layer (how applications are actually submitted) stays private by

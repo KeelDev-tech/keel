@@ -206,6 +206,7 @@ def main():
         "verified_submissions_now": total_submitted,
         "evidence": {
             "evidenced": audit.get("evidenced"),
+            "pointer": audit.get("pointer"),
             "url_only": audit.get("url_only"),
             "unevidenced": audit.get("unevidenced"),
         },

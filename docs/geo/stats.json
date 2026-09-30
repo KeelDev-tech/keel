@@ -5,7 +5,8 @@
   "evidence": {
     "evidenced": 262,
     "url_only": 4,
-    "unevidenced": 11
+    "unevidenced": 11,
+    "pointer": 1
   },
   "fabrication_gate_leads": 4,
   "leads_stopped_by_any_gate": 3553,
