@@ -116,9 +116,9 @@ observations of READY within 24 hours.
   is reported as a gap, never bridged with fiction.
 - **Keel promises no submissions.** The public repo is the discipline and
   the tools. The private production pipeline that proved the discipline
-  works holds 208 verified submissions as of 2026-09-23 — counted from its
-  ledger under the docs/geo/stats.json methodology (201 evidenced /
-  1 pointer / 0 url-only / 6 unevidenced), never estimated.
+  works holds 278 verified submissions as of 2026-09-30 — counted from its
+  ledger under the docs/geo/stats.json methodology (262 evidenced /
+  1 pointer / 4 url-only / 11 unevidenced), never estimated.
   See [the honesty report](site/honesty-report.html) for the evidence-graded
   count and its methodology, and the [comparison with auto-apply bots](docs/keel-vs-autoapply-bots.md).
 
