@@ -29,19 +29,25 @@ consistently across scheduled workers. An explicit lower tray override can
 surface lower-fit questions for review; it does not lower the intake or READY
 admission floor or authorize a queue transition.
 
+QRESOLVE now checks `fit_policy.main_floor()` independently during planning and
+again inside the sanctioned actuator. A lower visibility override cannot clear
+below-floor, missing or malformed fit scores. Each application binds to the
+exact current card roles, so a matching question on an excluded sibling lead
+does not receive an incidental answer.
+
 ### Fit-floor default audit
 
 `rescreen_standard.py --min-fit` also defaults to `queue_intake.FIT_BAR`;
 its explicit CLI override remains available. It does not read
 `KEEL_TRAY_MIN_FIT`. QRESOLVE collects the canonical tray in-process and
-preserves that environment setting for its answer-actuator subprocess; it
-has no separate fit-floor fallback.
+preserves that environment setting for its answer-actuator subprocess. Its
+independent application gate derives from the same canonical intake policy.
 
 Other 75 literals found in the trace remain unchanged in this repair:
 
 | Location | Role |
 |---|---|
-| `ready_gate.FIT_FLOOR` | Fixed READY admission gate. |
+| `ready_gate.FIT_FLOOR` | Compatibility alias; admission reads the current canonical floor. |
 | `title_triage.FIT_OVERRIDE_THRESHOLD` | Evidence-scored triage waiver. |
 | `source_yield_proposals.PROMOTE_FIT_MEDIAN` | Source promotion proposal criterion. |
 | `pipeline_service`, `pipeline_doctor` | Main-floor fit diagnostics and report metadata. |
@@ -110,6 +116,12 @@ and previously filed values do not become approved answers. External memory
 directories are not scanned by the CLI. A trusted in-process `Corpus` caller
 may provide an explicit `memory_dir`, without granting application authority.
 
+Entries marked provisional, unreconciled or awaiting sweep reconciliation stay
+below applicant-authored evidence. They cannot become automatic answers by
+also claiming own-words provenance or `approved_verbatim`. Assisted authorship
+is similarly restrictive. These readers do not rewrite or reconcile a private
+answer bank; an operator must review the actual source and its affected roles.
+
 Classification runs before answer selection:
 
 | Class | Result |
@@ -124,6 +136,14 @@ statements and mixed blockers cannot become ordinary contact facts merely
 because a bank entry resembles the text. Retrieval scores are deterministic
 policy scores, not calibrated probabilities of truth. The classifier currently
 recognizes ten narrow factual alias families; unknown phrasing stays human.
+
+The supplied standing gates also constrain draft display: Alo Yoga availability,
+the disputed Edmentum/Apex relationship, restricted Perplexity exercises and
+OpenAI personal-completion certification cannot receive stored draft answers.
+ShipBob motivation prompts and Anthropic Fellows authorship/workstream gates
+require previously approved applicant wording. Fleetio's incomplete topic
+descriptions cannot substitute for complete screener prompts. These are
+conservative policy fixtures; this checkout does not contain the private cards.
 
 ## Optional standing authority
 
@@ -171,10 +191,12 @@ queue writes, roll back queues, delete intent history or declare leads READY.
 Do not delete a journal entry to force a retry. The journal is not a cross-file
 transaction or protection against a privileged workspace writer.
 
-Cleared leads retain their existing queue/status and become eligible for the
-canonical `verify_retry` worker where its genuine-blocker check permits it.
-QRESOLVE itself does not launch network verification. An applied answer is not
-a verified READY transition, a submission, or evidence of improved throughput.
+Cleared leads retain their existing queue/status. Receipts describe fully
+unblocked leads as awaiting canonical preparation and admission. The current
+operational verifier records posting evidence and does not promote READY.
+Host preparation/admission still owns that transition. QRESOLVE itself does
+not launch network verification. An applied answer is not a verified READY
+transition, a submission, or evidence of improved throughput.
 
 ## Recurrence without hiding changed obligations
 
@@ -192,6 +214,34 @@ fingerprint-only "never ask again" list would conceal unresolved work and is
 deliberately not used. Explicitly marked human drafts (`owner: "human"`) are
 preserved only for the same full prompt and role set.
 
+Reviewed factual aliases share a card identity within their existing family.
+Notification history also binds to the current role and queue revision. A
+wording-only alias can remain quiet, while a new employer, re-park timestamp,
+qualifier or evidence revision creates a fresh notification. Every active
+canonical obligation remains visible even when its notification is quiet.
+Upgrading a legacy delivery watermark may produce one fresh notice.
+
+## Diagnose resolution-to-supply conversion
+
+```bash
+# Counts only; private questions and evidence never enter stdout.
+python3 keel.py --home /path/to/workspace qresolve-supply
+
+# Persist bounded observations of committed READY rows, metadata only.
+python3 keel.py --home /path/to/workspace qresolve-supply --live
+```
+
+The private report separates removed blocker instances from distinct affected
+leads, remaining questions, current fit eligibility and static READY gates.
+It refuses pending queue recovery and treats missing queues as unknown.
+Resolution receipts bind the post-resolution role identity and fit policy.
+Live observations can record a matching committed READY row within 24 hours
+of completion. The metric is `observed_ready_within_24h`: it does not establish
+an exact transition time, causality, executable readiness or submission
+authority. A late first inspection cannot prove whether READY occurred earlier;
+historical timing remains unknown. Observation history survives later status
+changes. Existing private pipeline paths are not guessed or migrated.
+
 ## Records, scheduling and acceptance
 
 `hidden_files/qresolve-proposals.json` holds current decisions;
@@ -202,6 +252,12 @@ files contain private applicant information and must remain private. Read-only
 runs print a redacted summary and write no metrics. File reads and corpus indexing
 are bounded; malformed, unsafe or oversized evidence is reported as incomplete
 and blocks application.
+
+`qresolve-ready-observations.jsonl` stores bounded private observation receipts.
+Dry inspection is optimistic when no existing canonical lock is available and
+cannot certify a coherent live state; applications are revalidated under locks.
+No command silently recovers an unrelated queue transaction during inspection
+or resolution metadata writes.
 
 `qresolve-schedule.json` retains hashed card identities, revisions and scan
 progress. Live runs reserve capacity for the least recently inspected cards,

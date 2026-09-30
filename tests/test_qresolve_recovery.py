@@ -102,6 +102,8 @@ class QresolveRecoveryTests(unittest.TestCase):
                 'status': 'NEEDS-INPUT', 'unresolved': [self.question],
                 'status_reason': 'input required', 'queue_notes': [],
                 'last_verify_attempt': '2026-01-01'}])
+        self.write('data/queues/strategic-queue.json', [])
+        self.write('data/queues/rejected-queue.json', [])
         self.write('hidden_files/qresolve-config.json', {'AUTO_APPLY_FACTS': True})
         self.write('data/application-ledger.json', [])
 
@@ -252,7 +254,8 @@ class QresolveRecoveryTests(unittest.TestCase):
     def test_changed_receipt_evidence_or_target_hash_cannot_complete(self):
         did = self.crash('resolved')
         original = self.read('hidden_files/qresolve-resolved.json')
-        for key, value in [('evidence', []), ('answer', 'altered'), ('target_post_sha256', {})]:
+        for key, value in [('evidence', []), ('answer', 'altered'), ('target_post_sha256', {}),
+                           ('target_resolution_state', {})]:
             with self.subTest(key=key):
                 resolved = json.loads(json.dumps(original))
                 resolved[did][key] = value

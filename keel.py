@@ -253,6 +253,10 @@ def main(argv=None):
     question_resolver.add_argument('--live', action='store_true',
         help='save drafts; automatic FACT reuse additionally requires explicit local authorization')
     question_resolver.add_argument('--max-cards', type=int, default=50)
+    question_supply = sub.add_parser('qresolve-supply',
+        help='diagnose resolved blockers and observed READY outcomes; no network or promotion')
+    question_supply.add_argument('--live', action='store_true',
+        help='save bounded READY observations in private resolution metadata only')
     question_recover = sub.add_parser('qresolve-recover',
         help='inspect interrupted answer applications; close only proven outcomes')
     question_recover.add_argument('--decision-id')
@@ -336,6 +340,13 @@ def main(argv=None):
                     args.home, decision_id=args.decision_id, live=args.live)
             except (OSError, ValueError, TypeError, KeyError, RuntimeError):
                 raise ValueError('qresolve_recovery_input_or_state_invalid') from None
+        elif args.command == 'qresolve-supply':
+            import qresolve_outcomes
+            try:
+                result = qresolve_outcomes.console_report(qresolve_outcomes.observe(
+                    args.home, live=args.live))
+            except (OSError, ValueError, TypeError, KeyError, RuntimeError):
+                raise ValueError('qresolve_supply_input_or_state_invalid') from None
         elif args.command == 'qresolve':
             import qresolve
             try:
@@ -455,7 +466,7 @@ def main(argv=None):
             return 0 if result['local_checks_passed'] else 1
         if args.command == 'productivity-advice':
             return 1 if result['status'] == 'HOLD' else 0
-        if args.command in {'qresolve', 'qresolve-recover'}:
+        if args.command in {'qresolve', 'qresolve-recover', 'qresolve-supply'}:
             return 1 if result.get('status') == 'HOLD' else 0
         return 1 if args.command == 'doctor' and not result['ready_for_local_preparation'] else 0
     except (OSError, ValueError, TypeError, KeyError, RuntimeError) as exc:

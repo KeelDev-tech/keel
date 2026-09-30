@@ -27,11 +27,15 @@ try:
     from . import queue_intake, tray_sources
     from .fit_policy import main_floor
     from .keel_paths import HOME, DATA
+    from .qresolve_recurrence import question_key, obligation_key
+    from .qresolve_semantics import fact_key
 except ImportError:
     import queue_intake
     import tray_sources
     from fit_policy import main_floor
     from keel_paths import HOME, DATA
+    from qresolve_recurrence import question_key, obligation_key
+    from qresolve_semantics import fact_key
 
 BASE = HOME
 QDIR = os.path.join(DATA, 'queues')
@@ -103,13 +107,13 @@ def _words(s):
 
 
 def dedupe(blocks):
-    """Collapse near-duplicate blocker wordings within one lead."""
-    kept = []
+    """Collapse reviewed aliases without discarding an unreviewed qualifier."""
+    kept, seen = [], set()
     for k, t in blocks:
-        w = _words(t)
-        if any(w and _words(e) and len(w & _words(e)) / max(len(w), len(_words(e))) > 0.6
-               for _, e in kept):
+        identity = card_key_for(family_of(t), normalize_question(t))
+        if identity in seen:
             continue
+        seen.add(identity)
         kept.append((k, t))
     return kept
 
@@ -165,22 +169,25 @@ def load(path, default=None):
     return result
 
 
-def genuine_blockers(entry):
-    """Yield (key, text) for unresolved items that are genuine the applicant blockers.
+def blocker_groups(entry):
+    """Return (prompt, exact raw fragments) for current genuine obligations.
 
-    Key scheme is per (lead, blocker text) -- stable across runs so the
-    watermark survives the v2 regrouping without re-delivering everything.
+    The applier uses these fragments as proof of membership, rather than
+    clearing a longer qualified prompt because it contains an answered one.
     """
-    rid = entry.get('role_id', '')
-    out = []
+    out, by_identity = [], {}
     for u in entry.get('unresolved', []) or []:
         t = str(u)
         if t.startswith('RESOLVED'):
             continue
         if POLICY_DECIDED_PAT.search(t):
             continue  # D1 already parks these; not a question for the applicant
-        out.append((h(rid + '|' + t), t))
-    out = dedupe(out)
+        identity = card_key_for(family_of(t), normalize_question(t))
+        if identity in by_identity:
+            out[by_identity[identity]][1].append(u)
+        else:
+            by_identity[identity] = len(out)
+            out.append((t, [u]))
     # Merge short fragments back into the previous item: a blocker string
     # sometimes lands in the queue split across list items (e.g. '...needs
     # the applicant's decision' + 'never pre-authorize"'). A short fragment with no
@@ -188,16 +195,27 @@ def genuine_blockers(entry):
     # own question. (A short item containing '?' IS its own question --
     # merging it would let one answer clear two unrelated blockers.)
     merged = []
-    for key, text in out:
+    for text, fragments in out:
         s = text.strip()
         if (merged and len(s) < 80 and '?' not in s
+                and fact_key(normalize_question(s)) is None
+                and fact_key(normalize_question(merged[-1][0])) is None
                 and not s.rstrip().endswith(('.', '!', ':', ';'))):
-            _, prev = merged[-1]
+            prev, prior_fragments = merged[-1]
             combo = (prev.rstrip() + ' ' + s).strip()
-            merged[-1] = (h(rid + '|' + combo), combo)
+            merged[-1] = (combo, prior_fragments + fragments)
         else:
-            merged.append((key, text))
-    return rid, merged
+            merged.append((text, fragments))
+    return merged
+
+
+def genuine_blockers(entry):
+    """Yield keys binding reviewed meaning to the current queue obligation."""
+    blocker_keys = [card_key_for(family_of(str(t)), normalize_question(str(t)))
+                    for t in entry.get('unresolved', []) or []]
+    return entry.get('role_id', ''), [
+        (obligation_key(entry, family_of(text), normalize_question(text), blocker_keys), text)
+        for text, _ in blocker_groups(entry)]
 
 
 # Digest-layer reclassification (2026-09-17): cards matching these patterns are
@@ -279,7 +297,7 @@ def normalize_question(text):
 
 
 def card_key_for(family, norm):
-    return h((family or '') + '|' + norm.lower())
+    return question_key(family, norm)
 
 
 def short_question(norm, limit=160):
@@ -752,8 +770,8 @@ def main(argv=None):
         cards = collect_cards(min_fit=minimum)
         wm = load(WM, [])
         seen = set(wm if isinstance(wm, list) else [])
-        fresh_keys = {k for card in cards.values() for k in card['item_keys']
-                      if k not in seen}
+        current_keys = {k for card in cards.values() for k in card['item_keys']}
+        fresh_keys = current_keys - seen
         hist = update_family_history(cards, fresh_keys, now_iso, args.deliver,
                                      persist=args.deliver)
         payload = write_tray_json(cards, fresh_keys, hist,
@@ -762,6 +780,11 @@ def main(argv=None):
         fresh_payload = dict(payload)
         fresh_payload['cards'] = [c for c in payload['cards'] if c['fresh']]
         if not fresh_payload['cards']:
+            # A delivered observation of absence retires the old notification
+            # obligation. If that exact row re-parks later it is fresh again,
+            # even when an upstream writer omitted a new status timestamp.
+            if args.deliver and seen != seen & current_keys:
+                _persist_json(WM, sorted(seen & current_keys))
             print('TRAY-QUIET')
             return 0
         # Cron and shell output can be retained in logs. Keep private questions,
@@ -776,6 +799,7 @@ def main(argv=None):
             "drafts": sum(c.get('draft') is not None for c in fresh_payload['cards']),
         }, sort_keys=True))
         if args.deliver:
+            seen.intersection_update(current_keys)
             seen.update(fresh_keys)
             _persist_json(WM, sorted(seen))
     return 0

@@ -182,10 +182,75 @@ _JUDGMENT = re.compile(
 )
 
 
+def _standing_gate(records: list[dict], text: str) -> dict | None:
+    """Version-2 applicant restrictions, independent of bank/draft labels.
+
+    Employer and role names only identify the applicable restriction. They
+    never supply an answer, prove authorship, or authorize reuse. Return an
+    explicit draft policy so even a purported approved-verbatim bank value
+    cannot undo a no-draft instruction.
+    """
+    identity = "\n".join(_normalize(value) for record in records
+                         for field in ("company", "employer", "title", "role_title", "role")
+                         for value in _text_values(record.get(field)))
+    context = text + "\n" + identity
+
+    def result(gate, reason, *, kind="TRENT-ONLY", draft="none"):
+        # Approved wording cannot undo an unaided-work, consent, or legal
+        # certification restriction on a protected prompt. In particular,
+        # an essay's approved-verbatim label is not proof of its authorship.
+        if draft == "approved_verbatim" and any(
+                re.search(pattern, text) for pattern, _ in _HUMAN_ONLY_RULES[:2]):
+            draft = "none"
+        return {**_result(kind, 1.0, reason, "human_judgment" if kind == "JUDGMENT" else "human_only"),
+                "standing_gate": gate, "draft_policy": draft}
+
+    if (re.search(r"\balo\s+yoga\b", context)
+            and re.search(r"\b(?:availability|available|schedule|shifts?|weekdays?|weekends?|"
+                          r"evenings?|mornings?|afternoons?|nights?|hours?|overtime|holidays?|"
+                          r"start date|start timeframe|when can you start)\b", text)):
+        return result("alo_availability", "Availability remains unconfirmed; do not draft, infer, or reuse a schedule answer.")
+    if (re.search(r"\b(?:edmentum|apex)\b", context)
+            and re.search(r"\b(?:relationship|related|relatives?|family|affiliat\w*|worked|"
+                          r"work for|employed|employees?|employment|contractors?|contracted|"
+                          r"consulted|done business|disputed|quarantined)\b", text)):
+        return result("edmentum_apex_relationship", "The relationship answer is disputed; require a direct applicant answer without a draft.")
+    if (re.search(r"\bopenai\b", context)
+            and re.search(r"\b(?:personally completed|personal[ -]completion|do[ -]not[ -]certify|"
+                          r"certif(?:y|ication)|attest(?:ation)?)\b|"
+                          r"\b(?:completed|prepared)\b.{0,60}\bapplication\b|"
+                          r"\bapplication\b.{0,60}\b(?:completed|prepared)\b", text)):
+        return result("openai_personal_completion", "DO NOT CERTIFY remains in force; personal takeover is not certification evidence.")
+    if (re.search(r"\bperplexity\b", context)
+            and re.search(r"\b(?:exercise|thread|take[ -]home|unassisted|unaided|no[ -]ai|"
+                          r"without (?:ai|assistance)|restricted writing)\b", text)):
+        return result("perplexity_exercise_unassisted", "The completed exercise and restricted writing require the applicant; never invent a thread or draft restricted answers.")
+    if (re.search(r"\banthropic\b", context) and re.search(r"\b(?:fellows?|fellowships?)\b", context)
+            and re.search(r"\b(?:workstream|essay|personal statement|applicant[ -]authored|first draft|why)\b", text)):
+        return result("anthropic_fellows_authorship", "Workstream selection and essay authorship remain the applicant's; assistant suggestions are research only.",
+                      draft="approved_verbatim")
+    if (re.search(r"\bfleetio\b", context)
+            and re.search(r"\b(?:screener|partner|channel|enablement|reseller|cross[ -]?functional|multi[ -]?stage)\b", text)):
+        return result("fleetio_incomplete_screeners", "Recover the complete screener questions and check current fit before requesting applicant effort.", kind="JUDGMENT")
+    shipbob_prompts = {
+        _normalize("What excites you most about working at ShipBob?"),
+        _normalize("What aspects of this role align with your career goals?"),
+    }
+    if (re.search(r"\bshipbob\b", context)
+            and (any(_normalize(value) in shipbob_prompts for record in records
+                     for field in ("question", "norm", "unresolved")
+                     for value in _text_values(record.get(field)))
+                 or re.search(r"\b(?:excites|career goals|essay|merchant implementation|edi)\b", text))):
+        return result("shipbob_review_only", "Assisted drafts are review material, not banked answers or submission approval; use only approved applicant wording.",
+                      draft="approved_verbatim")
+    return None
+
+
 def classify(card: dict, contexts: list[dict] | tuple = ()) -> dict:
     """Route the card using its question and current matched lead blockers.
 
-    Priority is structural > human-only > judgment > reviewed factual prompt.
+    Priority is structural > standing applicant gate > human-only > judgment >
+    reviewed factual prompt. Standing gates include a restrictive draft policy.
     The caller must supply current context for every affected lead. Missing
     context is not evidence that a lead is safe; this function does not grant
     authority to resolve it. Unrecognized questions fail closed to TRENT-ONLY.
@@ -211,18 +276,32 @@ def classify(card: dict, contexts: list[dict] | tuple = ()) -> dict:
                 unresolved.extend(values)
     text = "\n".join(_normalize(part) for part in parts)
 
+    gate = _standing_gate(records, text)
     for pattern, route, reason in _STRUCTURAL_RULES:
         if re.search(pattern, text):
-            return _result("STRUCTURAL", 1.0, reason, route)
+            result = _result("STRUCTURAL", 1.0, reason, route)
+            if gate:
+                result.update(standing_gate=gate["standing_gate"], draft_policy="none")
+            return result
+    if gate:
+        return gate
     for pattern, reason in _HUMAN_ONLY_RULES:
         if re.search(pattern, text):
             return _result("TRENT-ONLY", 1.0, reason, "human_only")
     if _JUDGMENT.search(text):
         return _result("JUDGMENT", 1.0, "Work commitments or a proceed/drop tradeoff require the applicant's decision.", "human_judgment")
 
-    key = fact_key(question)
+    # A digest may clip the display question. Only the complete prompt can
+    # establish reviewed FACT meaning; an exact bank hit on a qualified norm
+    # must not borrow the display excerpt's broader classification.
+    full_question = card.get("norm") or question
+    key = fact_key(full_question) if isinstance(full_question, str) else None
     if key is None:
         return _result("TRENT-ONLY", 0.0, "Question has no reviewed factual meaning; applicant review required.", "human_only")
-    if any(_normalize(item) and fact_key(item) != key for item in unresolved):
-        return _result("TRENT-ONLY", 1.0, "Unresolved context is not the same reviewed fact; keep the mixed blockers visible.", "human_only")
+    # A lead can have multiple independently reviewed contact facts. Clearing
+    # the selected fact does not answer its siblings or make the lead READY;
+    # the actuator must retain those separate obligations. Unknown, qualified,
+    # and applicant-owned siblings still make this a mixed review boundary.
+    if any(_normalize(item) and fact_key(item) is None for item in unresolved):
+        return _result("TRENT-ONLY", 1.0, "Unresolved context includes an unreviewed question; keep the mixed blockers visible.", "human_only")
     return _result("FACT", 1.0, "Exact reviewed factual prompt; current scoped provenance is still required.", "fact_evidence")
