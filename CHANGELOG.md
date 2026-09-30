@@ -15,6 +15,10 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Accept structured URL-bound form/posting evidence in the MCP prescreen
+  diagnostic, preserving brief-only PARK behavior and example-bank isolation.
+  Report no execution authority even when the diagnostic is CLEAN.
+
 - Derive the tray and standard re-screen fit defaults from the canonical
   intake `FIT_BAR` (currently 75). Preserve explicit tray environment/API/CLI
   overrides and the re-screen CLI override. Add regression coverage for floor

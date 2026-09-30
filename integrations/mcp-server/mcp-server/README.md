@@ -62,3 +62,19 @@ Smoke-test the Streamable HTTP handshake:
 ## License
 
 Apache-2.0 (same as Keel).
+
+### Structured prescreen evidence
+
+`keel_prescreen_packet(packet_brief, company, packet_evidence=None)` accepts
+optional coverage fields: `ats_url`, `form_intel`, `form_intel_complete`,
+`posting_text`, `posting_text_complete`, `posting_text_source`, and
+`posting_text_url`. Supply the exact URL-bound posting and complete form
+question/choice capture, with explicit completeness flags. Missing, mismatched
+or incomplete evidence stays PARK. Legacy brief-only calls remain supported
+and cannot establish complete coverage.
+
+This is a dry-run against the example answer bank. A CLEAN result is a
+diagnostic of caller-supplied evidence, not source authentication, applicant
+approval, READY admission, or submission authority. Every result reports
+`execution_authorized: false`; private answer banks and packet paths are not
+accepted. The composite fixture pipeline remains a brief-only demonstration.
