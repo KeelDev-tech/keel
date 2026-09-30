@@ -15,8 +15,9 @@ from pathlib import Path
 import answer_resolver
 from safe_io import contained_path, digest, file_digest, fresh
 from keel_paths import HOME
+from fit_policy import main_floor
 
-FIT_FLOOR = 75
+FIT_FLOOR = main_floor()  # compatibility alias; admission reads current policy
 READY_STATES = {"READY", "READY-FOR-BROWSER"}
 PACKET_MAX_AGE_SECONDS = 12 * 3600
 HOLD_FIELDS = (
@@ -148,8 +149,8 @@ def entry_admission(entry, origin="standard", *, require_ready=True, now=None, w
     if (isinstance(score, bool) or not isinstance(score, (int, float))
             or not math.isfinite(score)):
         deny("unknown_fit", "finite fit_score required")
-    elif score < FIT_FLOOR:
-        deny("below_fit_floor", f"fit_score below {FIT_FLOOR}")
+    elif score < main_floor():
+        deny("below_fit_floor", f"fit_score below {main_floor()}")
     band = entry.get("action_band")
     band_ok = (band in (None, "APPLY") or
                isinstance(band, str) and band.startswith("STRATEGIC")) if origin == "strategic" else band == "APPLY"

@@ -25,10 +25,12 @@ from datetime import datetime, timedelta, timezone
 
 try:
     from . import queue_intake, tray_sources
+    from .fit_policy import main_floor
     from .keel_paths import HOME, DATA
 except ImportError:
     import queue_intake
     import tray_sources
+    from fit_policy import main_floor
     from keel_paths import HOME, DATA
 
 BASE = HOME
@@ -407,7 +409,7 @@ def fmt_age(hours):
 
 
 def _min_fit(value=None):
-    value = os.environ.get("KEEL_TRAY_MIN_FIT", queue_intake.FIT_BAR) if value is None else value
+    value = os.environ.get("KEEL_TRAY_MIN_FIT", main_floor()) if value is None else value
     if isinstance(value, bool):
         raise ValueError("minimum fit must be a finite number from 0 to 100")
     try:
@@ -420,7 +422,7 @@ def _min_fit(value=None):
 
 
 def collect_cards(min_fit=None):
-    """Scan queues into cards; use intake's FIT_BAR unless explicitly overridden."""
+    """Scan cards at the canonical intake floor, or an explicit tray override."""
     min_fit = _min_fit(min_fit)
     banked = load_bank()
     cards = {}  # card_key -> card dict
@@ -736,7 +738,7 @@ def main(argv=None):
                          'Without this flag no workspace files are changed.')
     ap.add_argument('--min-fit', type=float, default=None,
                     help='Minimum fit from 0 to 100 (default KEEL_TRAY_MIN_FIT or '
-                         f'queue_intake.FIT_BAR, currently {queue_intake.FIT_BAR}).')
+                         f'queue_intake.FIT_BAR, currently {main_floor()}).')
     args = ap.parse_args(argv)
     try:
         minimum = _min_fit(args.min_fit)

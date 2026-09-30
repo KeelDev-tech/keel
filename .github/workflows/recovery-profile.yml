@@ -38,6 +38,8 @@ jobs:
           tests/test_export_adapter_v11.py
           tests/test_run_tests_profiles.py
           tests/test_release_profile.py
+          tests/test_fit_policy_contract.py
+          tests/test_muse_supply_recovery.py
       - name: Build and verify source-only package
         run: |
           python tools/package.py --out "${RUNNER_TEMP}/keel-recovery-source.zip"
