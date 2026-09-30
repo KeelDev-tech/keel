@@ -29,6 +29,8 @@ jobs:
           tests/test_input_tray_digest_guards.py
           tests/test_legacy_rescreen_standard.py::test_cli_default_tracks_canonical_intake_floor
           tests/test_legacy_rescreen_standard.py::test_cli_min_fit_override_is_preserved
+      - name: Verify offline completion cost accounting
+        run: python3 -m unittest tests.test_completion_cost
       - name: Run stdlib test suite
         run: python3 -m unittest discover -s tests
       - name: Run optimization and security regressions
