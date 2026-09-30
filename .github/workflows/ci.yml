@@ -20,10 +20,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install test dependencies
-        run: pip install -r requirements-dev.txt
-      - name: Install MCP engine test dependency
-        run: pip install reportlab==4.4.9
+      - name: Install pinned validation environment
+        run: pip install -r requirements-validation.lock
       - name: Run offline MCP adapter safety and tool regressions
         run: python3 -m pytest -q --import-mode=importlib integrations/mcp-server/tests
       - name: Test operational recovery including every publication cut point
@@ -49,6 +47,10 @@ jobs:
         run: python3 -m unittest tests.test_completion_cost
       - name: Run stdlib test suite
         run: python3 -m unittest discover -s tests
+      - name: Run offline Hypothesis prescreen properties
+        env:
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+        run: python3 -m pytest -q --import-mode=importlib tests/hypothesis_prescreen_properties.py tests/test_prescreen.py tests/test_prescreen_noai_gates3733_3799.py tests/test_ready_admission.py tests/test_extended_regressions.py tests/test_legacy_rescreen_standard.py
       - name: Run optimization and security regressions
         run: >-
           python3 -m pytest -q

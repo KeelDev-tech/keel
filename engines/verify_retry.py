@@ -327,7 +327,7 @@ def check_live(url, title_hint=""):
         with safe_http.urlopen(req, timeout=15) as resp:
             if resp.status in (404, 410):
                 return "dead", f"HTTP {resp.status} on posting page"
-            html = resp.read().decode("utf-8", "replace")[:200000].lower()
+            html = resp.read().decode("utf-8", "replace").lower()
         if dead_markers_in(html):
             return "dead", "posting page shows removed/expired markers"
         if any(m in html for m in LIVE_MARKERS):
@@ -354,7 +354,7 @@ def _html_to_text(html):
     """Crude HTML -> text for the eligibility screen."""
     t = re.sub(r"(?si)<script.*?</script[^>]*>|<style.*?</style[^>]*>", " ", html or "")
     t = re.sub(r"<[^>]+>", " ", t)
-    return re.sub(r"\s+", " ", t).strip()[:50000]
+    return re.sub(r"\s+", " ", t).strip()
 
 
 def fetch_posting_text(url):
@@ -415,33 +415,36 @@ def fetch_posting_text(url):
         with safe_http.urlopen(req, timeout=15) as resp:
             if resp.status in (404, 410):
                 return ""
-            html = resp.read().decode("utf-8", "replace")[:200000]
+            html = resp.read().decode("utf-8", "replace")
         return _html_to_text(html)
     except Exception:
         return ""
 
 
-def screen_promotion_posting(entry, url):
+def screen_promotion_posting(entry, url, posting_text=None):
     """Run prescreen.posting_eligibility_screen over the live posting text.
 
-    Returns [reasons] (empty = clean). Fail-open: import/fetch/parse
-    trouble -> []. Called in the --live apply section for would-be
-    promote actions; a hit parks the lead (gate=eligibility) instead of
-    promoting to READY."""
+    Missing, oversized, or unparseable source text yields an explicit
+    verification hold; it is never treated as an empty clean post.
+    """
+    if not url:
+        raise VerificationUnavailable("posting URL unavailable")
+    if posting_text is None:
+        posting_text = fetch_posting_text(url)
+    if (not isinstance(posting_text, str) or not posting_text.strip()
+            or len(posting_text) > 50_000):
+        raise VerificationUnavailable("Posting text unavailable or incomplete")
     try:
         from prescreen import posting_eligibility_screen
-    except Exception:
-        return []
-    text = fetch_posting_text(url)
-    if not text:
-        return []
-    try:
-        return posting_eligibility_screen(text)
-    except Exception:
-        return []
+        reasons = posting_eligibility_screen(posting_text)
+        if not isinstance(reasons, list) or any(not isinstance(reason, str) for reason in reasons):
+            raise ValueError("malformed posting verdict")
+        return reasons
+    except Exception as ex:
+        raise VerificationUnavailable("posting screen unavailable") from ex
 
 
-def screen_promotion_form(entry, url):
+def screen_promotion_form(entry, url, posting_text=None):
     """Run the pre-promotion form screen (prescreen.screen_entry_prepromotion).
 
     Verify_retry promotes verified-live leads to READY; this probes the live
@@ -456,25 +459,31 @@ def screen_promotion_form(entry, url):
     Fail-closed on screen failure: when the form-intel probe fails the
     screen verdict is UNKNOWN (not CLEAN) and this raises
     VerificationUnavailable -- the lead remains verification work and must
-    never promote on an unrun screen. Import trouble still fails open
-    (returns []) per the pre-existing contract.
+    never promote on an unrun screen. Import trouble and malformed results
+    also fail closed.
     """
     try:
         from prescreen import screen_entry_prepromotion
-    except Exception:
-        return []
+    except Exception as ex:
+        raise VerificationUnavailable("pre-promotion prescreen module unavailable") from ex
     try:
-        res = screen_entry_prepromotion(entry, url=url)
-    except Exception:
-        return []
+        res = screen_entry_prepromotion(entry, url=url, posting_text=posting_text)
+    except Exception as ex:
+        raise VerificationUnavailable("pre-promotion form screen failed") from ex
     if not isinstance(res, dict):
-        return []
+        raise VerificationUnavailable("pre-promotion form screen returned malformed data")
+    reasons = res.get("reasons")
+    if not isinstance(reasons, list) or any(not isinstance(reason, str) for reason in reasons):
+        raise VerificationUnavailable("pre-promotion form screen returned malformed reasons")
     if res.get("verdict") == "UNKNOWN":
         raise VerificationUnavailable(
             "pre-promotion form screen could not run: %s"
-            % "; ".join(res.get("reasons") or ["form-intel probe failed"]))
+            % "; ".join(reasons or ["form-intel probe failed"])
+        )
+    if res.get("verdict") not in {"CLEAN", "PARK"}:
+        raise VerificationUnavailable("pre-promotion form screen returned an unknown verdict")
     if res.get("verdict") == "PARK":
-        return res.get("reasons") or ["pre-promotion form screen parked (no reason text)"]
+        return reasons or ["pre-promotion form screen parked; applicant review required (applicant)"]
     return []
 
 
@@ -1517,8 +1526,13 @@ def _legacy_scan_and_apply(live, limit, wave_id=None):
                       "status_updated).").strip(" |")
                 continue
             try:
-                reasons = screen_promotion_posting(e, url) + \
-                    screen_promotion_form(e, url)
+                try:
+                    posting_text = fetch_posting_text(url)
+                except Exception:
+                    posting_text = ""
+                reasons = list(dict.fromkeys(
+                    screen_promotion_posting(e, url, posting_text=posting_text) +
+                    screen_promotion_form(e, url, posting_text=posting_text)))
             except VerificationUnavailable as vu:
                 # Fail-closed: the form screen could not run (probe/network
                 # trouble) -- the lead remains verification work, never

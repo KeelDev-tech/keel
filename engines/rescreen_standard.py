@@ -234,18 +234,24 @@ def screen_entry(entry, text=None, url=None):
 
     # 2. Posting-text hard-gate (canonical: fetch + posting_eligibility_screen).
     # text/url are fetched ONCE by the caller (scan) and passed in, so each
-    # role costs exactly one posting fetch per batch.
+    # role costs exactly one posting fetch per batch. An empty fetch is
+    # incomplete evidence, not a clean posting.
     if url is None:
         url = vr.posting_url(entry)
     if text is None:
         text = vr.fetch_posting_text(url) if url else ""
-    if text:
-        elig_reasons = prescreen.posting_eligibility_screen(text)
-        if elig_reasons:
-            return "eligibility_park", list(elig_reasons), None
+    if not isinstance(text, str) or not text.strip() or len(text) > 50_000:
+        return "verification_hold", [
+            "Posting text unavailable or incomplete; verification retry required."], None
+    elig_reasons = prescreen.posting_eligibility_screen(text)
+    if elig_reasons:
+        return "eligibility_park", list(elig_reasons), None
 
     # 3. Form screen (canonical: pre-promotion form check).
-    form_reasons = vr.screen_promotion_form(entry, url)
+    try:
+        form_reasons = vr.screen_promotion_form(entry, url, posting_text=text)
+    except vr.VerificationUnavailable:
+        return "verification_hold", ["Form evidence unavailable; verification retry required."], None
     if form_reasons:
         return "form_park", list(form_reasons), None
 
@@ -258,8 +264,8 @@ def scan(std, min_fit, role_ids, limit=None, pace=1.0,
 
     Returns (plan, stats). plan: {rid: {"entry", "decision", "reasons",
     "title_reason", "url"}}. Each role costs exactly one posting-text fetch.
-    Empty fetches are counted as a stat (extraction miss / dead posting),
-    never as parks. Raises _RateLimitObserved on a real HTTP 429 (hard stop).
+    Empty fetches are counted as a stat (extraction miss / dead posting) and
+    held as incomplete evidence. Raises _RateLimitObserved on a real HTTP 429.
     """
     import verify_retry as vr  # lazy: heavy imports
 
@@ -268,14 +274,13 @@ def scan(std, min_fit, role_ids, limit=None, pace=1.0,
         selected = selected[:limit]
     plan, stats = {}, {"selected": len(selected), "clean": 0,
                        "title_park": 0, "eligibility_park": 0,
-                       "form_park": 0, "empty_fetch": 0, "observed_429s": 0}
+                       "form_park": 0, "verification_hold": 0, "empty_fetch": 0, "observed_429s": 0}
     seen_429s = [0]
     with observe_429s(seen_429s, budget=rate_limit_budget):
         for i, entry in enumerate(selected):
             rid = entry.get("role_id")
             url = vr.posting_url(entry)
-            # One posting fetch per role. Fail-open per the canonical
-            # contract: transport trouble yields "", never a park.
+            # One posting fetch per role; transport trouble holds verification.
             text = vr.fetch_posting_text(url) if url else ""
             if url and not text:
                 stats["empty_fetch"] += 1
@@ -346,7 +351,7 @@ def apply(plan, stats):
                 applied["skipped"].append(rid)
                 continue
             decision, reasons = mut["decision"], mut["reasons"]
-            if decision == "clean":
+            if decision in {"clean", "verification_hold"}:
                 continue  # survivors stay untouched; verify_retry owns READY
             note = "; ".join(reasons)
             quoted = " | ".join('"%s"' % r[:200] for r in reasons)
@@ -528,6 +533,7 @@ def main():
     print("would title-park (PARKED-TRIAGE-DEFERRED): %d" % stats["title_park"])
     print("would eligibility-park (PARKED): %d" % stats["eligibility_park"])
     print("would form-park (needs_input): %d" % stats["form_park"])
+    print("verification holds (retry; no applicant question): %d" % stats.get("verification_hold", 0))
     print("empty posting-text fetches (extraction miss/dead, not parks): %d"
           % stats["empty_fetch"])
     print("observed HTTP 429s: %d" % stats["observed_429s"])

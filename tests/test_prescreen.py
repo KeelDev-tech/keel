@@ -15,6 +15,7 @@ Run: python3 test_prescreen.py
 
 import json
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -37,6 +38,14 @@ GENUINE_WORDS = ("essay", "wording", "travel", "attest", "reference", "applicant
 
 def make_packet(company, intel_lines, role_id="TEST-ROLE-1"):
     intel = "\n".join(intel_lines)
+    questions = []
+    for line in intel_lines:
+        match = re.match(r"\s*-\s*\[([^\]]+)\]\s*(.*)$", line)
+        if match:
+            label = match.group(2).strip()
+            questions.append({"type": match.group(1).strip(), "label": label,
+                              "required": label.endswith("*"), "options": []})
+    url = "https://fixture.invalid/job"
     brief = (
         "Submit a job application for the applicant.\n"
         "GATES (stop conditions -- obey exactly):\n"
@@ -46,7 +55,15 @@ def make_packet(company, intel_lines, role_id="TEST-ROLE-1"):
         "STEP 3 \u2014 COMMIT TECHNIQUE FOR GREENHOUSE: live-option click + per-field verify\n"
     )
     return {"role_id": role_id, "company": company, "title": "Test Role",
-            "brief": brief}
+            "brief": brief, "ats_url": url,
+            "form_intel": {"ats": "fixture", "source_url": url,
+                           "questions": questions,
+                           "rendered_option_fetch_needed": [],
+                           "extraction_complete": True},
+            "form_intel_complete": True,
+            "posting_text": "Synthetic posting text with no special eligibility terms.",
+            "posting_text_complete": True,
+            "posting_text_source": "synthetic test fixture"}
 
 
 class TestScreenPacket(unittest.TestCase):
@@ -109,7 +126,45 @@ class TestScreenPacket(unittest.TestCase):
                                "personally completed"]}
         res = prescreen.screen_packet(p, BANK, patterns)
         self.assertEqual(res["verdict"], "PARK")
-        self.assertEqual(len(res["reasons"]), 3)
+        employer_reasons = [r for r in res["reasons"]
+                            if "Employer form pattern" in r]
+        self.assertEqual(len(employer_reasons), 3)
+
+    def test_missing_form_evidence_never_passes_clean(self):
+        p = make_packet("CleanCo", ["  - [text] First Name*"])
+        p["form_intel_complete"] = False
+        res = prescreen.screen_packet(p, BANK, {})
+        self.assertEqual(res["verdict"], "PARK")
+        self.assertTrue(any("Form-question evidence" in r for r in res["reasons"]))
+
+    def test_malformed_form_intel_never_passes_clean(self):
+        p = make_packet("CleanCo", ["  - [text] First Name*"])
+        p["form_intel"]["questions"] = None
+        res = prescreen.screen_packet(p, BANK, {})
+        self.assertEqual(res["verdict"], "PARK")
+        self.assertTrue(any("Form-question evidence" in r for r in res["reasons"]))
+
+    def test_form_intel_requires_explicit_extraction_complete(self):
+        p = make_packet("CleanCo", ["  - [text] First Name*"])
+        p["form_intel"].pop("extraction_complete")
+        res = prescreen.screen_packet(p, BANK, {})
+        self.assertEqual(res["verdict"], "PARK")
+        self.assertTrue(any("Form-question evidence" in r for r in res["reasons"]))
+
+    def test_unrendered_dropdown_options_never_pass_form_coverage(self):
+        p = make_packet("CleanCo", ["  - [dropdown] Work authorization?"])
+        p["form_intel"]["rendered_option_fetch_needed"] = ["Work authorization?"]
+        res = prescreen.screen_packet(p, BANK, {})
+        self.assertEqual(res["verdict"], "PARK")
+        self.assertTrue(any("Form-question evidence" in r for r in res["reasons"]))
+
+    def test_missing_posting_text_never_passes_clean(self):
+        p = make_packet("CleanCo", ["  - [text] First Name*"])
+        p["posting_text"] = ""
+        p["posting_text_complete"] = False
+        res = prescreen.screen_packet(p, BANK, {})
+        self.assertEqual(res["verdict"], "PARK")
+        self.assertTrue(any("Posting-text evidence" in r for r in res["reasons"]))
 
     def test_clean_packet_passes(self):
         p = make_packet("AIO Logic", [
@@ -288,3 +343,15 @@ class TestSyntheticTelemetryIsolation(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class LongOptionCoverageTests(unittest.TestCase):
+    def test_attestation_after_character_200_is_screened(self):
+        packet = make_packet("Fixture", ["  - [checkbox] Agreement*"])
+        option = "Synthetic context " * 18 + "I certify this application was personally completed without AI assistance"
+        self.assertLessEqual(len(option), 500)
+        packet["form_intel"]["questions"][0]["options"] = [option]
+        self.assertIn(option, "\n".join(prescreen.render_form_intel(packet["form_intel"])))
+        result = prescreen.screen_packet(packet, BANK, {})
+        self.assertEqual(result["verdict"], "PARK")
+        self.assertTrue(any("attest" in reason for reason in result["reasons"]))

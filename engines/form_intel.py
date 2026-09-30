@@ -75,12 +75,14 @@ def greenhouse_embed_intel(board, token):
     url = f"https://job-boards.greenhouse.io/embed/job_app?for={board}&token={token}"
     h = fetch(url)
     questions, need_rendered = [], []
+    unparsed_labels = []
     # Walk each label; classify by the control that immediately follows it.
     labels = [(m.group(1), m.end()) for m in re.finditer(r"<label[^>]*>(.*?)</label>", h, re.S)]
     for raw, end in labels:
         label = re.sub(r"<[^>]+>", "", raw).strip()
         label = re.sub(r"\s+", " ", label)
-        if not label or len(label) > 200:
+        if not label or len(label) > 500:
+            unparsed_labels.append(label[:500])
             continue
         low = label.lower()
         if any(k in low for k in ("attach", "enter manually", "resume", "cover letter", "dropbox")):
@@ -99,14 +101,20 @@ def greenhouse_embed_intel(board, token):
             need_rendered.append(label)
         elif re.search(r"<(input|textarea)[ >]", nxt[:300]):
             questions.append({"label": label, "type": "text", "options": []})
+        else:
+            unparsed_labels.append(label)
     return {"ats": "greenhouse", "form_url": url, "questions": questions,
-            "rendered_option_fetch_needed": need_rendered}
+            "rendered_option_fetch_needed": need_rendered,
+            "unparsed_labels": unparsed_labels,
+            "extraction_complete": bool(questions) and not unparsed_labels and not need_rendered}
 
 
 def lever_intel(org, posting_id):
     d = json.loads(fetch(f"https://api.lever.co/v0/postings/{org}/{posting_id}"))
     qs = []
-    for q in d.get("customQuestions", []) or []:
+    custom_questions = d.get("customQuestions")
+    extraction_complete = isinstance(custom_questions, list)
+    for q in custom_questions if isinstance(custom_questions, list) else []:
         qs.append({
             "label": q.get("text"),
             "type": q.get("type"),
@@ -126,9 +134,10 @@ def lever_intel(org, posting_id):
             qs.append({"label": "[captcha] hCaptcha at submit",
                        "type": "captcha", "options": [], "required": True})
     except Exception:
-        pass
+        extraction_complete = False
     return {"ats": "lever", "form_url": d.get("hostedUrl"),
-            "questions": qs, "rendered_option_fetch_needed": []}
+            "questions": qs, "rendered_option_fetch_needed": [],
+            "extraction_complete": extraction_complete}
 
 
 def _probe_url_uncached(url):

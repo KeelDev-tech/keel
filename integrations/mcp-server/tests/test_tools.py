@@ -62,12 +62,14 @@ def test_prescreen_parks_essay():
     assert any("essay" in r for r in out["reasons"])
 
 
-def test_prescreen_clean_simple():
+def test_prescreen_brief_only_cannot_claim_complete_screen():
     brief = ("FORM INTEL\n"
              "- [dropdown] Are you authorized to work in the US?*\n"
              "\nSTEP 3: build packet\n")
     out = prescreen_tool.keel_prescreen_packet(brief, "Example Corp")
-    assert out["verdict"] == "CLEAN"
+    assert out["verdict"] == "PARK"
+    assert any("Form-question evidence" in reason for reason in out["reasons"])
+    assert any("Posting-text evidence" in reason for reason in out["reasons"])
 
 
 def test_answer_lookup_example_only():
