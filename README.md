@@ -89,6 +89,21 @@ Version 0.6.3 adds `productivity-advice` and actual-controller process-crash
 qualification. The [evidence loop guide](docs/EVIDENCE_LOOP.md) explains measured
 bottlenecks, conservative follow-up budgets and the five restart boundaries.
 
+Version 0.6.4 adds offline QRESOLVE retrieval with conservative classification
+and exact scoped answer proposals. Automatic factual reuse stays opt-in and is
+revalidated inside the sanctioned tray actuator's queue lock, preserving
+provenance.
+
+Version 0.6.5 makes question resolution recoverable and fair: conservative
+interrupted-intent inspection with explicit recovery, exact FACT/JUDGMENT draft
+approval that revalidates source and scope, and persistent fair scan selection
+so repeated high-ranked cards cannot starve older work.
+
+Version 0.6.6 adds supply conversion and evidence safeguards. The canonical
+intake floor is enforced independently during question planning and
+application, with private per-lead conversion diagnostics and bounded durable
+observations of READY within 24 hours.
+
 ## What it does NOT do
 
 - **Keel never submits an application.** The public loop stops at the
