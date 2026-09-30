@@ -35,6 +35,7 @@
   "docs/SCORING_CONTRACT.md",
   "docs/SOURCE_FEEDBACK.md",
   "docs/SOURCE_SCHEDULER.md",
+  "docs/SUPPLY_ACCEPTANCE.md",
   "docs/SUSTAINED_OPERATION.md",
   "docs/VERIFICATION_READY_VALIDATION.json",
   "docs/VERIFICATION_READY_VALIDATION.md",
@@ -352,6 +353,7 @@
   "tests/test_run_tests_profiles.py",
   "tests/test_source_scheduler.py",
   "tests/test_staged_admission_recovery.py",
+  "tests/test_supply_acceptance.py",
   "tests/test_sustained_cli.py",
   "tests/test_task_liveness_repair.py",
   "tests/test_verification_transport_contract.py",
@@ -363,6 +365,7 @@
   "tools/release_profile.py",
   "tools/run_productivity_faultlab.py",
   "tools/run_productivity_rehearsal.py",
+  "tools/run_supply_acceptance.py",
   "tools/run_tests.py",
   "tools/transfer_reader.py"
 ]
