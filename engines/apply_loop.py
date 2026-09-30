@@ -1344,7 +1344,7 @@ def build_packet(entry, origin="standard", dest_dir=None, task_id=""):
     try:
         intel = form_intel.probe_url(url)
         intel["role_id"] = role_id
-        intel["source_url"] = url
+        intel.setdefault("source_url", url)
         intel_path = os.path.join(HOME, "data", "form-intel", f"{role_id}.intel.json")
         atomic_json(intel_path, intel)
         ats = intel.get("ats")
@@ -1381,6 +1381,7 @@ def build_packet(entry, origin="standard", dest_dir=None, task_id=""):
         "posting_text": posting_text[:prescreen.MAX_POSTING_TEXT_CHARS],
         "posting_text_complete": posting_text_complete,
         "posting_text_source": posting_text_source,
+        "posting_text_url": entry.get("posting_text_url"),
         "executor": "pluggable — implement the EXECUTOR CONTRACT in the brief",
         "scope": "preparation_only",
         "execution_authorized": False,

@@ -66,7 +66,7 @@ def packet(entry, answers=None):
         "form_intel_complete": True,
         "posting_text": "Synthetic posting evidence for ready-gate tests.",
         "posting_text_complete": True,
-        "posting_text_source": "synthetic test fixture",
+        "posting_text_url": entry["ats_url"], "posting_text_source": "synthetic test fixture",
         "upload_files": [str(Path(ready_gate.HOME) / "resume.txt")],
         "scope": "application", "execution_authorized": True}
     return ready_gate.seal_packet(result, entry, answer_bank)
@@ -347,6 +347,7 @@ def test_direct_legacy_preparation_never_marks_queue_inflight(tmp_path, monkeypa
 def test_packet_builder_keeps_runtime_artifacts_inside_workspace(tmp_path, monkeypatch):
     entry = lead()
     entry["posting_text"] = "Synthetic posting text for a standard role."
+    entry["posting_text_url"] = entry["ats_url"]
     monkeypatch.setattr(apply_loop, "BASE", str(tmp_path / "code"))
     monkeypatch.setattr(apply_loop, "load_answer_bank", bank)
     monkeypatch.setattr(apply_loop.form_intel, "probe_url",
@@ -374,6 +375,7 @@ def test_incomplete_evidence_vetoes_packet_and_archives_stale_output(tmp_path, m
     entry = lead()
     if evidence_complete:
         entry["posting_text"] = "Synthetic complete posting."
+        entry["posting_text_url"] = entry["ats_url"]
     monkeypatch.setattr(apply_loop, "BASE", str(tmp_path / "code"))
     monkeypatch.setattr(apply_loop, "HOME", str(tmp_path))
     monkeypatch.setattr(apply_loop, "load_answer_bank", bank)

@@ -63,7 +63,7 @@ def make_packet(company, intel_lines, role_id="TEST-ROLE-1"):
             "form_intel_complete": True,
             "posting_text": "Synthetic posting text with no special eligibility terms.",
             "posting_text_complete": True,
-            "posting_text_source": "synthetic test fixture"}
+            "posting_text_url": url, "posting_text_source": "synthetic test fixture"}
 
 
 class TestScreenPacket(unittest.TestCase):

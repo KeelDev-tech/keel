@@ -50,7 +50,7 @@ jobs:
       - name: Run offline Hypothesis prescreen properties
         env:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
-        run: python3 -m pytest -q --import-mode=importlib tests/hypothesis_prescreen_properties.py tests/test_prescreen.py tests/test_prescreen_noai_gates3733_3799.py tests/test_ready_admission.py tests/test_extended_regressions.py tests/test_legacy_rescreen_standard.py
+        run: python3 -m pytest -q --import-mode=importlib tests/hypothesis_prescreen_properties.py tests/test_prescreen.py tests/test_prescreen_noai_gates3733_3799.py tests/test_ready_admission.py tests/test_extended_regressions.py tests/test_legacy_rescreen_standard.py tests/test_promotion_evidence_journey.py
       - name: Run optimization and security regressions
         run: >-
           python3 -m pytest -q
