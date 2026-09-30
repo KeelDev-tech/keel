@@ -83,6 +83,10 @@ def form_intel_is_complete(intel, expected_url=None):
             return False
         if "required" in question and not isinstance(question["required"], bool):
             return False
+        if (question.get("required") is True
+                and kind.lower() in {"dropdown", "select", "radio", "multiselect"}
+                and not any(option.strip() for option in options)):
+            return False
     try:
         encoded = json.dumps(intel, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     except (TypeError, ValueError, UnicodeError):
@@ -96,7 +100,9 @@ def _posting_text_is_complete(packet):
     return (packet.get("posting_text_complete") is True
             and isinstance(text, str) and bool(text.strip())
             and len(text) <= MAX_POSTING_TEXT_CHARS
-            and isinstance(source, str) and bool(source.strip()))
+            and isinstance(source, str) and bool(source.strip())
+            and packet.get("posting_text_url") == packet.get("ats_url")
+            and isinstance(packet.get("ats_url"), str) and bool(packet["ats_url"]))
 
 
 def screening_coverage_reasons(packet):
@@ -111,7 +117,7 @@ def screening_coverage_reasons(packet):
             "applicant review is required (applicant).")
     if not _posting_text_is_complete(packet):
         reasons.append(
-            "Posting-text evidence is missing or incomplete; applicant review is required (applicant).")
+            "Posting-text evidence is missing, incomplete, or not bound to this application URL; verification retry required.")
     return reasons
 
 # ---------------------------------------------------------------------------
@@ -525,6 +531,24 @@ def render_probe_brief(intel):
     return "\n".join(render_form_intel(intel) + ["", "STEP 3"])
 
 
+def load_promotion_answer_bank(entry):
+    """Load current workspace assertions, validated for the exact role/employer.
+
+    Engine examples and unconfirmed values never supply promotion answers.
+    Read/shape failures propagate to the caller's UNKNOWN hold.
+    """
+    from pathlib import Path
+    from safe_io import contained_path, read_json
+    from packet_contract import confirmed_answers
+    workspace = Path(os.environ.get("KEEL_HOME", PIPELINE)).absolute()
+    path = contained_path(workspace, "data/answer_bank.json", must_exist=False)
+    bank = read_json(path, missing={"answers": {}})
+    answers, _ = confirmed_answers(bank, role_id=entry.get("role_id"),
+                                   employer=entry.get("company"), role_context=entry)
+    # Banded rules lack value-bound receipts; they cannot clear promotion.
+    return {**bank, "answers": answers, "banded_questions": {}}
+
+
 def screen_entry_prepromotion(entry, url=None, answer_bank=None, posting_text=None):
     """Screen a LIVE-verified lead for input blockers BEFORE READY promotion.
 
@@ -554,17 +578,17 @@ def screen_entry_prepromotion(entry, url=None, answer_bank=None, posting_text=No
         if not isinstance(intel, dict):
             return {"verdict": "UNKNOWN", "reasons": ["form-intel probe returned malformed data"]}
         intel = dict(intel)
-        intel["source_url"] = probe_url
+        intel.setdefault("source_url", probe_url)
         if e.get("role_id"):
             intel["role_id"] = e["role_id"]
         if not form_intel_is_complete(intel, probe_url):
             return {"verdict": "UNKNOWN", "reasons": ["form-intel evidence is incomplete"]}
         bank = answer_bank
         if bank is None:
-            bank_path = os.path.join(BASE, "answer_bank.json")
-            bank = json.load(open(bank_path)) if os.path.exists(bank_path) \
-                else {}
+            bank = load_promotion_answer_bank(e)
         if posting_text is None:
+            if e.get("posting_text_url") != probe_url:
+                return {"verdict": "UNKNOWN", "reasons": ["posting evidence is not bound to this application URL"]}
             posting_text = e.get("posting_text") or e.get("description") or ""
             posting_source = ("entry.posting_text" if e.get("posting_text")
                               else "entry.description" if e.get("description") else "")
@@ -587,6 +611,7 @@ def screen_entry_prepromotion(entry, url=None, answer_bank=None, posting_text=No
             "posting_text": posting_text[:MAX_POSTING_TEXT_CHARS],
             "posting_text_complete": posting_complete,
             "posting_text_source": posting_source,
+            "posting_text_url": probe_url,
         }
         return screen_packet(packet, bank)
     except Exception as ex:

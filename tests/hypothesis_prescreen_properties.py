@@ -37,7 +37,7 @@ def complete_packet():
         "form_intel_complete": True,
         "posting_text": SAFE_POSTING,
         "posting_text_complete": True,
-        "posting_text_source": "synthetic fixture",
+        "posting_text_url": URL, "posting_text_source": "synthetic fixture",
     }
 
 
@@ -104,3 +104,13 @@ def test_form_evidence_from_another_url_never_produces_clean(path):
     assert verdict["verdict"] == "PARK"
     assert any("not bound to this application URL" in reason
                for reason in verdict["reasons"])
+
+
+@PROPERTY_SETTINGS
+@given(path=st.text(alphabet='abcdefghijklmnopqrstuvwxyz0123456789', min_size=1, max_size=40))
+def test_posting_from_another_url_never_produces_clean(path):
+    packet = complete_packet()
+    packet['posting_text_url'] = 'https://other.example/' + path
+    result = prescreen.screen_packet(packet, {}, {})
+    assert result['verdict'] == 'PARK'
+    assert any('Posting-text evidence' in reason for reason in result['reasons'])
