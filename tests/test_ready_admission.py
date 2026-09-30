@@ -60,6 +60,13 @@ def packet(entry, answers=None):
     result = {"role_id": entry["role_id"], "company": entry["company"],
         "title": entry["title"], "ats_url": entry["ats_url"],
         "brief": apply_loop.build_generic_brief(entry, None, answer_bank),
+        "form_intel": {"ats": "fixture", "source_url": entry["ats_url"],
+                       "questions": [], "rendered_option_fetch_needed": [],
+                       "extraction_complete": True},
+        "form_intel_complete": True,
+        "posting_text": "Synthetic posting evidence for ready-gate tests.",
+        "posting_text_complete": True,
+        "posting_text_source": "synthetic test fixture",
         "upload_files": [str(Path(ready_gate.HOME) / "resume.txt")],
         "scope": "application", "execution_authorized": True}
     return ready_gate.seal_packet(result, entry, answer_bank)
@@ -339,9 +346,14 @@ def test_direct_legacy_preparation_never_marks_queue_inflight(tmp_path, monkeypa
 
 def test_packet_builder_keeps_runtime_artifacts_inside_workspace(tmp_path, monkeypatch):
     entry = lead()
+    entry["posting_text"] = "Synthetic posting text for a standard role."
     monkeypatch.setattr(apply_loop, "BASE", str(tmp_path / "code"))
     monkeypatch.setattr(apply_loop, "load_answer_bank", bank)
-    monkeypatch.setattr(apply_loop.form_intel, "probe_url", lambda url: {"ats": "fixture"})
+    monkeypatch.setattr(apply_loop.form_intel, "probe_url",
+                        lambda url: {"ats": "fixture", "questions": [],
+                                     "source_url": url,
+                                     "rendered_option_fetch_needed": [],
+                                     "extraction_complete": True})
     monkeypatch.setattr(apply_loop.prescreen, "screen_packet", lambda *args: {"verdict": "CLEAN", "reasons": []})
     path = apply_loop.build_packet(entry, dest_dir=str(tmp_path / "data/launch-packets"))
     assert (tmp_path / "data/form-intel/fixture-role.intel.json").is_file()
@@ -349,8 +361,45 @@ def test_packet_builder_keeps_runtime_artifacts_inside_workspace(tmp_path, monke
     built = json.loads(Path(path).read_text())
     assert built["execution_authorized"] is False
     assert built["scope"] == "preparation_only"
+    assert built["form_intel_complete"] is True
+    assert built["posting_text_complete"] is True
+    assert built["form_intel"]["questions"] == []
+    assert built["posting_text"] == entry["posting_text"]
     assert ready_gate.packet_admission(built, entry, bank(), for_execution=False)["allowed"]
     assert not ready_gate.packet_admission(built, entry, bank())["allowed"]
+
+
+@pytest.mark.parametrize("evidence_complete", [False, True])
+def test_incomplete_evidence_vetoes_packet_and_archives_stale_output(tmp_path, monkeypatch, evidence_complete):
+    entry = lead()
+    if evidence_complete:
+        entry["posting_text"] = "Synthetic complete posting."
+    monkeypatch.setattr(apply_loop, "BASE", str(tmp_path / "code"))
+    monkeypatch.setattr(apply_loop, "HOME", str(tmp_path))
+    monkeypatch.setattr(apply_loop, "load_answer_bank", bank)
+    monkeypatch.setattr(apply_loop.form_intel, "probe_url",
+                        lambda url: {"ats": "fixture", "questions": [],
+                                     "source_url": url,
+                                     "rendered_option_fetch_needed": [],
+                                     "extraction_complete": True})
+    monkeypatch.setattr(apply_loop.prescreen, "screen_packet",
+                        lambda *args: {"verdict": "CLEAN", "reasons": []})
+    if evidence_complete:
+        monkeypatch.setattr(apply_loop.prescreen, "screen_packet",
+                            lambda *args: {"verdict": "PARK", "reasons": ["applicant attestation"]})
+    destination = tmp_path / "data/launch-packets"
+    destination.mkdir(parents=True)
+    active = destination / "fixture-role.json"
+    active.write_text('{"stale": true}', encoding="utf-8")
+
+    expected = "applicant attestation" if evidence_complete else "Posting-text evidence"
+    error = apply_loop.PacketPrescreenParked if evidence_complete else apply_loop.PacketEvidenceUnavailable
+    with pytest.raises(error, match=expected):
+        apply_loop.build_packet(entry, dest_dir=str(destination))
+
+    assert not active.exists()
+    archived = destination / "archive/fixture-role.json"
+    assert json.loads(archived.read_text(encoding="utf-8")) == {"stale": True}
 
 
 def test_stager_reconciles_nominal_and_admissible_ready(tmp_path, monkeypatch):
@@ -369,3 +418,26 @@ def test_stager_reconciles_nominal_and_admissible_ready(tmp_path, monkeypatch):
     assert plan["admissible_packet_total"] == 1
     assert [row["role_id"] for row in plan["new"]] == ["fixture-role"]
     assert "d1_office_exclusion" in plan["skipped"][0]["reason"]
+
+
+@pytest.mark.parametrize("evidence_error", [True, False])
+def test_builder_hold_routes_only_real_questions_to_input(tmp_path, monkeypatch, evidence_error):
+    entry = lead()
+    monkeypatch.setattr(apply_loop.sys, "argv", ["apply_loop.py"])
+    monkeypatch.setattr(apply_loop, "load_queue", lambda: [entry])
+    monkeypatch.setattr(apply_loop, "load_strategic_queue", lambda: [])
+    monkeypatch.setattr(apply_loop, "load_answer_bank", bank)
+    monkeypatch.setattr(apply_loop, "eligible", lambda *args: (True, ""))
+    monkeypatch.setattr(apply_loop.rate_limits, "is_allowed", lambda *args: (True, ""))
+    monkeypatch.setattr(apply_loop, "_buffered_fresh_packet", lambda *args: None)
+    monkeypatch.setattr(apply_loop, "_launch_guard", lambda *args: (True, "fixture-task", ""))
+    released, parked = [], []
+    monkeypatch.setattr(apply_loop, "_release_launch_lock", lambda *args: released.append(args))
+    monkeypatch.setattr(apply_loop, "_park_packet_for_input", lambda *args: parked.append(args) or {"ok": True})
+    error = apply_loop.PacketEvidenceUnavailable if evidence_error else apply_loop.PacketPrescreenParked
+    def build(*args, **kwargs):
+        raise error(["synthetic hold"])
+    monkeypatch.setattr(apply_loop, "build_packet", build)
+    apply_loop.main()
+    assert released == [(entry["role_id"], "fixture-task")]
+    assert len(parked) == (0 if evidence_error else 1)

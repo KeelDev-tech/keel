@@ -3,6 +3,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -44,6 +45,35 @@ class PassiveFormTests(unittest.TestCase):
 
     def test_form_control_limit(self):
         with self.assertRaises(ValueError):html_form.inspect_html('<input>'*501,'https://example.org/')
+
+    def test_greenhouse_extraction_marker_requires_observed_questions(self):
+        for html,expected in [('<div class="empty"></div>',False),
+                ('<label for="q">Eligibility?</label><input id="q">',True)]:
+            with patch.object(form_intel,'fetch',return_value=html):
+                result=form_intel.greenhouse_embed_intel('fixture','token')
+            self.assertEqual(result['extraction_complete'],expected)
+
+    def test_lever_marks_a_successful_empty_custom_question_list_complete(self):
+        payload=json.dumps({'hostedUrl':'https://jobs.lever.co/fixture/1',
+                            'customQuestions':[]})
+        with patch.object(form_intel,'fetch',side_effect=[payload,'<html></html>']):
+            result=form_intel.lever_intel('fixture','1')
+        self.assertTrue(result['extraction_complete'])
+        self.assertEqual(result['questions'],[])
+
+
+    def test_greenhouse_unparsed_control_is_incomplete(self):
+        html = '<label>First name</label><input><label>Agreement</label><button>Accept</button>'
+        with patch.object(form_intel, 'fetch', return_value=html):
+            result = form_intel.greenhouse_embed_intel('fixture', '1')
+        self.assertFalse(result['extraction_complete'])
+        self.assertEqual(result['unparsed_labels'], ['Agreement'])
+
+    def test_lever_missing_question_list_or_hosted_fetch_is_incomplete(self):
+        for payload, hosted in [({'hostedUrl': 'https://jobs.lever.co/fixture/1'}, '<html></html>'),
+                                ({'customQuestions': []}, RuntimeError('offline'))]:
+            with patch.object(form_intel, 'fetch', side_effect=[json.dumps(payload), hosted]):
+                self.assertFalse(form_intel.lever_intel('fixture', '1')['extraction_complete'])
 
 
 class OutcomeValidationTests(unittest.TestCase):
@@ -151,6 +181,48 @@ class FinalBoundaryTests(unittest.TestCase):
             with self.assertRaises(verify_retry.VerificationUnavailable):
                 verify_retry.screen_promotion_form({'role_id':'R'},'https://example.org/')
 
+    def test_missing_form_url_is_unknown_and_cannot_promote(self):
+        import prescreen,verify_retry
+        verdict=prescreen.screen_entry_prepromotion({'role_id':'R'})
+        self.assertEqual(verdict['verdict'],'UNKNOWN')
+        with self.assertRaises(verify_retry.VerificationUnavailable):
+            verify_retry.screen_promotion_form({'role_id':'R'},None)
+
+    def test_malformed_form_intel_is_unknown_and_cannot_promote(self):
+        import prescreen,verify_retry
+        url='https://example.org/jobs/1'
+        with patch.object(form_intel,'probe_url',return_value=[]):
+            verdict=prescreen.screen_entry_prepromotion({'role_id':'R','ats_url':url})
+            self.assertEqual(verdict['verdict'],'UNKNOWN')
+            with self.assertRaises(verify_retry.VerificationUnavailable):
+                verify_retry.screen_promotion_form({'role_id':'R'},url)
+
+    def test_import_failure_in_form_screen_cannot_promote(self):
+        import builtins,verify_retry
+        original=builtins.__import__
+        def fail_prescreen(name,*args,**kwargs):
+            if name=='prescreen':
+                raise ImportError('fixture import failure')
+            return original(name,*args,**kwargs)
+        with patch('builtins.__import__',side_effect=fail_prescreen):
+            with self.assertRaises(verify_retry.VerificationUnavailable):
+                verify_retry.screen_promotion_form({'role_id':'R'},'https://example.org/jobs/1')
+
+    def test_malformed_unknown_reasons_remain_a_safe_hold(self):
+        import prescreen,verify_retry
+        with patch.object(prescreen,'screen_entry_prepromotion',
+                          return_value={'verdict':'UNKNOWN','reasons':7}):
+            with self.assertRaises(verify_retry.VerificationUnavailable):
+                verify_retry.screen_promotion_form(
+                    {'role_id':'R'},'https://example.org/jobs/1')
+
+    def test_missing_posting_text_is_an_explicit_promotion_hold(self):
+        import verify_retry
+        url='https://example.org/jobs/1'
+        with patch.object(verify_retry,'fetch_posting_text',return_value=''):
+            with self.assertRaises(verify_retry.VerificationUnavailable):
+                verify_retry.screen_promotion_posting({'role_id':'R'},url)
+
     def test_stale_queue_snapshot_refuses_all_changes(self):
         import queue_io
         with tempfile.TemporaryDirectory() as directory:
@@ -167,7 +239,7 @@ class FinalBoundaryTests(unittest.TestCase):
         safe_http._backoff.clear()
         response=safe_http.Response(b'',429,{'Retry-After':'120'},'https://rate.example.org/')
         try:
-            with patch.object(safe_http,'resolve_public',return_value=[]),patch.object(safe_http,'_exchange',return_value=response) as call:
+            with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {'KEEL_HOME': directory}), patch.object(safe_http,'resolve_public',return_value=[]),patch.object(safe_http,'_exchange',return_value=response) as call:
                 with self.assertRaises(safe_http.HTTPError):safe_http.urlopen('https://rate.example.org/')
                 with self.assertRaises(safe_http.NetworkPolicyError):safe_http.urlopen('https://rate.example.org/other')
                 self.assertEqual(call.call_count,1)

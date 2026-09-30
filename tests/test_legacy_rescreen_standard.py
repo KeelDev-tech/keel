@@ -27,6 +27,9 @@ import log_event  # noqa: E402
 class FakeVR:
     """Stub for the heavy verify_retry module (lazy-imported by
     rescreen_standard). Mirrors the real functions' contracts."""
+    class VerificationUnavailable(RuntimeError):
+        pass
+
     texts = {}
     forms = {}
 
@@ -39,7 +42,7 @@ class FakeVR:
         return FakeVR.texts.get(url, "")
 
     @staticmethod
-    def screen_promotion_form(entry, url):
+    def screen_promotion_form(entry, url, posting_text=None):
         return list(FakeVR.forms.get(entry.get("role_id"), []))
 
     @staticmethod
@@ -218,8 +221,8 @@ def test_excluded_keyword_title_park(env):
 
 
 def test_empty_fetches_do_not_abort(env):
-    # Empty fetches are extraction misses / dead postings, NOT proof of
-    # rate limiting: the batch completes and counts them as a stat.
+    # Empty fetches are not proof of rate limiting, so the batch completes;
+    # they are incomplete evidence and must not be classified clean.
     FakeVR.texts = {}  # every URL-bearing fetch returns ""
     std = _read(env["std"])
     plan, stats = rs.scan(std, 75, None, pace=0)
@@ -230,6 +233,16 @@ def test_empty_fetches_do_not_abort(env):
     assert stats["empty_fetch"] == n_url_bearing
     assert stats["selected"] == len(plan)
     assert stats["observed_429s"] == 0
+    assert stats["verification_hold"] > 0
+    assert all(result["decision"] in {"title_park", "verification_hold"}
+               for result in plan.values())
+    assert any("Posting text unavailable" in reason
+               for result in plan.values() for reason in result["reasons"])
+    before_std, before_ni = _read(env["std"]), _read(env["ni"])
+    holds = {rid: item for rid, item in plan.items() if item["decision"] == "verification_hold"}
+    rs.apply(holds, stats)
+    assert _read(env["std"]) == before_std
+    assert _read(env["ni"]) == before_ni
 
 
 def test_observe_429s_counts_and_hard_stops():

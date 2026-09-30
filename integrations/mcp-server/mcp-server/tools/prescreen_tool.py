@@ -22,10 +22,12 @@ def keel_prescreen_packet(packet_brief: str, company: str = "") -> dict:
             header and the "STEP 3" marker, with one question per line like:
             - [text] Why do you want to work here?*
             Required questions end with "*". A brief without that shape
-            carries no intel and screens CLEAN (no intel = nothing to flag).
+            carries no intel. This brief-only diagnostic cannot establish full
+            form/posting coverage and returns PARK for missing source evidence.
         company: employer name, used for employer-specific blocker patterns.
     Returns {"verdict": "CLEAN"|"PARK", "reasons": [...]}. PARK means a human
-    must answer before any application proceeds — the packet is never faked.
+    must review a genuine blocker; missing evidence instead requires verification
+    recovery. This diagnostic never authorizes preparation or submission.
     """
     bank = keel_bridge.load_fixture("answer_bank.example.json")
     packet = {"brief": packet_brief or "", "company": company or ""}

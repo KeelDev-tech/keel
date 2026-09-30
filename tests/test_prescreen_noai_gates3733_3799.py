@@ -33,6 +33,7 @@ THE REPAIR (keel/engines/prescreen.py):
 Hermetic: synthetic bank only, never the operator's live answer_bank.json.
 """
 import os
+import re
 import sys
 import unittest
 
@@ -52,6 +53,14 @@ BANK = {"answers": {
 
 def make_packet(company, lines, role_id="TEST-1"):
     intel = "\n".join(lines)
+    questions = []
+    for line in lines:
+        match = re.match(r"\s*-\s*\[([^\]]+)\]\s*(.*)$", line)
+        if match:
+            label = match.group(2).strip()
+            questions.append({"type": match.group(1).strip(), "label": label,
+                              "required": label.endswith("*"), "options": []})
+    url = "https://fixture.invalid/job"
     brief = (
         "Submit a job application for the applicant.\n"
         "GATES (stop conditions -- obey exactly):\n"
@@ -61,7 +70,15 @@ def make_packet(company, lines, role_id="TEST-1"):
         "STEP 3 \u2014 COMMIT TECHNIQUE FOR GREENHOUSE: live-option click + per-field verify\n"
     )
     return {"role_id": role_id, "company": company, "title": "Test Role",
-            "brief": brief}
+            "brief": brief, "ats_url": url,
+            "form_intel": {"ats": "fixture", "source_url": url,
+                           "questions": questions,
+                           "rendered_option_fetch_needed": [],
+                           "extraction_complete": True},
+            "form_intel_complete": True,
+            "posting_text": "Synthetic posting text with no special eligibility terms.",
+            "posting_text_complete": True,
+            "posting_text_source": "synthetic test fixture"}
 
 
 class TestNoAiHardStop(unittest.TestCase):

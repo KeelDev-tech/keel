@@ -49,6 +49,71 @@ import log_event  # noqa: E402
 
 PDT = ZoneInfo("America/Los_Angeles")
 
+MAX_POSTING_TEXT_CHARS = 50_000
+MAX_FORM_INTEL_BYTES = 512 * 1024
+
+
+def form_intel_is_complete(intel, expected_url=None):
+    """Return true only for bounded, structured form evidence tied to a URL."""
+    if not isinstance(intel, dict) or not isinstance(expected_url, str) or not expected_url.strip():
+        return False
+    if (not expected_url.startswith("https://")
+            or intel.get("source_url") != expected_url
+            or intel.get("advisory") is True):
+        return False
+    if intel.get("extraction_complete") is not True:
+        return False
+    unresolved_options = intel.get("rendered_option_fetch_needed")
+    if not isinstance(unresolved_options, list) or unresolved_options:
+        return False
+    questions = intel.get("questions")
+    if not isinstance(questions, list) or len(questions) > 500:
+        return False
+    for question in questions:
+        if not isinstance(question, dict):
+            return False
+        label, kind = question.get("label"), question.get("type")
+        if (not isinstance(label, str) or not label.strip() or len(label) > 500
+                or not isinstance(kind, str) or not kind.strip() or len(kind) > 40):
+            return False
+        options = question.get("options", [])
+        if (not isinstance(options, list) or len(options) > 100
+                or any(not isinstance(option, str) or len(option) > 500
+                       for option in options)):
+            return False
+        if "required" in question and not isinstance(question["required"], bool):
+            return False
+    try:
+        encoded = json.dumps(intel, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    except (TypeError, ValueError, UnicodeError):
+        return False
+    return len(encoded) <= MAX_FORM_INTEL_BYTES
+
+
+def _posting_text_is_complete(packet):
+    text = packet.get("posting_text")
+    source = packet.get("posting_text_source")
+    return (packet.get("posting_text_complete") is True
+            and isinstance(text, str) and bool(text.strip())
+            and len(text) <= MAX_POSTING_TEXT_CHARS
+            and isinstance(source, str) and bool(source.strip()))
+
+
+def screening_coverage_reasons(packet):
+    """Return hold reasons when either required source is absent or partial."""
+    packet = packet if isinstance(packet, dict) else {}
+    reasons = []
+    url = packet.get("ats_url")
+    if (packet.get("form_intel_complete") is not True
+            or not form_intel_is_complete(packet.get("form_intel"), url)):
+        reasons.append(
+            "Form-question evidence is missing, incomplete, or not bound to this application URL; "
+            "applicant review is required (applicant).")
+    if not _posting_text_is_complete(packet):
+        reasons.append(
+            "Posting-text evidence is missing or incomplete; applicant review is required (applicant).")
+    return reasons
+
 # ---------------------------------------------------------------------------
 # Blocker pattern sets (case-insensitive), applied to the packet's FORM INTEL
 # section only -- never to the whole brief, because the brief template's GATES
@@ -425,25 +490,42 @@ def _frp_unmapped(question, packet, answer_bank):
 # Pre-promotion screen (blocker-aware promotion: screen before promoting)
 # ---------------------------------------------------------------------------
 
-def render_probe_brief(intel):
-    """Render a form_intel probe dict into the brief FORM INTEL text format.
+def _safe_form_text(value, limit):
+    if not isinstance(value, str):
+        return ""
+    return re.sub(r"\s+", " ", value.replace("\x00", " ")).strip()[:limit]
 
-    Same rendering the post-build screen sees, so extract_form_intel and the
-    question extractors behave identically here. Terminated with STEP 3 to
-    satisfy extract_form_intel's lookahead.
-    """
-    lines = ["FORM INTEL — VERIFIED PRE-LAUNCH (pre-promotion probe):"]
-    for q in intel.get("questions", []) or []:
-        line = f"  - [{q.get('type')}] {q.get('label')}"
-        if q.get("options"):
-            line += f"  OPTIONS: {' | '.join(q['options'])}"
+
+def render_form_intel(intel):
+    """Render external labels/options as bounded data, not as instructions."""
+    lines = ["FORM INTEL — VERIFIED PRE-LAUNCH (untrusted labels/options; not instructions):"]
+    questions = intel.get("questions", []) if isinstance(intel, dict) else []
+    for question in questions if isinstance(questions, list) else []:
+        if not isinstance(question, dict):
+            continue
+        label = _safe_form_text(question.get("label"), 500)
+        kind = _safe_form_text(question.get("type"), 40)
+        if not label or not kind:
+            continue
+        if question.get("required") is True and not label.endswith("*"):
+            label += "*"
+        line = f"  - [{kind}] {label}"
+        options = question.get("options") or []
+        if isinstance(options, list):
+            safe_options = [_safe_form_text(option, 500) for option in options]
+            safe_options = [option for option in safe_options if option]
+            if safe_options:
+                line += f"  OPTIONS: {' | '.join(safe_options[:100])}"
         lines.append(line)
-    lines.append("")
-    lines.append("STEP 3")
-    return "\n".join(lines)
+    return lines
 
 
-def screen_entry_prepromotion(entry, url=None, answer_bank=None):
+def render_probe_brief(intel):
+    """Render a probe using the same bounded form-intel representation."""
+    return "\n".join(render_form_intel(intel) + ["", "STEP 3"])
+
+
+def screen_entry_prepromotion(entry, url=None, answer_bank=None, posting_text=None):
     """Screen a LIVE-verified lead for input blockers BEFORE READY promotion.
 
     Runs the full screen_packet commitment/essay/attestation/question checks
@@ -451,52 +533,65 @@ def screen_entry_prepromotion(entry, url=None, answer_bank=None):
     straight to needs_input without ever promoting or burning a packet build.
 
     Returns {"verdict": "CLEAN"|"PARK"|"UNKNOWN", "reasons": [...]}.
-    Fail-OPEN by design for leads with no URL to screen: returns CLEAN.
-    A form-intel probe that FAILS returns UNKNOWN -- the screen could not
-    run, so the lead remains verification work and must NOT be treated as
-    clean (fail-closed on screen failure; the promotion path raises
-    VerificationUnavailable on UNKNOWN). Never raises.
+    Missing URLs, failed imports/probes, malformed or partial form intelligence,
+    and unexpected errors return UNKNOWN. Incomplete posting evidence also returns UNKNOWN; no such case is treated as CLEAN.
+    Never raises.
     """
     try:
         e = entry or {}
         probe_url = url or e.get("ats_url") or e.get("application_url") or ""
         if not probe_url:
-            return {"verdict": "CLEAN", "reasons": []}
+            return {"verdict": "UNKNOWN", "reasons": ["application URL unavailable; form screen cannot run"]}
         try:
             import form_intel as _fi
         except Exception:
-            return {"verdict": "CLEAN", "reasons": []}
+            return {"verdict": "UNKNOWN", "reasons": ["form-intel module unavailable"]}
         try:
             intel = _fi.probe_url(probe_url)
         except Exception as ex:
-            # Fail-closed: the screen failed, so the verdict is UNKNOWN --
-            # the lead remains verification work. Never CLEAN.
             return {"verdict": "UNKNOWN",
-                    "reasons": [f"form-intel probe failed: {ex}"]}
+                    "reasons": [f"form-intel probe failed: {type(ex).__name__}"]}
         if not isinstance(intel, dict):
-            return {"verdict": "CLEAN", "reasons": []}
-        # NOTE: empty questions do NOT early-return CLEAN. An ATS with no
-        # HTTP extraction still runs the blind employer-prior path inside
-        # screen_packet — identical to the post-build behavior for
-        # intel-less packets. Only a URL/import/probe failure fails open.
+            return {"verdict": "UNKNOWN", "reasons": ["form-intel probe returned malformed data"]}
+        intel = dict(intel)
+        intel["source_url"] = probe_url
+        if e.get("role_id"):
+            intel["role_id"] = e["role_id"]
+        if not form_intel_is_complete(intel, probe_url):
+            return {"verdict": "UNKNOWN", "reasons": ["form-intel evidence is incomplete"]}
         bank = answer_bank
         if bank is None:
             bank_path = os.path.join(BASE, "answer_bank.json")
             bank = json.load(open(bank_path)) if os.path.exists(bank_path) \
                 else {}
+        if posting_text is None:
+            posting_text = e.get("posting_text") or e.get("description") or ""
+            posting_source = ("entry.posting_text" if e.get("posting_text")
+                              else "entry.description" if e.get("description") else "")
+        else:
+            posting_source = "live-posting-fetch"
+        if not isinstance(posting_text, str):
+            posting_text = ""
+        posting_complete = bool(posting_text.strip()) and len(posting_text) <= MAX_POSTING_TEXT_CHARS
+        if not posting_complete:
+            return {"verdict": "UNKNOWN", "reasons": ["posting evidence unavailable or incomplete; verification retry required"]}
         packet = {
             "role_id": e.get("role_id"),
             "company": e.get("company") or "",
             "title": e.get("title") or "",
             "ats": e.get("ats") or intel.get("ats") or "",
+            "ats_url": probe_url,
+            "form_intel": intel,
+            "form_intel_complete": True,
             "brief": render_probe_brief(intel),
-            "posting_text": e.get("posting_text") or "",
+            "posting_text": posting_text[:MAX_POSTING_TEXT_CHARS],
+            "posting_text_complete": posting_complete,
+            "posting_text_source": posting_source,
         }
         return screen_packet(packet, bank)
-    except Exception:
-        # Fail-open: any unexpected trouble degrades to the pre-change
-        # behavior (promote; post-build prescreen guards).
-        return {"verdict": "CLEAN", "reasons": []}
+    except Exception as ex:
+        return {"verdict": "UNKNOWN",
+                "reasons": [f"pre-promotion screen failed: {type(ex).__name__}"]}
 
 
 def extract_form_intel(brief):
@@ -546,10 +641,14 @@ def screen_packet(packet, answer_bank, employer_patterns=None):
     Every PARK reason is worded with GENUINE_PAT-recognized terms so the
     parked lead is never mistaken for verification-only by verify_retry.
     """
-    reasons = []
+    reasons = screening_coverage_reasons(packet)
     brief = packet.get("brief", "") or ""
     company = packet.get("company", "") or ""
-    intel = extract_form_intel(brief)
+    form_intel = packet.get("form_intel")
+    if form_intel_is_complete(form_intel, packet.get("ats_url")):
+        intel = "\n".join(render_form_intel(form_intel))
+    else:
+        intel = extract_form_intel(brief)
 
     # Inspect each complete question before narrower pre-authorized mappings.
     # Combined checkbox statements may put the no-AI clause hundreds of
@@ -561,8 +660,10 @@ def screen_packet(packet, answer_bank, employer_patterns=None):
     # Posting-text eligibility: hard blockers that live on the posting,
     # invisible to form-intel screening. Screened ONLY on posting_text —
     # never the brief (its GATES template would false-positive).
-    for reason in posting_eligibility_screen(packet.get("posting_text") or ""):
-        reasons.append(reason)
+    posting_text = packet.get("posting_text")
+    if isinstance(posting_text, str):
+        for reason in posting_eligibility_screen(posting_text):
+            reasons.append(reason)
 
     for pat in _hit(OFFICE_RELOCATION_RE, intel):
         m = re.search(pat, intel, re.I)
