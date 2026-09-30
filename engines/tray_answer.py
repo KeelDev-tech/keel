@@ -35,9 +35,9 @@ from the applicant's reply verbatim.
 
 The separate --qresolve-request mode accepts only a current evidence-bound
 FACT decision from qresolve.py. It never writes the answer bank or invents new
-human provenance. It journals intent before changing queues, keeps unresolved
-posting liveness pending, and leaves canonical verify_retry to its existing
-schedule. It does not launch network verification or submissions.
+human provenance. It journals intent before changing queues, keeps posting
+liveness pending, and records leads awaiting canonical preparation and
+admission. It does not launch network verification or submissions.
 
 The --approve-qresolve mode explicitly approves a current persisted FACT or
 JUDGMENT draft for exactly its existing targets. Original bank provenance stays
@@ -74,6 +74,7 @@ import queue_io
 import safe_io
 import bank_scope as bs
 from qresolve_corpus import _read as _bounded_read, _open_parent
+from qresolve_policy import fit_admission, identity_digest
 
 PDT = ZoneInfo("America/Los_Angeles")
 STAMP = datetime.now(PDT).strftime("%Y-%m-%d %H:%M PDT")
@@ -129,10 +130,15 @@ def find_targets(key=None, family=None):
         )
         hint = "\n".join(f"  {k}  [{f}] ({n} leads)" for f, k, n in avail[:15])
         return None, [], f"no tray card matches; available:\n{hint}"
+    # Only current card members can be targeted. A matching prompt on a
+    # below-floor or newly appearing sibling does not expand authorization.
+    current_ids = {lead["role_id"] for lead in card["leads"]}
     targets = []
     for fname, path in (("needs_input", NI_Q), ("standard", STD_Q)):
         for e in load_list(path):
             if "NEEDS-INPUT" not in str(e.get("status", "")):
+                continue
+            if e.get("role_id") not in current_ids or not fit_admission(e)["eligible"]:
                 continue
             matched = [t for _, t in tray.genuine_blockers(e)[1]
                        if card_matches(t, key=card["key"])]
@@ -144,26 +150,20 @@ def find_targets(key=None, family=None):
 def resolve_unresolved(unresolved, card_key, matched_texts):
     """Split an `unresolved` list into (removed, kept) for a card answer.
 
-    Remove by CARD MATCH, not by exact raw-string membership:
-    genuine_blockers() can return merged/fragmented text that never
-    appears verbatim in `unresolved`. An unresolved entry belongs to
-    this card iff it card-matches, or it is a substring of the card's
-    raw matched text (the merge case) and doesn't belong to another
-    live card.
+    Reviewed aliases match the card identity. A merged prompt may clear only
+    the exact raw fragments that generated its current matched text. Substring
+    overlap is never authority to clear an additional qualified obligation.
     """
-    other_norms = [c["norm"] for k, c in tray.collect_cards().items()
-                   if k != card_key]
-    mtexts = [str(m) for m in matched_texts]
+    mtexts = {str(m) for m in matched_texts}
+    fragments = [u for text, raw in tray.blocker_groups({"unresolved": unresolved})
+                 if text in mtexts and card_matches(text, key=card_key)
+                 for u in raw]
 
     def _belongs(u):
         us = str(u)
         if card_matches(us, key=card_key):
             return True
-        if any(us in m or m in us for m in mtexts):
-            if any(us in n or n in us for n in other_norms):
-                return False  # another card owns it
-            return True
-        return False
+        return any(u == fragment for fragment in fragments)
 
     removed, kept = [], []
     for u in (unresolved or []):
@@ -316,7 +316,8 @@ def _qresolve_append(path, record):
         flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW | os.O_NONBLOCK
         fd = os.open(name, flags, 0o600, dir_fd=parent)
         info = os.fstat(fd)
-        if not stat.S_ISREG(info.st_mode) or info.st_size + len(payload) > 16 * 1024 * 1024:
+        if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+                or info.st_size + len(payload) > 16 * 1024 * 1024):
             raise ValueError("unsafe_or_oversized_audit")
         remaining = memoryview(payload)
         while remaining:
@@ -345,9 +346,15 @@ def _qresolve_receipt(status, decision_id=None, reason=None, **fields):
 
 
 def _qresolve_queues():
+    queue_io._refuse_pending_transactions()
     queues = {}
     identities = set()
-    for path in (NI_Q, STD_Q):
+    # Identity is canonical across all four queues even though this actuator
+    # may mutate only needs_input and standard. Missing queues cannot be
+    # treated as empty evidence of uniqueness.
+    qdir = Path(NI_Q).parent
+    for path in (NI_Q, STD_Q, str(qdir / "strategic-queue.json"),
+                 str(qdir / "rejected-queue.json")):
         rows = queue_io.strict_loads(_bounded_read(path, 16 * 1024 * 1024)[0])
         if not isinstance(rows, list):
             raise ValueError("invalid_queue_shape")
@@ -358,7 +365,9 @@ def _qresolve_queues():
             if not isinstance(identity, str) or not identity.strip() or identity in identities:
                 raise ValueError("missing_or_duplicate_role_id")
             identities.add(identity)
-        queues[path] = rows
+        if path in (NI_Q, STD_Q):
+            queues[path] = rows
+    queue_io._refuse_pending_transactions()
     return queues
 
 
@@ -369,6 +378,8 @@ def _qresolve_changes(card, targets, queues, decision, *, approval=None):
               "fully_unblocked": 0, "role_ids": []}
     seen = set()
     for fname, entry, matched in targets:
+        if not fit_admission(entry)["eligible"]:
+            raise ValueError("below_floor_or_invalid_fit")
         path = NI_Q if fname == "needs_input" else STD_Q
         rid = entry.get("role_id")
         if rid in seen:
@@ -378,6 +389,8 @@ def _qresolve_changes(card, targets, queues, decision, *, approval=None):
         if len(matches) != 1 or matches[0] != entry:
             raise ValueError("target_snapshot_changed")
         row = matches[0]
+        if not fit_admission(row)["eligible"]:
+            raise ValueError("below_floor_or_invalid_fit")
         unresolved = row.get("unresolved")
         if not isinstance(unresolved, list) or not all(isinstance(u, str) for u in unresolved):
             raise ValueError("invalid_blockers")
@@ -396,7 +409,7 @@ def _qresolve_changes(card, targets, queues, decision, *, approval=None):
             trial = dict(row)
             trial["status_reason"] = (
                 f"qresolve: all input blockers cleared; decision {decision['decision_id']}; "
-                "liveness unverified — queued for verification")
+                "liveness unverified — awaiting canonical preparation and admission")
             gate = row.get("gate_note") or ""
             if not isinstance(gate, str):
                 raise ValueError("invalid_gate_note")
@@ -415,6 +428,39 @@ def _qresolve_changes(card, targets, queues, decision, *, approval=None):
         raise ValueError("target_accounting_mismatch")
     counts["role_ids"].sort()
     return expected, counts
+
+
+def _qresolve_fit_hold(request, queues):
+    """A requested target must remain eligible under current intake policy."""
+    target_ids = request.get("decision", {}).get("target_role_ids", [])
+    if not isinstance(target_ids, list) or not all(isinstance(rid, str) for rid in target_ids):
+        raise ValueError("invalid_target_role_ids")
+    for rows in queues.values():
+        for row in rows:
+            if row.get("role_id") in target_ids:
+                gate = fit_admission(row)
+                if not gate["eligible"]:
+                    return gate["reason"]
+    return None
+
+
+def _qresolve_resolution_state(queues, target_ids):
+    """Capture the exact post-resolution state bound to the durable intent."""
+    state = {}
+    for rows in queues.values():
+        for row in rows:
+            if row.get("role_id") not in target_ids:
+                continue
+            gate = fit_admission(row)
+            state[row["role_id"]] = {
+                "fit_score": gate["score"], "fit_eligible": gate["eligible"],
+                "fit_floor": gate["floor"],
+                "remaining_blockers": len(row.get("unresolved") or []),
+                "fully_unblocked": not row.get("unresolved") and is_verify_only(row),
+                "status": row.get("status"), "status_updated": row.get("status_updated"),
+                "identity_sha256": identity_digest(row),
+            }
+    return state
 
 
 def apply_qresolve(request_path, bank_path, *, live=False, approval_id=None):
@@ -472,14 +518,17 @@ def apply_qresolve(request_path, bank_path, *, live=False, approval_id=None):
                     return _qresolve_receipt("NO_CHANGE", decision_id, "already_recorded")
                 request = load_proposal(approval_id, bank_path)
                 card_key = request["decision"]["card_key"]
-            _qresolve_queues()
+            queues = _qresolve_queues()
+            fit_hold = _qresolve_fit_hold(request, queues)
+            if fit_hold:
+                return _qresolve_receipt("HOLD", decision_id, fit_hold)
             card, targets, _ = find_targets(key=card_key)
             if card is None:
                 raise ValueError("card_missing")
             validator(request, card, targets, bank_path)
             if _structural_guard(card, targets):
                 raise ValueError("structural_blocker")
-        except (OSError, ValueError, TypeError, KeyError):
+        except (OSError, ValueError, TypeError, KeyError, RuntimeError):
             return _qresolve_receipt("HOLD", decision_id, "revalidation_failed")
         return _qresolve_receipt("NO_CHANGE", decision_id, "dry_run",
                                  proposed_target_count=len(targets))
@@ -489,7 +538,7 @@ def apply_qresolve(request_path, bank_path, *, live=False, approval_id=None):
         preflight_locks(root)
         # Queue writers and confirm-answer use different canonical locks. Hold
         # both, in queue -> bank order, through evidence validation and commit.
-        with queue_io.queue_lock(owner="tray_answer:qresolve"), safe_io.file_lock(str(bank_path) + ".lock"):
+        with queue_io.queue_lock(owner="tray_answer:qresolve", recover=False), safe_io.file_lock(str(bank_path) + ".lock"):
             try:
                 records = _qresolve_journal(journal)
                 from qresolve_recovery import journal_state
@@ -502,6 +551,9 @@ def apply_qresolve(request_path, bank_path, *, live=False, approval_id=None):
                     request = load_proposal(approval_id, bank_path)
                     card_key = request["decision"]["card_key"]
                 queues = _qresolve_queues()
+                fit_hold = _qresolve_fit_hold(request, queues)
+                if fit_hold:
+                    return _qresolve_receipt("HOLD", decision_id, fit_hold)
                 card, targets, _ = find_targets(key=card_key)
                 if card is None:
                     raise ValueError("card_missing")
@@ -527,11 +579,13 @@ def apply_qresolve(request_path, bank_path, *, live=False, approval_id=None):
                     raise ValueError("invalid_resolved_map")
                 expected, counts = _qresolve_changes(card, targets, queues, decision,
                                                      approval=approval)
+                target_state = _qresolve_resolution_state(queues, counts["role_ids"])
                 # Keep the evidence and exact removal plan in the durable intent.
                 backup = _durable_backup(bank_path)
                 intent = {"ts": datetime.now(timezone.utc).isoformat(),
                           "action": "INTENT", **decision,
                           "planned_counts": counts,
+                          "target_resolution_state": target_state,
                           "backup": os.path.basename(backup),
                           "queue_before_sha256": _qresolve_digest(expected),
                           "queue_after_sha256": _qresolve_digest(queues)}
@@ -562,13 +616,14 @@ def apply_qresolve(request_path, bank_path, *, live=False, approval_id=None):
                     "config_sha256": decision["config_sha256"],
                     "target_role_ids": counts["role_ids"],
                     "target_post_sha256": snapshots,
+                    "target_resolution_state": target_state,
                     "ts": datetime.now(timezone.utc).isoformat(),
                 }
                 if approval:
                     resolved[decision_id]["approval"] = approval
                 queue_io.atomic_write_json(resolved_path, resolved)
-                revival = ("queued_for_canonical_verify_retry" if counts["fully_unblocked"]
-                           else "still_blocked_for_review")
+                revival = ("awaiting_canonical_preparation_admission" if counts["fully_unblocked"]
+                           else "remaining_blockers")
                 _qresolve_append(journal, {
                     **resolved[decision_id],
                     "action": "human_applied" if approval else "auto_applied", **counts,

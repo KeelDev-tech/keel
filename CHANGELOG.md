@@ -1,3 +1,18 @@
+## 0.6.6 — Supply conversion and evidence safeguards
+
+- Build on merged verification, fit-policy and Muse recovery contracts.
+- Enforce the canonical intake floor independently during question planning
+  and application; bind mutations to exact current card roles.
+- Keep provisional sweep answers and assisted drafts from acquiring automatic
+  authority, and enforce the supplied standing applicant gates.
+- Share reviewed factual aliases without hiding active obligations or clearing
+  qualified prompts by substring overlap.
+- Add private per-lead conversion diagnostics and bounded durable observations
+  of READY within 24 hours. Unknown history and host execution remain unknown.
+- Refuse pending queue recovery in QRESOLVE diagnostics and metadata writes.
+  Cleared questions await canonical preparation/admission; they do not become
+  READY through the posting-only verifier. No paid service or dependency added.
+
 ## Unreleased — Verification, READY admission, and clean source recovery
 
 - Derive the tray and standard re-screen fit defaults from the canonical

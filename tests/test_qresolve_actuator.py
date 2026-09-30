@@ -5,6 +5,7 @@ import contextlib
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import tempfile
 import types
@@ -15,6 +16,16 @@ from engines import tray_answer as actuator
 
 
 class QresolveActuatorTests(unittest.TestCase):
+    def test_hardlinked_audit_is_refused_without_changing_aliased_bytes(self):
+        sentinel = self.root / 'private-sentinel.jsonl'
+        sentinel.write_text('{}\n')
+        journal = self.hdir / 'qresolve-resolutions.jsonl'
+        os.link(sentinel, journal)
+        before = sentinel.read_bytes()
+        with self.assertRaises(ValueError):
+            actuator._qresolve_append(str(journal), {'action': 'INTENT'})
+        self.assertEqual(sentinel.read_bytes(), before)
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -26,8 +37,12 @@ class QresolveActuatorTests(unittest.TestCase):
         self.bank = self.root / "data" / "answer_bank.json"
         self.ni = self.qdir / "needs_input-queue.json"
         self.std = self.qdir / "standard-queue.json"
+        self.strategic = self.qdir / "strategic-queue.json"
+        self.rejected = self.qdir / "rejected-queue.json"
         self.write(self.std, [])
         self.write(self.ni, [])
+        self.write(self.strategic, [])
+        self.write(self.rejected, [])
         self.write(self.bank, {"answers": {"contact_email": {
             "value": "candidate@example.com", "scope": "global",
             "provenance": "the applicant's own words 2026-09-20"}}})
@@ -107,7 +122,7 @@ class QresolveActuatorTests(unittest.TestCase):
             self.assertEqual(receipt["changed_leads"], 1)
             self.assertEqual(receipt["fully_unblocked"], 1)
             self.assertFalse(receipt["ready_verified"])
-            self.assertEqual(receipt["revival"], "queued_for_canonical_verify_retry")
+            self.assertEqual(receipt["revival"], "awaiting_canonical_preparation_admission")
             self.assertNotIn("answer", receipt)
             records = self.journal()
             self.assertEqual(records[-2]["action"], "INTENT")
@@ -405,6 +420,134 @@ with open(path + '.lock', 'a+') as lock:
         self.assertEqual(json.loads(self.ni.read_text())[0]["unresolved"],
                          ["What is your telephone number?"])
         self.assertFalse(any(row["action"] == "INTENT" for row in self.journal()))
+
+    def test_canonical_fit_floor_holds_live_and_dry_even_with_low_tray_override(self):
+        import os
+        request, _ = self.request()
+        for value, reason in ((74, "below_floor"), (None, "missing_fit"),
+                              (True, "invalid_fit"), ("80", "invalid_fit"),
+                              ("nan", "invalid_fit")):
+            for live in (False, True):
+                with self.subTest(value=value, live=live):
+                    row = self.lead()
+                    row["fit_score"] = value
+                    self.write(self.ni, [row])
+                    before = self.ni.read_bytes(), self.bank.read_bytes()
+                    with mock.patch.dict(os.environ, {"KEEL_TRAY_MIN_FIT": "60"}):
+                        rc, receipt = self.invoke(request, live=live)
+                    self.assertEqual((rc, receipt["status"], receipt["reason"]), (3, "HOLD", reason))
+                    self.assertEqual(before, (self.ni.read_bytes(), self.bank.read_bytes()))
+                    self.assertFalse(list(self.qdir.glob("_backup-*")))
+                    self.assertFalse(any(row["action"] == "INTENT" for row in self.journal()))
+
+    def test_floor_boundary_and_below_floor_sibling_never_cleared(self):
+        import os
+        request, _ = self.request()
+        accepted, sibling = self.lead(), self.lead("role-low")
+        accepted["fit_score"], sibling["fit_score"] = 75, 74
+        self.write(self.ni, [accepted, sibling])
+        with mock.patch.dict(os.environ, {"KEEL_TRAY_MIN_FIT": "60"}):
+            rc, receipt = self.invoke(request)
+        self.assertEqual((rc, receipt["status"], receipt["role_ids"]), (0, "APPLIED", ["role-1"]))
+        rows = json.loads(self.ni.read_text())
+        self.assertEqual(rows[0]["unresolved"], [])
+        self.assertEqual(rows[1], sibling)
+
+    def test_fit_is_revalidated_after_preview_and_again_under_lock(self):
+        request, _ = self.request()
+        self.assertEqual(self.invoke(request, live=False)[1]["reason"], "dry_run")
+        original = actuator.queue_io.queue_lock
+
+        @contextlib.contextmanager
+        def intervening_write(**kwargs):
+            with original(**kwargs):
+                row = self.lead()
+                row["fit_score"] = 74
+                self.write(self.ni, [row])
+                yield
+
+        with mock.patch.object(actuator.queue_io, "queue_lock", side_effect=intervening_write):
+            rc, receipt = self.invoke(request)
+        self.assertEqual((rc, receipt["status"], receipt["reason"]), (3, "HOLD", "below_floor"))
+        self.assertEqual(json.loads(self.ni.read_text())[0]["unresolved"], ["What is your email address?"])
+        self.assertFalse(list(self.qdir.glob("_backup-*")))
+
+    def test_fresh_canonical_floor_change_and_direct_change_guard(self):
+        request, decision = self.request()
+        policy = actuator.fit_admission.__globals__["fit_policy"]
+        with mock.patch.object(policy, "main_floor", return_value=85):
+            self.assertEqual(self.invoke(request)[1]["reason"], "below_floor")
+            row = self.lead()
+            with self.assertRaisesRegex(ValueError, "below_floor_or_invalid_fit"):
+                actuator._qresolve_changes({"key": decision["card_key"]},
+                    [("needs_input", row, row["unresolved"])], {str(self.ni): [row]}, decision)
+
+    def test_intent_and_completion_bind_same_post_resolution_state(self):
+        request, _ = self.request()
+        self.assertEqual(self.invoke(request)[1]["status"], "APPLIED")
+        intent, completion = self.journal()[-2:]
+        self.assertEqual(intent["target_resolution_state"], completion["target_resolution_state"])
+        state = completion["target_resolution_state"]["role-1"]
+        row = json.loads(self.ni.read_text())[0]
+        self.assertEqual(state, {"fit_score": 80, "fit_eligible": True, "fit_floor": 75,
+                                 "fully_unblocked": True,
+            "remaining_blockers": 0, "status": "PARKED-NEEDS-INPUT",
+            "status_updated": row["status_updated"], "identity_sha256": actuator.identity_digest(row)})
+
+    def test_pending_queue_transaction_is_refused_without_recovery(self):
+        request, _ = self.request()
+
+        def stop(step, journal):
+            if step == "write:0":
+                raise OSError("injected process interruption")
+
+        with mock.patch.object(actuator.queue_io, "_transaction_step", side_effect=stop):
+            with self.assertRaises(OSError):
+                actuator.queue_io.move_entry_atomic("role-1", str(self.ni), str(self.std))
+        paths = [self.ni, self.std, *Path(actuator.queue_io._transaction_dir()).glob("*.json")]
+        before = {str(path): path.read_bytes() for path in paths}
+        for live in (False, True):
+            self.assertEqual(self.invoke(request, live=live)[1]["status"], "HOLD")
+            self.assertEqual(before, {str(path): path.read_bytes() for path in paths})
+        self.assertFalse(list(self.qdir.glob("_backup-*")))
+        self.assertFalse(any(row["action"] == "INTENT" for row in self.journal()))
+
+    def test_duplicate_identity_outside_target_queues_holds_unmodified(self):
+        request, _ = self.request()
+        for other in (self.strategic, self.rejected):
+            with self.subTest(queue=other.name):
+                self.write(other, [self.lead()])
+                before = {str(path): path.read_bytes() for path in
+                          (self.ni, self.std, self.strategic, self.rejected, self.bank)}
+                for live in (False, True):
+                    self.assertEqual(self.invoke(request, live=live)[1]["status"], "HOLD")
+                    self.assertEqual(before, {str(path): Path(path).read_bytes() for path in before})
+                self.assertFalse(list(self.qdir.glob("_backup-*")))
+                self.assertFalse(any(row["action"] == "INTENT" for row in self.journal()))
+                self.write(other, [])
+
+    def test_missing_nontarget_canonical_queue_holds_without_guessing_empty(self):
+        request, _ = self.request()
+        for other in (self.strategic, self.rejected):
+            with self.subTest(queue=other.name):
+                other.unlink()
+                before = self.ni.read_bytes(), self.std.read_bytes(), self.bank.read_bytes()
+                for live in (False, True):
+                    self.assertEqual(self.invoke(request, live=live)[1]["status"], "HOLD")
+                    self.assertFalse(other.exists())
+                    self.assertEqual(before, (self.ni.read_bytes(), self.std.read_bytes(), self.bank.read_bytes()))
+                self.assertFalse(list(self.qdir.glob("_backup-*")))
+                self.assertFalse(any(row["action"] == "INTENT" for row in self.journal()))
+                self.write(other, [])
+
+    def test_nontarget_canonical_queues_are_read_only_and_excluded_from_plan(self):
+        request, _ = self.request()
+        self.write(self.strategic, [self.lead("role-strategic")])
+        self.write(self.rejected, [self.lead("role-rejected")])
+        before = self.strategic.read_bytes(), self.rejected.read_bytes()
+        self.assertEqual(set(actuator._qresolve_queues()), {str(self.ni), str(self.std)})
+        self.assertEqual(self.invoke(request)[1]["status"], "APPLIED")
+        self.assertEqual(before, (self.strategic.read_bytes(), self.rejected.read_bytes()))
 
 
 if __name__ == "__main__":

@@ -79,6 +79,190 @@ class CorpusTests(unittest.TestCase):
         self.assertEqual(resolver.call_count, 1)
         self.assertIn("own words", resolver.call_args.args[1]["provenance"])
 
+    def test_provisional_markers_never_acquire_own_words_authority(self):
+        variants = [
+            {"provisional": True}, {"reconciliation_required": True},
+            {"provenance_status": "unreconciled"},
+            {"provenance_state": {"schema": "keel.qresolve.provenance.v1", "status": "provisional"}},
+            {"provenance_state": {"schema": "keel.qresolve.provenance.v1", "status": "pending_reconciliation"}},
+            {"notes": "Overnight bank sweep; reconciliation report still owed"},
+            {"notes": "Bank sweep awaiting reconciliation"},
+            {"notes": "Reconciliation pending"},
+            {"source_kind": "overnight_bank_sweep"},
+            {"origin": "overnight-bank-sweep"},
+            {"provenance_status": "Pending Reconciliation"},
+            {"provenance": "Trent's own words 2026-01-01 (provisional)"},
+        ]
+        for restriction in variants:
+            with self.subTest(restriction=restriction):
+                self.bank({"email": {"value": "applicant@example.com", "scope": "global",
+                    "provenance": "the applicant's own words 2026-01-01", "approved_verbatim": True,
+                    **restriction}})
+                hit, = self.hits()
+                self.assertTrue(hit["provisional"])
+                self.assertEqual(hit["tier"], "provisional")
+                self.assertFalse(hit["eligible"])
+                self.assertFalse(hit["own_words"])
+                self.assertFalse(hit["approved_verbatim"])
+                self.assertTrue(hit["draft_eligible"])
+                self.assertEqual(hit["answer"], "applicant@example.com")
+                self.assertTrue(hit["authority_restrictions"])
+
+    def test_supplemental_provisional_metadata_cannot_be_hidden_by_entry_label(self):
+        self.bank(_provenance={"email": {"provenance_state": {
+            "schema": "keel.qresolve.provenance.v1", "status": "unreconciled"}}})
+        hit, = self.hits()
+        self.assertTrue(hit["provisional"])
+        self.assertFalse(hit["eligible"])
+        self.assertFalse(hit["own_words"])
+
+    def test_invalid_provenance_state_fails_closed_without_promoting_entry(self):
+        for state in (None, [], "reconciled", {}, {"schema": "unknown", "status": "reconciled"},
+                      {"schema": "keel.qresolve.provenance.v1", "status": "unknown"}):
+            with self.subTest(state=state):
+                self.bank({"email": {"value": "applicant@example.com", "scope": "global",
+                    "provenance": "the applicant's own words 2026-01-01", "provenance_state": state}})
+                hit, = self.hits()
+                self.assertFalse(hit["eligible"])
+                self.assertIn("invalid_provenance_state", hit["authority_restrictions"])
+
+    def test_reconciled_label_does_not_erase_another_pending_marker(self):
+        self.bank({"email": {"value": "applicant@example.com", "scope": "global",
+            "provenance": "the applicant's own words 2026-01-01",
+            "provenance_state": {"schema": "keel.qresolve.provenance.v1", "status": "reconciled"},
+            "notes": "Bank sweep unreconciled"}})
+        hit, = self.hits()
+        self.assertFalse(hit["eligible"])
+        self.assertTrue(hit["provisional"])
+
+    def test_unmarked_entries_are_not_inferred_to_be_sweep_entries(self):
+        self.bank()
+        self.write("data/queues/needs_input-queue.json", [{"role_id": "EXAMPLE-1",
+            "queue_notes": "Overnight bank sweep is unreconciled"}])
+        hit = self.hits()[0]
+        self.assertEqual(hit["tier"], "bank")
+        self.assertFalse(hit["provisional"])
+        self.assertTrue(hit["eligible"])
+
+    def test_assisted_content_cannot_be_relabelled_as_approved_applicant_words(self):
+        for restriction in ({"assisted": True}, {"authorship": "assistant"},
+                            {"authorship": "AI-generated"}, {"authorship": "AI_ASSISTED"},
+                            {"authorship": "ChatGPT"}, {"authorship": "Claude"},
+                            {"authorship": "assistant and applicant"},
+                            {"notes": "Assistant-generated draft for review"},
+                            {"notes": "AI_written draft for review"},
+                            {"notes": "Agent inferred, then labelled as own words 2026-01-01"},
+                            {"provenance": "the applicant's own words 2026-01-01; assisted by ChatGPT"},
+                            {"provenance": "the applicant's own words 2026-01-01; generated with ChatGPT"},
+                            {"provenance": "the applicant's own words 2026-01-01; written using an AI"},
+                            {"provenance": "the applicant's own words 2026-01-01; drafted by Claude"},
+                            {"provenance": "Assistant-suggested workstream; applicant's own words 2026-01-01"}):
+            with self.subTest(restriction=restriction):
+                self.bank({"email": {"value": "applicant@example.com", "scope": "global",
+                    "provenance": "the applicant's own words 2026-01-01", "approved_verbatim": True,
+                    **restriction}})
+                hit, = self.hits()
+                self.assertTrue(hit["assisted"])
+                self.assertIsNone(hit["answer"])
+                self.assertFalse(hit["eligible"])
+                self.assertFalse(hit["draft_eligible"])
+                self.assertFalse(hit["own_words"])
+                self.assertFalse(hit["approved_verbatim"])
+
+    def test_explicit_denial_cannot_be_read_as_dated_applicant_authorship(self):
+        for provenance in ("not Trent's own words 2026-01-01", "not Trent\u2019s own words 2026-01-01",
+                           "not applicant own words 2026-01-01", "not the applicant's own words 2026-01-01",
+                           "never in my own words 2026-01-01", "not own words 2026-01-01"):
+            with self.subTest(provenance=provenance):
+                self.assertIsNone(qc._provenance_date(provenance))
+                self.bank({"email": {"value": "applicant@example.com", "scope": "global",
+                    "provenance": provenance, "approved_verbatim": True}})
+                hit, = self.hits()
+                self.assertIn("negated_applicant_authorship", hit["authority_restrictions"])
+                self.assertIsNone(hit["answer"])
+                self.assertIsNone(hit["provenance_date"])
+                self.assertFalse(hit["eligible"])
+                self.assertFalse(hit["draft_eligible"])
+                self.assertFalse(hit["own_words"])
+                self.assertFalse(hit["approved_verbatim"])
+
+    def test_assistance_and_authorship_denials_are_restrictive_in_supplemental_metadata(self):
+        for note in ("assisted by ChatGPT", "generated with ChatGPT", "not applicant own words 2026-01-01"):
+            with self.subTest(note=note):
+                self.bank(_provenance={"email": {"notes": note}})
+                hit, = self.hits()
+                self.assertFalse(hit["eligible"])
+                self.assertFalse(hit["draft_eligible"])
+                self.assertFalse(hit["own_words"])
+                self.assertIsNone(hit["answer"])
+
+    def test_false_flags_never_cancel_restrictive_metadata_or_nested_provenance(self):
+        self.bank({"email": {"value": "applicant@example.com", "scope": "global",
+            "provenance": "the applicant's own words 2026-01-01", "provisional": False,
+            "assisted": False, "approved_verbatim": True}},
+            _provenance={"email": {"source": {"provisional": True, "authorship": "assistant"}}})
+        hit, = self.hits()
+        self.assertTrue(hit["provisional"])
+        self.assertTrue(hit["assisted"])
+        self.assertFalse(hit["eligible"])
+        self.assertFalse(hit["draft_eligible"])
+        self.assertFalse(hit["own_words"])
+        self.assertFalse(hit["approved_verbatim"])
+
+    def test_malformed_restriction_flags_do_not_become_own_words_authority(self):
+        for flag in ("provisional", "reconciliation_required", "assisted", "authorship"):
+            for value in (None, 0, 1, [], {}):
+                with self.subTest(flag=flag, value=value):
+                    self.bank({"email": {"value": "applicant@example.com", "scope": "global",
+                        "provenance": "the applicant's own words 2026-01-01",
+                        "approved_verbatim": True, flag: value}})
+                    hit, = self.hits()
+                    self.assertFalse(hit["eligible"])
+                    self.assertFalse(hit["own_words"])
+                    self.assertFalse(hit["approved_verbatim"])
+                    self.assertTrue(hit["authority_restrictions"])
+
+    def test_true_false_strings_do_not_act_as_boolean_authority_flags(self):
+        for flag in ("provisional", "reconciliation_required", "assisted"):
+            for value in ("true", "false"):
+                with self.subTest(flag=flag, value=value):
+                    self.bank({"email": {"value": "applicant@example.com", "scope": "global",
+                        "provenance": "the applicant's own words 2026-01-01", flag: value}})
+                    self.assertFalse(self.hits()[0]["eligible"])
+
+    def test_answer_value_does_not_supply_or_remove_authorship_authority(self):
+        answer = "I worked on an AI-generated example in an overnight bank sweep."
+        self.bank({"email": {"value": answer, "scope": "global", "question": self.question,
+            "provenance": "the applicant's own words 2026-01-01", "authorship": "applicant",
+            "provisional": False, "assisted": False}})
+        hit, = self.hits()
+        self.assertEqual(hit["answer"], answer)
+        self.assertTrue(hit["eligible"])
+        self.assertTrue(hit["own_words"])
+        self.assertFalse(hit["provisional"])
+        self.assertFalse(hit["assisted"])
+
+    def test_provisional_candidate_still_requires_matching_scope_and_provenance(self):
+        for overrides in ({"scope": "employer:Other Organization"}, {"provenance": ""},
+                          {"draftable": False}, {"expiry": "2001-01-01"}):
+            with self.subTest(overrides=overrides):
+                self.bank({"email": {"value": "applicant@example.com", "scope": "global",
+                    "provenance": "the applicant's own words 2026-01-01", "provisional": True,
+                    **overrides}})
+                hit, = self.hits()
+                self.assertTrue(hit["provisional"])
+                self.assertFalse(hit["draft_eligible"])
+                self.assertIsNone(hit["answer"])
+
+    def test_provisional_evidence_ranks_below_memory_without_promoting_memory(self):
+        self.bank({"email": {"value": "applicant@example.com", "scope": "global",
+            "provenance": "the applicant's own words 2026-01-01", "provisional": True}})
+        self.write("memory/2026-01-02.md", "Applicant's own words 2026-01-02: email newer@example.com", raw=True)
+        hits = self.hits()
+        self.assertEqual([hit["tier"] for hit in hits], ["memory", "provisional"])
+        self.assertIsNone(hits[0]["answer"])
+        self.assertFalse(any(hit["eligible"] or hit["own_words"] for hit in hits))
+
     def test_canonical_bank_loader_reused_once_per_corpus(self):
         self.bank()
         with mock.patch.object(qc.answer_resolver, "load_bank", wraps=qc.answer_resolver.load_bank) as loader:

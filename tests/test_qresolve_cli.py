@@ -47,6 +47,8 @@ class QuestionResolverCLITests(unittest.TestCase):
         self.write('data/answer_bank.json', self.bank)
         self.write('data/queues/needs_input-queue.json', self.rows)
         self.write('data/queues/standard-queue.json', [])
+        self.write('data/queues/strategic-queue.json', [])
+        self.write('data/queues/rejected-queue.json', [])
         self.write('data/application-ledger.json', [])
 
     def write(self, name, value):
@@ -155,7 +157,11 @@ class QuestionResolverCLITests(unittest.TestCase):
         folder = self.home / 'hidden_files'
         folder.mkdir(exist_ok=True)
         (folder / 'qresolve-resolutions.jsonl').write_text(json.dumps({'decision_id': 'a' * 64, 'action': 'INTENT'}) + '\n')
-        report = self.success('--live')
+        result = self.cli('--live')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        report = json.loads(result.stdout)
+        self.assertEqual(report['status'], 'HOLD')
+        self.assertFalse(report['outcome_uncertain'])
         self.assertTrue(report['pending_intent'])
         self.assertEqual(report['canonical_writes'], 0)
         self.assertEqual(len(self.read('hidden_files/input-tray.json')['cards']), 5)
