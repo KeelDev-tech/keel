@@ -34,7 +34,8 @@
         "muse-census",
         "supply-plan",
         "supply-reconcile",
-        "supply-canary"
+        "supply-canary",
+        "qresolve-supply"
       ],
       "responsibility": "Applicant truth, scope and release decisions; resolve conflicts using evidence."
     },

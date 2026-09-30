@@ -68,6 +68,39 @@ SYNTHETIC_LABELED_CARDS = [
     ("TRENT-ONLY", {"question": "Email address"}, [{"unresolved": ["What was your last manager's name?"]}]),
 ]
 
+# Synthetic policy fixtures constructed from the supplied v2 handoff. Only the
+# two ShipBob questions and apply-by-email prompt were supplied as exact text;
+# the remaining prompts below are synthetic descriptions of the standing gates,
+# not recovered private cards or a >=50-real-card acceptance sample.
+V2_STANDING_GATE_FIXTURES = [
+    ("TRENT-ONLY", "shipbob_review_only", "approved_verbatim",
+     "What excites you most about working at ShipBob?", {"company": "ShipBob"}),
+    ("TRENT-ONLY", "shipbob_review_only", "approved_verbatim",
+     "What aspects of this role align with your career goals?", {"company": "ShipBob"}),
+    ("TRENT-ONLY", "anthropic_fellows_authorship", "approved_verbatim",
+     "Select your workstream", {"company": "Anthropic", "title": "Fellows Program"}),
+    ("TRENT-ONLY", "anthropic_fellows_authorship", "approved_verbatim",
+     "Provide your applicant-authored essay", {"employer": "Anthropic", "role_title": "Fellows Program"}),
+    ("TRENT-ONLY", "perplexity_exercise_unassisted", "none",
+     "Paste the URL of your completed exercise thread", {"company": "Perplexity"}),
+    ("TRENT-ONLY", "perplexity_exercise_unassisted", "none",
+     "Provide your unassisted writing response", {"company": "Perplexity"}),
+    ("TRENT-ONLY", "openai_personal_completion", "none",
+     "I personally completed this application", {"company": "OpenAI"}),
+    ("JUDGMENT", "fleetio_incomplete_screeners", "none",
+     "Partner/channel enablement from scratch", {"company": "Fleetio"}),
+    ("JUDGMENT", "fleetio_incomplete_screeners", "none",
+     "Multi-stage enablement", {"company": "Fleetio"}),
+    ("JUDGMENT", "fleetio_incomplete_screeners", "none",
+     "Reseller/channel organizations", {"company": "Fleetio"}),
+    ("JUDGMENT", "fleetio_incomplete_screeners", "none",
+     "Cross-functional influence", {"company": "Fleetio"}),
+    ("TRENT-ONLY", "alo_availability", "none",
+     "What is your availability?", {"company": "Alo Yoga"}),
+    ("TRENT-ONLY", "edmentum_apex_relationship", "none",
+     "Do you have a relationship with Edmentum or Apex?", {"company": "Edmentum"}),
+]
+
 
 class QuestionFingerprintTests(unittest.TestCase):
     def test_ten_reviewed_families_have_at_least_three_matching_paraphrases(self):
@@ -118,6 +151,95 @@ class QuestionFingerprintTests(unittest.TestCase):
 
 
 class QuestionClassifierTests(unittest.TestCase):
+    def test_v2_standing_gates_override_bank_or_approval_hints(self):
+        for expected, gate, draft_policy, question, context in V2_STANDING_GATE_FIXTURES:
+            with self.subTest(gate=gate, question=question):
+                result = classify({"question": question, "class": "FACT", "bank_key": "email",
+                                   "approved_verbatim": True, "draft": "Yes"}, [context])
+                self.assertEqual(result["class"], expected)
+                self.assertEqual(result["standing_gate"], gate)
+                self.assertEqual(result["draft_policy"], draft_policy)
+
+    def test_standing_gate_checks_full_norm_and_unresolved_context(self):
+        for field in ("norm", "unresolved", "queue_notes", "status_reason"):
+            with self.subTest(field=field):
+                context = {"company": "Alo Yoga", field: "What is your availability?"}
+                result = classify({"question": "Email address"}, [context])
+                self.assertEqual(result["class"], "TRENT-ONLY")
+                self.assertEqual(result["draft_policy"], "none")
+
+    def test_standing_employer_does_not_reclassify_unrelated_contact_fact(self):
+        for company in ("Alo Yoga", "Edmentum", "Apex", "OpenAI", "Perplexity", "Anthropic", "ShipBob", "Fleetio"):
+            with self.subTest(company=company):
+                self.assertEqual(classify({"question": "Email address"}, [{"company": company}])["class"], "FACT")
+
+    def test_generic_career_goals_prompt_does_not_acquire_shipbob_scope(self):
+        result = classify({"question": "What aspects of this role align with your career goals?"}, [{
+            "company": "Example Corp",
+        }])
+        self.assertEqual(result["class"], "TRENT-ONLY")
+        self.assertNotIn("standing_gate", result)
+        # The first exact supplied prompt identifies its employer on its own.
+        named = classify({"question": "What excites you most about working at ShipBob?"})
+        self.assertEqual(named["standing_gate"], "shipbob_review_only")
+
+    def test_no_draft_guards_cover_reworded_scheduling_and_relationship_fields(self):
+        examples = [
+            ("Alo Yoga", "Can you work weekdays and evenings?", "alo_availability"),
+            ("Alo Yoga", "Which holidays and mornings can you work?", "alo_availability"),
+            ("Alo Yoga", "Provide your start date", "alo_availability"),
+            ("Edmentum", "Are you currently an employee?", "edmentum_apex_relationship"),
+            ("Apex", "Have you been contracted by us?", "edmentum_apex_relationship"),
+            ("Apex", "Have you done business with us?", "edmentum_apex_relationship"),
+            ("OpenAI", "Certify the statement below", "openai_personal_completion"),
+            ("OpenAI", "I completed the entire application", "openai_personal_completion"),
+            ("Perplexity", "Link to the completed take-home task", "perplexity_exercise_unassisted"),
+        ]
+        for employer, question, gate in examples:
+            with self.subTest(employer=employer, question=question):
+                result = classify({"question": question, "approved_verbatim": True}, [{"employer": employer}])
+                self.assertEqual(result["class"], "TRENT-ONLY")
+                self.assertEqual(result["standing_gate"], gate)
+                self.assertEqual(result["draft_policy"], "none")
+
+    def test_approved_wording_cannot_override_restricted_authorship_or_attestation(self):
+        examples = [
+            ({"company": "Anthropic", "title": "Safety Fellowship"}, "Provide your unassisted essay"),
+            ({"company": "Anthropic", "title": "Fellows"}, "I certify that this essay is entirely my own"),
+            ({"company": "ShipBob"}, "What excites you about ShipBob? Answer without AI assistance."),
+            ({"company": "ShipBob"}, "Career goals essay and recording consent"),
+        ]
+        for context, question in examples:
+            with self.subTest(question=question):
+                result = classify({"question": question, "approved_verbatim": True, "draft": "Yes"}, [context])
+                self.assertEqual(result["class"], "TRENT-ONLY")
+                self.assertEqual(result["draft_policy"], "none")
+
+    def test_fleetio_topic_guard_remains_before_generic_narrative_classification(self):
+        result = classify({"question": "Describe multistage enablement and crossfunctional influence"}, [{
+            "company": "Fleetio",
+        }])
+        self.assertEqual(result["class"], "JUDGMENT")
+        self.assertEqual(result["draft_policy"], "none")
+
+    def test_structural_route_remains_blocked_with_no_draft_gate(self):
+        result = classify({"question": "What is your availability?"}, [{
+            "company": "Alo Yoga", "unresolved": ["CAPTCHA"],
+        }])
+        self.assertEqual(result["class"], "STRUCTURAL")
+        self.assertEqual(result["standing_gate"], "alo_availability")
+        self.assertEqual(result["draft_policy"], "none")
+
+    def test_v2_zerigo_route_retraction_policy_fixture(self):
+        # The handoff supplies employer + route + retraction description, not
+        # the original queue row; do not fabricate a private receipt or role ID.
+        result = classify({"question": "Application route is apply-by-email", "bank_key": "email"}, [{
+            "company": "Zerigo Health", "unresolved": ["Application route is apply-by-email"],
+            "queue_notes": "2026-09-17 bank sweep route clearance retracted per-entry.",
+        }])
+        self.assertEqual(result["class"], "STRUCTURAL")
+        self.assertEqual(result["route"], "structural_route")
+
     def test_synthetic_policy_fixture_set(self):
         self.assertGreaterEqual(len(SYNTHETIC_LABELED_CARDS), 50)
         self.assertEqual({row[0] for row in SYNTHETIC_LABELED_CARDS}, {"FACT", "STRUCTURAL", "JUDGMENT", "TRENT-ONLY"})
@@ -159,9 +281,39 @@ class QuestionClassifierTests(unittest.TestCase):
             with self.subTest(question=question):
                 self.assertEqual(classify({"question": question, "bank_key": "relocation_willingness", "draft": "Yes"})["class"], "JUDGMENT")
 
-    def test_mixed_unresolved_blockers_require_review(self):
-        self.assertEqual(classify({"question": "Email address"}, [{"unresolved": ["Email address", "Phone number"]}])["class"], "TRENT-ONLY")
+    def test_independent_reviewed_facts_allow_partial_resolution(self):
+        context = [{"unresolved": ["Email address", "Phone number"]}]
+        for question in ("Email address", "Phone number"):
+            with self.subTest(question=question):
+                self.assertEqual(classify({"question": question}, context)["class"], "FACT")
+        # Classification grants no clearing authority and never mutates the
+        # sibling blockers; each must independently retain its own identity.
+        self.assertEqual(context[0]["unresolved"], ["Email address", "Phone number"])
+        self.assertNotEqual(canonical_fingerprint("Email address"), canonical_fingerprint("Phone number"))
+        after_email = [{"unresolved": ["Phone number"]}]
+        self.assertEqual(classify({"question": "Phone number"}, after_email)["class"], "FACT")
         self.assertEqual(classify({"question": "Email address"}, [{"unresolved": ["Your email address", "  "]}])["class"], "FACT")
+
+    def test_unknown_or_qualified_siblings_still_require_review(self):
+        for sibling in ("Phone number [consent to SMS marketing]", "Business email address",
+                        "What was your last manager's name?", "How many education credits?"):
+            with self.subTest(sibling=sibling):
+                result = classify({"question": "Email address"}, [{"unresolved": ["Email address", sibling]}])
+                self.assertNotEqual(result["class"], "FACT")
+        for sibling, expected in (("CAPTCHA", "STRUCTURAL"), ("No-AI attestation", "TRENT-ONLY"),
+                                  ("What is your availability?", "JUDGMENT")):
+            with self.subTest(sibling=sibling):
+                result = classify({"question": "Email address"}, [{"unresolved": ["Email address", sibling]}])
+                self.assertEqual(result["class"], expected)
+
+    def test_display_excerpt_cannot_lend_fact_authority_to_full_qualified_prompt(self):
+        for norm in ("Email address [for employer use only]", "Business email address", ["Email address"], 1):
+            with self.subTest(norm=norm):
+                result = classify({"question": "Email address", "norm": norm}, [{
+                    "unresolved": ["Email address", "Phone number"],
+                }])
+                self.assertEqual(result["class"], "TRENT-ONLY")
+        self.assertEqual(classify({"question": "Email address", "norm": "Your email address"})["class"], "FACT")
 
     def test_empty_or_invalid_card_fails_closed(self):
         for card in (None, [], {}, {"question": None}, {"question": []}, {"question": "  "}):

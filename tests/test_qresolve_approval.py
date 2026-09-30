@@ -62,6 +62,8 @@ class QresolveApprovalTests(unittest.TestCase):
         self.write(self.bank_name, self.bank)
         self.write(self.queue_name, self.rows)
         self.write('data/queues/standard-queue.json', [])
+        self.write('data/queues/strategic-queue.json', [])
+        self.write('data/queues/rejected-queue.json', [])
         self.write('data/application-ledger.json', [])
 
     def command(self, engine, *args):

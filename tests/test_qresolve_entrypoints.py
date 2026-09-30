@@ -35,6 +35,8 @@ class QuestionResolutionEntrypoints(unittest.TestCase):
             'title': 'Fixture Role', 'fit_score': 80, 'status': 'NEEDS-INPUT',
             'unresolved': [question], 'status_reason': 'input required', 'queue_notes': []}])
         self.write('data/queues/standard-queue.json', [])
+        self.write('data/queues/strategic-queue.json', [])
+        self.write('data/queues/rejected-queue.json', [])
         self.write('data/application-ledger.json', [])
 
     def write(self, name, value):

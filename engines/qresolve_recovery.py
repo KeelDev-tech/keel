@@ -162,6 +162,12 @@ def _classify(root, intent, queues, resolved, bank):
                 'context_sha256', 'evidence_sha256', 'config_sha256', 'target_role_ids'):
         if key not in intent or receipt.get(key) != intent[key]:
             return None, 'completed_receipt_mismatch'
+    # Older receipts have no outcome snapshot. New receipts bind it to the
+    # prewrite intent; recovery must not accept a rewritten attribution record.
+    if (('target_resolution_state' in intent or 'target_resolution_state' in receipt)
+            and ('target_resolution_state' not in intent
+                 or receipt.get('target_resolution_state') != intent['target_resolution_state'])):
+        return None, 'completed_resolution_state_mismatch'
     if (not intent.get('evidence') or intent['evidence_sha256'] != _digest(intent['evidence'])
             or receipt.get('approval') != intent.get('approval')):
         return None, 'completed_evidence_mismatch'
@@ -229,6 +235,7 @@ def preflight_locks(root):
 
 
 def _inspect(root, decision_id, *, live):
+    queue_io._refuse_pending_transactions()
     folder = root / 'hidden_files'
     records = _journal(folder / 'qresolve-resolutions.jsonl')
     pending, completed = journal_state(records)
@@ -275,7 +282,7 @@ def recover(workspace=None, *, decision_id=None, live=False):
         if not live:
             return _inspect(root, decision_id, live=False)[0]
         preflight_locks(root)
-        with queue_io.queue_lock(owner='qresolve:recovery'), safe_io.file_lock(
+        with queue_io.queue_lock(owner='qresolve:recovery', recover=False), safe_io.file_lock(
                 str(root / 'data/answer_bank.json') + '.lock'):
             report, closure = _inspect(root, decision_id, live=True)
             if report['status'] != 'RECOVERABLE' or closure is None:

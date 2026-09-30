@@ -32,6 +32,11 @@ MAX_EXCERPT = 2000
 _STOP = frozenset("the and that this with your you have what how many are for can will would of to in a an is do does about please years experience".split())
 _DATE_RE = re.compile(r"\b(\d{4}-\d{2}-\d{2})\b")
 _MEMORY_NAME = re.compile(r"\d{4}-\d{2}-\d{2}\.md\Z")
+# These explicit denials reduce authority; they never establish who authored
+# the answer. Keep this finite instead of guessing the meaning of free prose.
+_OWN_WORDS_DENIAL_RE = re.compile(
+    r"\b(?:not|never)\s+(?:in\s+)?(?:(?:the\s+)?"
+    r"(?:applicant|operator|trent|my|your|his|her|their)(?:['\u2019]s)?\s+)?own words\b", re.I)
 
 
 def _tokens(text):
@@ -172,7 +177,7 @@ def _provenance(entry, metadata):
 
 
 def _provenance_date(provenance):
-    if "own words" not in provenance.casefold():
+    if "own words" not in provenance.casefold() or _OWN_WORDS_DENIAL_RE.search(provenance):
         return None
     for match in _DATE_RE.finditer(provenance):
         try:
@@ -182,6 +187,98 @@ def _provenance_date(provenance):
         except ValueError:
             pass
     return None
+
+
+def provenance_restrictions(entry, metadata):
+    """Read explicit restrictions; neither recency nor a label removes them.
+
+    Preferred per-entry (or per-key ``_provenance``) metadata is
+    ``provenance_state: {schema: keel.qresolve.provenance.v1,
+    status: provisional|unreconciled|pending_reconciliation|reconciled}``.
+    Legacy ``provisional: true``, ``reconciliation_required: true`` and
+    ``provenance_status`` are also restrictive. Explicit provisional or
+    unreconciled sweep notes are recognized in provenance/source/notes fields.
+    An unmarked bank entry is NOT assumed to belong to the private sweep.
+
+    Authorship metadata or explicit assistant-generated provenance can only
+    reduce authority. ``approved_verbatim`` never turns assisted content into
+    the applicant's original words. Raw memory/logs remain research-only.
+    """
+    provisional, assisted, reasons = False, False, set()
+    records = [entry, metadata]
+    # The existing provenance convention also permits one metadata object in
+    # a provenance/source field. Inspect only those named objects, never an
+    # arbitrary tree of applicant data and never the answer's text.
+    for record in (entry, metadata):
+        if isinstance(record, dict):
+            records.extend(record[name] for name in ("provenance", "source")
+                           if isinstance(record.get(name), dict))
+    for record in records:
+        fields = []
+        if isinstance(record, str):
+            fields.append(record)
+        elif isinstance(record, dict):
+            for name in ("provenance", "source", "origin", "source_kind", "notes", "queue_notes",
+                         "status_reason", "reconciliation_note"):
+                value = record.get(name)
+                if isinstance(value, str):
+                    fields.append(value)
+            for name in ("provisional", "reconciliation_required"):
+                if name in record:
+                    if type(record[name]) is not bool:
+                        provisional = True
+                        reasons.add("invalid_provisional_marker")
+                    elif record[name]:
+                        provisional = True
+                        reasons.add("explicit_provisional_marker")
+            status = record.get("provenance_status")
+            status = re.sub(r"[\s-]+", "_", status.casefold()) if isinstance(status, str) else status
+            if status in ("provisional", "unreconciled", "pending_reconciliation", "reconciliation_pending"):
+                provisional = True
+                reasons.add("explicit_provisional_status")
+            if "provenance_state" in record:
+                state = record["provenance_state"]
+                valid = (isinstance(state, dict)
+                         and state.get("schema") == "keel.qresolve.provenance.v1"
+                         and state.get("status") in ("provisional", "unreconciled", "pending_reconciliation", "reconciled"))
+                if not valid or state["status"] != "reconciled":
+                    provisional = True
+                    reasons.add("provenance_state_restricted" if valid else "invalid_provenance_state")
+            if "assisted" in record and (type(record["assisted"]) is not bool or record["assisted"]):
+                assisted = True
+                reasons.add("assisted_authorship" if type(record["assisted"]) is bool else "invalid_assisted_marker")
+            authorship = record.get("authorship")
+            if isinstance(authorship, str):
+                authorship = re.sub(r"[\s-]+", "_", authorship.casefold())
+                if re.search(r"(?:^|[\W_])(?:assistant|agent|ai|llm|model|assisted|automated|chatgpt|claude)(?:$|[\W_])", authorship):
+                    assisted = True
+                    reasons.add("assisted_authorship")
+            elif "authorship" in record:
+                assisted = True
+                reasons.add("invalid_authorship_marker")
+        for text in fields:
+            text = text.casefold()
+            if re.search(r"\b(?:provisional|unreconciled|pending[ _-]reconciliation|reconciliation[ _-]pending)\b", text):
+                provisional = True
+                reasons.add("provisional_provenance_note")
+            # A dated sweep alone is not proof it was reconciled. Require an
+            # explicit unreconciled marker or overnight-sweep origin, without
+            # allowing contradictory own-words labels to promote it.
+            if (re.search(r"\bovernight[\s_-]+(?:bank[\s_-]+)?sweep\b", text)
+                    or (re.search(r"\b(?:bank[\s_-]+)?sweep\b", text)
+                        and re.search(r"\b(?:awaiting|still owed|not reconciled|reconciliation required|report pending)\b", text))):
+                provisional = True
+                reasons.add("unreconciled_sweep_note")
+            if re.search(r"\b(?:assistant|agent|ai|llm|model|chatgpt|claude)[\s_-]+(?:generated|written|suggested|authored|"
+                         r"draft(?:ed)?|inferred|derived|rewritten|summari[sz]ed|assisted)\b|\bassisted[\s_-]+draft\b|"
+                         r"\b(?:assisted|generated|written|drafted|authored|suggested|inferred|derived|rewritten|summari[sz]ed)"
+                         r"\s+(?:by|with|using)\s+(?:(?:an?|the)\s+)?"
+                         r"(?:ai|artificial intelligence|assistant|agent|chatgpt|claude|llm|model)\b", text):
+                assisted = True
+                reasons.add("assisted_provenance_note")
+            if _OWN_WORDS_DENIAL_RE.search(text):
+                reasons.add("negated_applicant_authorship")
+    return provisional, assisted, sorted(reasons)
 
 
 class Corpus:
@@ -358,13 +455,16 @@ class Corpus:
             if not exact and not terms.intersection(_tokens(key.replace("_", " "))):
                 continue
             raw_value = entry.get("value", entry.get("answer"))
-            prov = _provenance(entry, self._bank.get("_provenance", {}).get(key))
+            metadata = self._bank.get("_provenance", {}).get(key)
+            prov = _provenance(entry, metadata)
+            provisional, assisted, restrictions = provenance_restrictions(entry, metadata)
             if prov and not entry.get("provenance") and not entry.get("source"):
                 entry["provenance"] = prov
             resolutions = [answer_resolver.resolve(
                 key, entry, employer=context.get("company") or context.get("employer"),
                 role_context=context, registry=registry) for context in (contexts or [{}])]
-            forbidden = key in quarantine or entry.get("draftable") is False
+            denied_authorship = "negated_applicant_authorship" in restrictions
+            forbidden = key in quarantine or entry.get("draftable") is False or assisted or denied_authorship
             approved = (not forbidden and bool(prov) and isinstance(raw_value, str)
                         and bool(raw_value.strip()) and all(
                             r.status in {"resolved", "legacy"} for r in resolutions))
@@ -381,14 +481,16 @@ class Corpus:
             yield {"source": self._bank_path, "pointer": value_pointer,
                    "excerpt": text[start:end][:MAX_EXCERPT], "answer": raw_value if approved else None,
                    "bank_key": key, "match": "exact" if exact else "keyword",
-                   "provenance": prov, "own_words": _provenance_date(prov) is not None,
+                   "provenance": prov, "own_words": not (provisional or assisted or denied_authorship) and _provenance_date(prov) is not None,
                    "provenance_date": _provenance_date(prov),
-                   "approved_verbatim": entry.get("approved_verbatim") is True,
-                   "eligible": bool(exact and approved and not legacy),
+                   "approved_verbatim": entry.get("approved_verbatim") is True and not (provisional or assisted or denied_authorship),
+                   "eligible": bool(exact and approved and not legacy and not provisional),
                    "draft_eligible": bool(exact and approved), "legacy": legacy,
+                   "provisional": provisional, "assisted": assisted,
+                   "authority_restrictions": restrictions,
                    "scope": sorted({r.scope for r in resolutions}),
                    "scope_status": [r.status for r in resolutions],
-                   "document_sha256": digest, "tier": "bank"}
+                   "document_sha256": digest, "tier": "provisional" if provisional else "bank"}
 
     def retrieve(self, card, contexts):
         """Return all matching bank candidates plus bounded lower-trust evidence."""
@@ -401,7 +503,9 @@ class Corpus:
         question = card.get("norm") or card["question"]
         if not isinstance(question, str):
             raise ValueError("card_norm_must_be_text")
-        hits = list(self._bank_hits(question, contexts))
+        bank_hits = list(self._bank_hits(question, contexts))
+        hits = [hit for hit in bank_hits if not hit["provisional"]]
+        provisional_hits = [hit for hit in bank_hits if hit["provisional"]]
         terms = _tokens(question)
         candidates, contextual = set(), set()
         for term in terms:
@@ -422,6 +526,9 @@ class Corpus:
         for _, _, _, index in sorted(ranked)[:MAX_RESEARCH_HITS]:
             path, pointer, excerpt, _, _, event_id = self._records[index]
             _, digest, kind, _ = self._documents[path]
+            if kind != "memory" and provisional_hits:
+                hits.extend(provisional_hits)
+                provisional_hits = []
             hit = {"source": path, "pointer": pointer, "excerpt": excerpt,
                    "answer": None, "bank_key": None, "match": "keyword",
                    "provenance": "research_only", "own_words": False,
@@ -431,6 +538,7 @@ class Corpus:
             if event_id is not None:
                 hit["event_id"] = event_id
             hits.append(hit)
+        hits.extend(provisional_hits)
         return hits
 
     def verify_snapshot(self):
