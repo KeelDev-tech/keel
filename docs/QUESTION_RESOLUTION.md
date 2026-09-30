@@ -19,9 +19,40 @@ python3 keel.py --home /path/to/workspace qresolve --live --max-cards 50
 
 The command is available to the operator CLI profile. Profiles constrain the
 CLI; they do not authenticate a person or isolate direct Python execution.
-The fit threshold defaults to 60 and can be set with `KEEL_TRAY_MIN_FIT` in
-the inclusive range 0–100. Digest `--min-fit` affects that invocation only;
-use the environment setting consistently across scheduled workers.
+The tray fit threshold defaults to the canonical intake threshold,
+`engines/queue_intake.py::FIT_BAR` (currently 75). Precedence is an explicit
+digest `--min-fit` (or in-process `min_fit` argument), then
+`KEEL_TRAY_MIN_FIT`, then `FIT_BAR`. Overrides retain the inclusive range
+0–100, including fractional values; invalid or non-finite values fail closed.
+Digest `--min-fit` affects that invocation only; use the environment setting
+consistently across scheduled workers. An explicit lower tray override can
+surface lower-fit questions for review; it does not lower the intake or READY
+admission floor or authorize a queue transition.
+
+### Fit-floor default audit
+
+`rescreen_standard.py --min-fit` also defaults to `queue_intake.FIT_BAR`;
+its explicit CLI override remains available. It does not read
+`KEEL_TRAY_MIN_FIT`. QRESOLVE collects the canonical tray in-process and
+preserves that environment setting for its answer-actuator subprocess; it
+has no separate fit-floor fallback.
+
+Other 75 literals found in the trace remain unchanged in this repair:
+
+| Location | Role |
+|---|---|
+| `ready_gate.FIT_FLOOR` | Fixed READY admission gate. |
+| `title_triage.FIT_OVERRIDE_THRESHOLD` | Evidence-scored triage waiver. |
+| `source_yield_proposals.PROMOTE_FIT_MEDIAN` | Source promotion proposal criterion. |
+| `pipeline_service`, `pipeline_doctor` | Main-floor fit diagnostics and report metadata. |
+| `keel_local/supply_audit.py`, `keel_flow`, `keel_trust`, `export_flow_snapshot.py` | Fixed audit and versioned flow/trust contracts. |
+| `worker-charter/assemble_charter.py`, sample data and tests | Published constraint text and fixtures. |
+
+If the canonical intake policy itself changes, review these consumers and
+their contract tests together. The scorer's APPLY band at 82
+is a separate evidence-scoring rule, documented in
+[SCORING_CONTRACT.md](SCORING_CONTRACT.md) and
+[fit-scoring-model.md](../engines/fit-scoring-model.md).
 
 CLI output contains counts and status only: scheduled-job logs must not contain
 private questions, answer values, employers or evidence excerpts. Inspect the

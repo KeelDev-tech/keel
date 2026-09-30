@@ -106,6 +106,7 @@ import title_triage  # noqa: E402
 import queue_io  # noqa: E402
 import log_event  # noqa: E402
 import parking_schema  # noqa: E402
+import queue_intake  # noqa: E402
 
 TARGET_STATUS = "PARKED-PENDING-VERIFICATION"
 SOURCE = "rescreen-standard"
@@ -495,8 +496,9 @@ def main():
                     "PARKED-PENDING-VERIFICATION leads. Dry-run by default.")
     ap.add_argument("--role-ids", default=None,
                     help="comma-separated role_ids or @file (default: all)")
-    ap.add_argument("--min-fit", type=float, default=75,
-                    help="fit_score floor for selection (default 75)")
+    ap.add_argument("--min-fit", type=float, default=queue_intake.FIT_BAR,
+                    help="fit_score floor for selection (default queue_intake.FIT_BAR, "
+                         f"currently {queue_intake.FIT_BAR})")
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--pace", type=float, default=1.0,
                     help="seconds between entries' HTTP work (default 1.0)")

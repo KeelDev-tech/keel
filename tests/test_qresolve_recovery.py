@@ -11,6 +11,8 @@ import sys
 import tempfile
 import unittest
 
+from engines.queue_intake import FIT_BAR
+
 ROOT = Path(__file__).resolve().parents[1]
 ENGINES = ROOT / 'engines'
 CHILD = r'''
@@ -96,7 +98,7 @@ class QresolveRecoveryTests(unittest.TestCase):
             'provenance': "the applicant's own words " + date.today().isoformat()}}})
         for queue, rid in [('needs_input', 'fixture-ni'), ('standard', 'fixture-std')]:
             self.write(f'data/queues/{queue}-queue.json', [{
-                'role_id': rid, 'company': 'Example', 'title': 'Example', 'fit_score': 70,
+                'role_id': rid, 'company': 'Example', 'title': 'Example', 'fit_score': FIT_BAR,
                 'status': 'NEEDS-INPUT', 'unresolved': [self.question],
                 'status_reason': 'input required', 'queue_notes': [],
                 'last_verify_attempt': '2026-01-01'}])

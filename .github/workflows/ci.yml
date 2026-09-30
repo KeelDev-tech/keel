@@ -22,6 +22,13 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install test dependencies
         run: pip install -r requirements-dev.txt
+      - name: Run fit-floor default regressions
+        run: >-
+          python3 -m pytest -q --import-mode=importlib
+          tests/test_qresolve_*.py
+          tests/test_input_tray_digest_guards.py
+          tests/test_legacy_rescreen_standard.py::test_cli_default_tracks_canonical_intake_floor
+          tests/test_legacy_rescreen_standard.py::test_cli_min_fit_override_is_preserved
       - name: Run stdlib test suite
         run: python3 -m unittest discover -s tests
       - name: Run optimization and security regressions
