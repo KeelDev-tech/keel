@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from mcp.server.mcpserver import MCPServer  # noqa: E402
 
 import keel_bridge  # noqa: E402
-from safety import resolve_data_dir  # noqa: E402
+from safety import loopback_host, resolve_data_dir  # noqa: E402
 from tools import discovery as _discovery  # noqa: E402
 from tools import scoring as _scoring  # noqa: E402
 from tools import verification as _verification  # noqa: E402
@@ -100,7 +100,8 @@ def triage_role(title: str, company: str, application_url: str = "") -> str:
 def main() -> None:
     global DATA_DIR
     parser = argparse.ArgumentParser(description="Keel MCP server (Streamable HTTP)")
-    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--host", type=loopback_host, default="127.0.0.1",
+                        help="Literal loopback IP only; this adapter has no authentication.")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--data-dir", default=None,
                         help="Directory of sample data (defaults to bundled samples). "
