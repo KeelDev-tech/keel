@@ -30,7 +30,11 @@
         "qresolve",
         "qresolve-recover",
         "qresolve-approve",
-        "pipeline-doctor"
+        "pipeline-doctor",
+        "muse-census",
+        "supply-plan",
+        "supply-reconcile",
+        "supply-canary"
       ],
       "responsibility": "Applicant truth, scope and release decisions; resolve conflicts using evidence."
     },
@@ -49,7 +53,11 @@
         "productivity-trial",
         "host-preflight",
         "productivity-advice",
-        "pipeline-doctor"
+        "pipeline-doctor",
+        "muse-census",
+        "supply-plan",
+        "supply-reconcile",
+        "supply-canary"
       ],
       "responsibility": "Source identity, freshness, deduplication and permitted public reads; no claims of submission."
     },
@@ -67,7 +75,10 @@
         "receipt-review",
         "host-preflight",
         "productivity-advice",
-        "pipeline-doctor"
+        "pipeline-doctor",
+        "muse-census",
+        "supply-plan",
+        "supply-reconcile"
       ],
       "responsibility": "Materials and question coverage; no answer invention or legal commitments."
     },
@@ -84,7 +95,10 @@
         "receipt-review",
         "host-preflight",
         "productivity-advice",
-        "pipeline-doctor"
+        "pipeline-doctor",
+        "muse-census",
+        "supply-plan",
+        "supply-reconcile"
       ],
       "responsibility": "Distinguish claims, correlation and verification; require a trusted receipt adapter for verified outcomes."
     },
@@ -100,7 +114,10 @@
         "receipt-review",
         "host-preflight",
         "productivity-advice",
-        "pipeline-doctor"
+        "pipeline-doctor",
+        "muse-census",
+        "supply-plan",
+        "supply-reconcile"
       ],
       "responsibility": "Adversarial cases, reproducibility, concurrency, recovery and source-bound test evidence."
     },
@@ -116,7 +133,10 @@
         "receipt-review",
         "host-preflight",
         "productivity-advice",
-        "pipeline-doctor"
+        "pipeline-doctor",
+        "muse-census",
+        "supply-plan",
+        "supply-reconcile"
       ],
       "responsibility": "Review network, file, credential and authority boundaries; test bypass attempts."
     },
@@ -132,7 +152,10 @@
         "receipt-review",
         "host-preflight",
         "productivity-advice",
-        "pipeline-doctor"
+        "pipeline-doctor",
+        "muse-census",
+        "supply-plan",
+        "supply-reconcile"
       ],
       "responsibility": "Clear next actions, honest empty/error states, keyboard and small-screen use."
     },
@@ -149,7 +172,10 @@
         "receipt-review",
         "host-preflight",
         "productivity-advice",
-        "pipeline-doctor"
+        "pipeline-doctor",
+        "muse-census",
+        "supply-plan",
+        "supply-reconcile"
       ],
       "responsibility": "State invariants, recoverability, bounded work and truthful observability."
     }

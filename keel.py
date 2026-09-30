@@ -208,6 +208,19 @@ def main(argv=None):
     sub.add_parser('roles', help='show review roles and their supported CLI actions')
     sub.add_parser('supply', help='disjoint supply states and exact question groups; no inferred answers')
     sub.add_parser('pipeline-doctor', help='offline queue conservation and READY admission losses; no operational writes')
+    muse_census = sub.add_parser('muse-census', help='bound local census and Muse adapter contract; imported JSON cannot grant authority')
+    muse_census.add_argument('--host-snapshot', help='optional unauthenticated observation file inside the workspace')
+    supply_plan = sub.add_parser('supply-plan', help='read-only fair cohort plan at the canonical fit floor')
+    supply_plan.add_argument('--limit', type=int, default=25)
+    supply_plan.add_argument('--max-requests', type=int, default=10)
+    supply_canary = sub.add_parser('supply-canary', help='bounded public posting check; never READY promotion or submission')
+    supply_canary.add_argument('--plan-id', required=True)
+    supply_canary.add_argument('--run-id')
+    supply_canary.add_argument('--limit', type=int, default=25)
+    supply_canary.add_argument('--max-requests', type=int, default=10)
+    supply_canary.add_argument('--timeout', type=int, default=30)
+    supply_canary.add_argument('--live', action='store_true', help='persist journal and posting observations only')
+    sub.add_parser('supply-reconcile', help='inspect an interrupted canary; no automatic closure or replay')
     host_preflight = sub.add_parser('host-preflight',
         help='offline, non-migrating checks before a bounded public trial')
     productivity_status = sub.add_parser('productivity-status',
@@ -397,6 +410,18 @@ def main(argv=None):
         elif args.command == 'pipeline-doctor':
             import pipeline_doctor
             result = pipeline_doctor.report(args.home)
+        elif args.command == 'muse-census':
+            import muse_bridge
+            result = muse_bridge.census(args.home, host_snapshot=args.host_snapshot)
+        elif args.command in {'supply-plan', 'supply-canary', 'supply-reconcile'}:
+            import supply_recovery
+            if args.command == 'supply-plan':
+                result = supply_recovery.plan(args.home, limit=args.limit, max_requests=args.max_requests)
+            elif args.command == 'supply-reconcile':
+                result = supply_recovery.recovery_status(args.home)
+            else:
+                result = supply_recovery.canary(args.home, plan_id=args.plan_id, run_id=args.run_id,
+                    limit=args.limit, max_requests=args.max_requests, timeout=args.timeout, live=args.live)
         elif args.command == 'init':
             result = initialize(args.home)
         elif args.command == 'confirm-answer':

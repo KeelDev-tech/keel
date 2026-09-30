@@ -198,6 +198,13 @@ class ProfilePackagingTests(unittest.TestCase):
                 return json.loads(result.stdout)
 
             cli('init')
+            census = cli('muse-census')
+            self.assertIsNone(census['launchable_ready'])
+            supply = cli('supply-plan')
+            self.assertEqual(supply['selected_count'], 0)
+            self.assertTrue(supply['conservation_pass'])
+            self.assertEqual(cli('supply-canary', '--plan-id', supply['plan_id'])['status'], 'NO_CANDIDATES')
+            self.assertEqual(cli('supply-reconcile')['pending'], [])
             before = cli('doctor', '--capabilities', expected=1)
             self.assertFalse(before['ready_for_local_preparation'])
             for key, value in [('first_name', 'Synthetic'), ('last_name', 'Fixture'),

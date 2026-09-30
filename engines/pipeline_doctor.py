@@ -9,6 +9,7 @@ from pathlib import Path
 from genuine_pat import is_verify_only
 from queue_io import queue_lock
 from safe_io import read_json, rows, contained_path, utc_now
+from fit_policy import main_floor
 
 QUEUES = ('standard', 'strategic', 'needs_input', 'rejected')
 
@@ -91,7 +92,7 @@ def report(workspace):
                            'reason_codes': codes,
                            'packet_reason': packet_reason})
     return {'schema_version': 1, 'mode': 'OFFLINE_DIAGNOSTIC',
-            'observed_at': utc_now().isoformat(), 'main_fit_floor': 75,
+            'observed_at': utc_now().isoformat(), 'main_fit_floor': main_floor(),
             'data_complete': not problems, 'data_problems': problems,
             'queue_rows': len(entries) if not problems else None,
             'observed_queue_rows': len(entries), 'distinct_role_ids': len(homes),

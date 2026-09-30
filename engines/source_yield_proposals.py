@@ -45,13 +45,14 @@ _KEEL = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _KEEL not in sys.path:
     sys.path.insert(0, _KEEL)
 from engines.safe_io import loads as strict_loads, canonical, aware_time
+from engines.fit_policy import main_floor
 BLACKBOARD = os.path.join(_KEEL, "monitors", "blackboard.py")
 
 # Bars (2026-09-17; change only via human-approved proposal / Trent directive)
 DUP_RATE_DECAY = 0.20          # dup rate at/above this on an intra-cadence re-sweep -> demote
 DUP_RATE_HEALTHY = 0.10        # below this counts as healthy for promotion
 PROMOTE_NET_NEW_MIN = 5        # minimum net-new in the window to earn a promotion proposal
-PROMOTE_FIT_MEDIAN = 75        # fit bar for promotion (the pipeline's standing bar)
+PROMOTE_FIT_MEDIAN = main_floor()  # compatibility alias; decisions read canonical policy
 DECAY_SWEEP_DATES_MIN = 2      # >= this many distinct staging dates inside the
                                # window = an intra-window re-sweep pattern
 
@@ -414,7 +415,7 @@ def build_promotion(fam, st, roster, window_hours):
             "staging date(s). Roster cadence %s (roster: source-roster.md)."
         ) % (window_hours, fam, st["net_new"], st["dup_rate"] * 100,
              st["fit_median"] if st["fit_median"] is not None else "n/a",
-             PROMOTE_FIT_MEDIAN, len(st["sweep_dates"]), cadence),
+             main_floor(), len(st["sweep_dates"]), cadence),
         "proposal_or_fix": (
             "EXACT CHANGE (draft, needs human approval): raise %s cadence "
             "one step (e.g. WEEKLY->2x-weekly probe) or widen its sweep scope; "
@@ -485,7 +486,7 @@ def generate(events, roster, window_hours, guard_events,
         # no roster cadence, e.g. census3x) ---
         if (st["net_new"] >= PROMOTE_NET_NEW_MIN
                 and st["dup_rate"] < DUP_RATE_HEALTHY
-                and (st["fit_median"] or 0) >= PROMOTE_FIT_MEDIAN
+                and (st["fit_median"] or 0) >= main_floor()
                 and st["fit_coverage_complete"]
                 and (roster.get(fam, {}) or {}).get("ceiling_days")):
             proposals.append(build_promotion(fam, st, roster, window_hours))

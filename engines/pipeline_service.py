@@ -25,6 +25,7 @@ from safe_io import (atomic_json, read_json, rows, loads, digest, canonical, utc
                      fresh, aware_time, file_lock, MAX_JSON_BYTES)
 from queue_io import queue_lock
 from posting_identity import TOKEN, identity, observe
+from fit_policy import main_floor
 
 QUEUES = ('standard', 'strategic', 'needs_input', 'rejected')
 FINAL_OR_ACTIVE = {'SUBMITTED', 'SUBMISSION_CLAIMED', 'IN-FLIGHT', 'APPLYING', 'UNKNOWN_OUTCOME', 'REJECTED', 'DEAD', 'CANCELLED'}
@@ -606,16 +607,38 @@ def _next_time(entry, key):
         return 'invalid'
 
 
-def verify(workspace, *, limit=100, timeout=120, live=False, reader=None):
+def verify(workspace, *, limit=100, timeout=120, live=False, reader=None,
+           role_ids=None, expected_rows=None, expected_inputs=None, run_id=None, commit_guard=None):
     _bounded(limit, 'limit', 1000)
+    if role_ids is not None:
+        if (not isinstance(role_ids, (list, tuple)) or not 1 <= len(role_ids) <= 25
+                or any(not isinstance(rid, str) or not rid.strip() for rid in role_ids)
+                or len(set(role_ids)) != len(role_ids)
+                or not isinstance(expected_rows, dict) or set(expected_rows) != set(role_ids)):
+            raise ValueError('bounded verification selection requires exact planned rows')
+        if run_id is None:
+            raise ValueError('bounded verification requires a retained run identity')
+        from muse_bridge import INPUTS, secure_bytes
+        policy_inputs = set(INPUTS) - {'data/application-ledger.json'} - {
+            'data/queues/' + name + '-queue.json' for name in QUEUES}
+        if (not isinstance(expected_inputs, dict) or set(expected_inputs) != policy_inputs
+                or any(not isinstance(v, str) or not re.fullmatch(r'[a-f0-9]{64}', v) for v in expected_inputs.values())):
+            raise ValueError('bounded verification requires the complete planned policy inputs')
+    elif expected_rows is not None or expected_inputs is not None:
+        raise ValueError('planned rows require a bounded role selection')
+    if run_id is not None and (not isinstance(run_id, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,127}', run_id)):
+        raise ValueError('invalid verification run identity')
     if (Path(workspace)/'DEMO_ONLY.json').exists() and reader is None:
         raise ValueError('synthetic workspace cannot perform live verification')
     reader = reader or PublicBoardReader(timeout, retry_timeouts=True)
-    run_id, now = uuid.uuid4().hex, utc_now()
-    initial_flush = flush_outbox(workspace) if live else {'emitted': 0, 'pending': 0}
+    run_id, now = run_id or uuid.uuid4().hex, utc_now()
+    initial_flush = (flush_outbox(workspace, role_ids=role_ids) if role_ids is not None else flush_outbox(workspace)) if live else {'emitted': 0, 'pending': 0}
     with queue_lock(timeout=_lock_budget(reader), owner='public-verify:snapshot', recover=live):
         _deadline(reader)
         documents, ledger = _documents(workspace)
+        if role_ids is not None and any(hashlib.sha256(secure_bytes(workspace, name)).hexdigest() != value
+                                        for name, value in expected_inputs.items()):
+            raise ValueError('policy inputs changed since bounded plan')
         selected = copy.deepcopy(_all_rows(documents))
     selected, id_counts, posting_counts = _identity_index(selected, reader)
     terminal_ids, terminal_keys = _terminal_ledger_index(ledger, reader)
@@ -624,6 +647,14 @@ def verify(workspace, *, limit=100, timeout=120, live=False, reader=None):
         if index % 32 == 0:
             _deadline(reader)
         rid = row.get('role_id')
+        if role_ids is not None:
+            if rid not in role_ids:
+                skipped['outside_bounded_cohort'] += 1; continue
+            if row != expected_rows[rid]:
+                skipped['changed_since_plan'] += 1; continue
+            from ready_gate import ledger_holds
+            if ledger_holds(row, ledger):
+                skipped['bounded_ledger_hold'] += 1; continue
         if not isinstance(rid, str) or not rid or id_counts[rid] != 1:
             skipped['duplicate_or_invalid_role_id'] += 1; continue
         if row.get('verification_event_pending'):
@@ -648,7 +679,7 @@ def verify(workspace, *, limit=100, timeout=120, live=False, reader=None):
         fit = row.get('fit_score')
         if isinstance(fit, bool) or not isinstance(fit, (int, float)) or not math.isfinite(fit):
             scan_fit['unknown_fit'] += 1
-        elif fit >= 75:
+        elif fit >= main_floor():
             scan_fit['scannable_at_main_floor'] += 1
         else:
             scan_fit['scannable_below_main_floor'] += 1
@@ -745,6 +776,9 @@ def verify(workspace, *, limit=100, timeout=120, live=False, reader=None):
         with queue_lock(timeout=_lock_budget(reader), owner='public-verify:commit'):
             _deadline(reader)
             current_documents, current_ledger = _documents(workspace)
+            policy_matches = role_ids is None or all(
+                hashlib.sha256(secure_bytes(workspace, name)).hexdigest() == value
+                for name, value in expected_inputs.items())
             current, counts, current_keys = _identity_index(_all_rows(current_documents), reader)
             ledger_ids, ledger_keys = _terminal_ledger_index(current_ledger, reader)
             grouped = defaultdict(list)
@@ -759,11 +793,15 @@ def verify(workspace, *, limit=100, timeout=120, live=False, reader=None):
                 rid = snapshot['role_id']
                 found = by_path_and_id[(path, rid)]
                 key = tuple(observation['identity'])
-                if (counts[rid] != 1 or len(found) != 1 or found[0] != snapshot
+                if (not policy_matches or counts[rid] != 1 or len(found) != 1 or found[0] != snapshot
                         or current_keys[key] != 1 or _held(found[0])
                         or rid in ledger_ids or key in ledger_keys):
                     conflicts.append(rid); continue
                 row = found[0]
+                if role_ids is not None:
+                    from ready_gate import ledger_holds
+                    if ledger_holds(row, current_ledger) or commit_guard is not None and not commit_guard(row):
+                        conflicts.append(rid); continue
                 row['verification_attempt'] = observation
                 if observation['signal'] != 'NONE':
                     row['posting_verification'] = copy.deepcopy(observation)
@@ -785,7 +823,7 @@ def verify(workspace, *, limit=100, timeout=120, live=False, reader=None):
                     committed_verdicts.update(by_role[rid][2]['verdict'] for rid in ids)
                 except OSError as exc:
                     errors.append({'queue': path.name, 'reason': type(exc).__name__, 'not_committed': ids})
-        flush = flush_outbox(workspace)
+        flush = flush_outbox(workspace, role_ids=role_ids) if role_ids is not None else flush_outbox(workspace)
     else:
         # An idle or wholly deferred run has no row writes or new events. Do
         # not reread all queues twice just to commit and flush an empty batch.
@@ -796,7 +834,7 @@ def verify(workspace, *, limit=100, timeout=120, live=False, reader=None):
                                         'selected': len(chosen), 'unscannable': sum(skipped.values()),
                                         'scannable_at_main_floor': scan_fit['scannable_at_main_floor'],
                                         'scannable_below_main_floor': scan_fit['scannable_below_main_floor'],
-                                        'unknown_fit': scan_fit['unknown_fit'], 'main_fit_floor': 75,
+                                        'unknown_fit': scan_fit['unknown_fit'], 'main_fit_floor': main_floor(),
                                         'promoted_supply_claimed': False},
               'observed': len(observations), 'deferred_without_attempt': dict(deferred),
               'selected_boards': len(boards), 'board_reads': board_reads,
@@ -817,7 +855,7 @@ def verify(workspace, *, limit=100, timeout=120, live=False, reader=None):
     return report
 
 
-def flush_outbox(workspace, logger=None):
+def flush_outbox(workspace, logger=None, *, role_ids=None):
     """Durable events first; batch acknowledgments once per queue file.
 
     A crash between append and acknowledgment replays the same event ID.
@@ -832,7 +870,8 @@ def flush_outbox(workspace, logger=None):
     with queue_lock(timeout=10, owner='verification-outbox:snapshot'):
         documents, _ = _documents(workspace)
         pending = [(path, row['role_id'], copy.deepcopy(row['verification_event_pending']))
-                   for path, row in _all_rows(documents) if row.get('verification_event_pending')]
+                   for path, row in _all_rows(documents) if row.get('verification_event_pending')
+                   and (role_ids is None or row.get('role_id') in role_ids)]
     accepted, errors = defaultdict(list), []
     batch_size = log_event.MAX_BATCH_EVENTS if batch_logger is not None else 1
     for start in range(0, len(pending), batch_size):
