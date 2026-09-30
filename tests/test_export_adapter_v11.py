@@ -305,11 +305,41 @@ def flow_attempt_row(role_id, attempt_id, event_id):
                         "execution_authorized": False}}
 
 
-def test_synthetic_flow_attempt_excluded():
+def test_synthetic_flow_attempt_excluded(monkeypatch):
+    # The read-only legacy adapter deliberately depends on its canonical
+    # receiver's classifier. Public tests supply that protocol rather than
+    # depending on an operator's private workspace existing on this host.
+    from types import SimpleNamespace
+    classifier = SimpleNamespace(is_synthetic=lambda row: row.get("role_id") == "R-TEST")
+    def receiver_module(name):
+        assert name == "log_event"
+        return classifier
+    monkeypatch.setattr(A, "_pipeline_module", receiver_module)
     rows = [flow_attempt_row("R-TEST", "attempt-1", "flow-test-001"),
             flow_attempt_row("R-REAL", "attempt-2", "flow-real-001")]
     events = A.attempt_events_from_rows(rows)
     assert [e["attempt_id"] for e in events] == ["attempt-2"]
+
+
+def test_attempt_scan_without_canonical_classifier_remains_fail_closed(monkeypatch, capsys):
+    def unavailable(name):
+        raise FileNotFoundError("canonical receiver is unavailable")
+    monkeypatch.setattr(A, "_pipeline_module", unavailable)
+    assert A.attempt_events_from_rows([
+        flow_attempt_row("R-REAL", "attempt-2", "flow-real-001")]) == []
+    assert "attempt-event scan failed" in capsys.readouterr().err
+
+
+def test_failed_receiver_import_never_leaves_a_usable_partial_classifier(tmp_path, monkeypatch):
+    monkeypatch.setattr(A, "ENGINES", str(tmp_path))
+    monkeypatch.delitem(sys.modules, "pipeline_log_event", raising=False)
+    (tmp_path / "log_event.py").write_text(
+        "is_synthetic = lambda row: False\nraise OSError('incomplete receiver')\n")
+    row = flow_attempt_row("R-REAL", "attempt-2", "flow-real-001")
+    assert A.attempt_events_from_rows([row]) == []
+    # Repeating a scan must not use the classifier from a failed import.
+    assert A.attempt_events_from_rows([row]) == []
+    assert "pipeline_log_event" not in sys.modules
 
 
 # --- timing helpers -----------------------------------------------------------

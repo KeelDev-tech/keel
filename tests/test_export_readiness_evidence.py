@@ -5,9 +5,9 @@ Blackboard J-20260920-1831-feed-3884: the exporter fail-closed 5 of 6
 readiness gates on hardcoded placeholders (attempt_state UNKNOWN,
 launch_lock_held None, history_reconciled False, approval_valid False,
 packet_present False, dependencies "unobserved"), so executable_ready read
-0 even for leads the lane had genuinely staged. export_flow_snapshot 1.3.0
-maps each gate to real ledger / lock-dir / buffer evidence; every mapping
-fails closed to the v1 placeholder posture when its evidence is absent.
+0 even for staged artifact observations. The exporter maps ledger / lock-dir /
+buffer evidence without treating staging as launch approval. No authoritative
+host receipt adapter exists here, so approval remains unobserved and false.
 
 All fixtures synthetic; nothing touches the live queues, telemetry, tray,
 ledger, locks, or staged-launches. Run from ~/workspace/keel.
@@ -117,10 +117,9 @@ def test_packet_present_with_identity_coverage(tmp_path):
     row, reason = ex.lead_row(queue_entry(), NOW.isoformat(), ev)
     assert reason is None
     assert row["packet_present"] is True
-    assert row["approval_valid"] is True
-    exp = ex.parse_ts((NOW - timedelta(hours=1)).isoformat())
-    got = ex.parse_ts(row["approval_expires_at"])
-    assert abs((got - exp).total_seconds() - 24 * 3600) < 5
+    assert row["approval_valid"] is False
+    assert row["approval_expires_at"] is None
+    assert row["dependencies"]["approval"] == "unobserved"
 
 
 def test_packet_fail_closed_identity_withheld(tmp_path):
@@ -149,6 +148,37 @@ def test_packet_fail_closed_no_staged_entry():
     row, _ = ex.lead_row(queue_entry(), NOW.isoformat(), ev)
     assert row["packet_present"] is False
     assert row["approval_valid"] is False
+
+
+@pytest.mark.parametrize("authority_fields", [
+    {},
+    {"scope": "preparation_only", "execution_authorized": False},
+    {"scope": "preparation_only", "execution_authorized": True},
+    {"execution_authorized": True},
+    {"approval_valid": True, "approval_expires_at": (NOW+timedelta(days=1)).isoformat()},
+    {"host_approval_receipt": {"validated": True, "approver": "synthetic",
+                                "expires_at": (NOW+timedelta(days=1)).isoformat()}},
+])
+def test_packet_flags_and_unvalidated_receipts_cannot_invent_host_approval(authority_fields):
+    staged = {"TEST-ROLE-1": staged_rec(packet=packet(**authority_fields))}
+    row, reason = ex.lead_row(queue_entry(), NOW.isoformat(), evidence(staged_packets=staged))
+    assert reason is None
+    assert row["packet_present"] is True
+    assert row["approval_valid"] is False
+    assert row["approval_expires_at"] is None
+    assert row["dependencies"]["approval"] == "unobserved"
+    result = evaluate_readiness(row, now=NOW)
+    assert result.executable is False
+    assert "approval_unverified" in result.reasons
+
+
+def test_staging_time_does_not_create_approval_revision_or_expiry():
+    first = ex.packet_dependencies(queue_entry(), packet(), NOW, "browser")
+    later = ex.packet_dependencies(queue_entry(), packet(), NOW+timedelta(days=1), "browser")
+    assert first["approval"] == later["approval"] == "unobserved"
+    assert first == later
+    assert ex.approval_evidence("TEST-ROLE-1", {
+        "TEST-ROLE-1": staged_rec(packet=packet(), staged_at=NOW)}, NOW) == (False, None)
 
 
 def test_load_staged_packets_never_raises(tmp_path):
@@ -291,9 +321,8 @@ def test_attempt_latest_event_wins():
 
 # --- end-to-end through the real contract ---------------------------------------
 
-def test_e2e_fully_evidenced_row_is_executable(tmp_path):
-    """A lead with genuine evidence on every gate evaluates EXECUTABLE --
-    the exporter can report executable, not just 0."""
+def test_e2e_staged_artifacts_require_separate_authoritative_approval(tmp_path):
+    """Staging and identity coverage alone cannot make a lead executable."""
     spath = write_staged(tmp_path)
     staged = ex.load_staged_packets(spath)
     lock_dir = str(tmp_path / "locks")
@@ -303,8 +332,8 @@ def test_e2e_fully_evidenced_row_is_executable(tmp_path):
     row, reason = ex.lead_row(queue_entry(), NOW.isoformat(), ev)
     assert reason is None
     res = evaluate_readiness(row, now=NOW, maximum_age_seconds=900)
-    assert res.executable is True, res.reasons
-    assert res.reasons == ()
+    assert res.executable is False
+    assert res.reasons == ("approval_unverified",)
 
 
 def test_e2e_staged_intent_holds_but_packet_shows(tmp_path):
@@ -323,8 +352,9 @@ def test_e2e_staged_intent_holds_but_packet_shows(tmp_path):
     res = evaluate_readiness(row, now=NOW, maximum_age_seconds=900)
     assert res.executable is False
     assert "attempt_hold" in res.reasons
+    assert "approval_unverified" in res.reasons
     for cleared in ("packet_missing", "packet_dependencies_changed",
-                    "approval_unverified", "launch_lock_held_or_unknown",
+                    "launch_lock_held_or_unknown",
                     "legacy_history_unreconciled"):
         assert cleared not in res.reasons, cleared
 

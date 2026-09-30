@@ -1,3 +1,23 @@
+## Unreleased — Verification, READY admission, and clean source recovery
+
+- Journal cross-file queue changes before replacement, compare full snapshots,
+  and recover interrupted moves before cooperating readers use the queues.
+- Preserve posting evidence through transport failures, pace bounded retries,
+  stop on rate limits, and remove implicit READY promotion from the operational
+  verification entry point.
+- Recheck all four queue homes, ledger history, the fit floor of 75, current
+  employer policy, durable holds, and scoped packet/material integrity before
+  preparation or staged admission. Preparation packets carry no execution
+  authority; staging alone cannot become exported approval.
+- Require exact authoritative terminal-task evidence before clearing stale
+  ownership, and serialize fresh claims without stealing foreign leases.
+- Add offline conversion diagnostics, preserve unknown applicant assertions
+  during setup, and ship a complete maintained source/test dependency profile
+  with dedicated recovery CI configuration.
+- Qualify local behavior separately from inherited full-checkout failures and
+  unavailable host adapters. No live migration, submission, or measured supply
+  recovery is claimed.
+
 ## 0.6.5 — Recoverable and fair question resolution
 
 - Add conservative interrupted-intent inspection and explicit recovery. Proven

@@ -19,8 +19,11 @@ the loop and the lane driver:
   - under queue_io.queue_lock it locates the lead in its home queue,
     refuses non-claimable states and foreign-owned markers (fail closed),
     and stamps status / status_updated / in_flight_at / browser_task_id,
-  - with company+title it also refuses ALREADY_SUBMITTED / TWIN_SUBMITTED
-    from the ledger (the prelaunch duplicate guard).
+  - it reads all four queue homes and refuses duplicate or unknown homes,
+  - it requires fresh READY admission from standard/strategic under the
+    shared static gate,
+  - it always checks terminal, active, and unknown ledger holds by exact
+    role/posting identity or company+title twin under the same queue lock.
 
 Two phases:
   claim — run by apply_loop.claim_packet. No browser task exists yet, so
@@ -53,13 +56,17 @@ sys.path.insert(0, BASE)
 import launch_lock  # noqa: E402 — the one atomic lock; never rebuilt here
 import queue_io  # noqa: E402
 import submit_intent  # noqa: E402 — open-intent bar for the claim phase (P1)
+import ready_gate  # noqa: E402 — shared static admission/ledger contract
+from safe_io import rows as strict_rows  # noqa: E402
+import task_liveness  # noqa: E402 — pure, fail-closed runtime row predicate
 from status_matchers import is_inflight_status  # noqa: E402
 
-from keel_paths import DATA  # noqa: E402 — repo path convention
+from keel_paths import DATA, HOME  # noqa: E402 — repo path convention
 QUEUES = {
     "standard": os.path.join(DATA, "queues", "standard-queue.json"),
     "needs_input": os.path.join(DATA, "queues", "needs_input-queue.json"),
     "strategic": os.path.join(DATA, "queues", "strategic-queue.json"),
+    "rejected": os.path.join(DATA, "queues", "rejected-queue.json"),
 }
 # Test hook: when set, _queue_paths() uses this instead of the
 # canonical keel_paths constants. Production code never sets it.
@@ -101,19 +108,18 @@ def _claim_placeholder(role_id):
 
 
 def _locate(role_id):
-    """(home, entries, entry) for role_id across all three queues.
+    """(home, entries, entry) for role_id across all configured queues.
 
-    Fail-closed: missing -> (None, ...); present in more than one queue
-    -> raises ValueError (one-lead-one-queue; the caller refuses).
+    A missing role returns (None, ...). Missing/malformed queue homes or
+    duplicate role rows raise ValueError; incomplete inventory is not
+    evidence of one home.
     """
     hits = []
     for home, path in _queue_paths().items():
-        try:
-            raw = queue_io.load_json(path)
-        except (FileNotFoundError, OSError):
-            continue
-        items = raw if isinstance(raw, list) else raw.get("entries",
-                                                          raw.get("items", []))
+        raw = queue_io.read_snapshot(path)
+        if raw is None:
+            raise ValueError("queue home is missing or null: " + home)
+        items = strict_rows(raw)
         for e in items:
             if isinstance(e, dict) and e.get("role_id") == role_id:
                 hits.append((home, path, raw, items, e))
@@ -281,13 +287,49 @@ def marker_attempt_id(role_id):
     return e.get("attempt_id") or None
 
 
+def _admission_bar(home, entry, *, company=None, title=None):
+    """Read-only claim boundary; caller holds the shared queue lock.
+
+    Queue identity supplies employer/role facts, so omitted CLI arguments
+    cannot bypass duplicate checks and supplied arguments cannot replace
+    the record's actual identity. A ledger read failure is an unknown hold.
+    """
+    if home not in {"standard", "strategic"}:
+        return _refuse("non_admission_queue: lead is held in " + str(home),
+                       reason_codes=["non_admission_queue"])
+    for key, supplied in (("company", company), ("title", title)):
+        if supplied and launch_lock._norm(supplied) != launch_lock._norm(entry.get(key)):
+            return _refuse("claim identity differs from current queue " + key,
+                           reason_codes=["claim_identity_mismatch"])
+    try:
+        ledger = strict_rows(queue_io.read_snapshot(launch_lock.LEDGER_PATH))
+        if ready_gate.ledger_holds(entry, ledger):
+            return _refuse("ledger_hold: existing terminal, active or unknown application",
+                           reason_codes=["ledger_hold"])
+    except (OSError, ValueError, TypeError, KeyError):
+        return _refuse("ledger_unconfirmed: refusing claim without readable application history",
+                       reason_codes=["ledger_unconfirmed"])
+    # Ownership bookkeeping for an existing IN-FLIGHT row does not create
+    # fresh admission. Fresh READY transitions must satisfy the same static
+    # policy boundary used by the READY inspector and packet preparation.
+    if entry.get("status") in READY_STATES:
+        assessment = ready_gate.entry_admission(entry, origin=home, workspace=HOME)
+        if not assessment["allowed"]:
+            return _refuse("static READY admission refused: " + "; ".join(assessment["reasons"]),
+                           reason_codes=assessment["reason_codes"])
+    return None
+
+
 def mark_inflight(role_id, task_id=None, phase="claim", company=None,
-                  title=None, owner="", attempt_id=None):
+                  title=None, owner="", attempt_id=None,
+                  task_state_provider=None):
     """Atomically claim a lead IN-FLIGHT (lock + queue marker together).
 
     phase="claim": loop-side (apply_loop.claim_packet). task_id may be
         None -> the launch lock is acquired with the placeholder
-        "claim:<role_id>"; the marker's browser_task_id stays empty.
+        "claim:<role_id>". A prior browser_task_id on a READY record is
+        cleared only when task_state_provider proves that exact task
+        terminal; live or unknown ownership refuses the fresh claim.
     phase="spawn": driver-side, immediately after spawning. task_id is
         REQUIRED (the real browser task id); the claim placeholder is
         transferred to it and the marker's browser_task_id is stamped.
@@ -299,6 +341,13 @@ def mark_inflight(role_id, task_id=None, phase="claim", company=None,
         attempt_id — or an unreadable store — refuses the claim (fail
         closed); the just-acquired placeholder lock is released so a
         refused claim never leaves a phantom lock.
+
+    task_state_provider: optional read-only callable taking the exact prior
+        task ID and returning its authoritative runtime row. It is called
+        under the queue lock and must use a bounded local lookup (no
+        browser operations). None, missing rows, exceptions, or mismatched
+        row identities fail closed. The record is re-read and compared
+        after lookup so a changed owner/status cannot be overwritten.
 
     Returns {"ok": False, "reason": ...}. Never raises on missing state;
     fail-closed on foreign ownership. Raises ValueError on a CORRUPT lease
@@ -318,42 +367,7 @@ def mark_inflight(role_id, task_id=None, phase="claim", company=None,
 
     eff_task = task_id or _claim_placeholder(role_id)
 
-    # Ledger duplicate guard (defense in depth at the transition, not
-    # just at spawn): never mark a lead whose role already SUBMITTED,
-    # and never mark a twin of a submitted application.
-    if company and title:
-        submitted = launch_lock._load_submitted(launch_lock.LEDGER_PATH)
-        if role_id in submitted:
-            return _refuse("ALREADY_SUBMITTED: ledger already holds "
-                           f"SUBMITTED for {role_id}")
-        nco = launch_lock._norm(company)
-        nti = launch_lock._norm(title)
-        for rid, (co, ti) in submitted.items():
-            if launch_lock._norm(co) == nco and launch_lock._norm(ti) == nti:
-                return _refuse("TWIN_SUBMITTED: same company+title already "
-                               f"SUBMITTED under {rid}")
-
-    if phase == "claim":
-        ok, info = launch_lock.acquire(role_id, eff_task, owner or "claim")
-        if not ok:
-            return _refuse(f"launch lock not acquired: {info.get('status')}",
-                           lock=info.get("lock"))
-        # This call created (or took over a stale) lock unless the
-        # placeholder was already ours — only a lock WE minted may be
-        # released on a refusal below; releasing an "already owner" lock
-        # would drop a live claim's lease.
-        _lock_created = (info.get("status") == "ACQUIRED"
-                         and info.get("note") != "already owner")
-        # P1 §3.2 step 3: consult the submit-intent store BEFORE writing
-        # the marker. Our own freshly minted intent (passed as attempt_id)
-        # is the claim's identity, not a blocker; anything else open bars
-        # the claim. A refused claim must not leave a phantom lock behind.
-        bar = _open_intent_bar(role_id, attempt_id)
-        if bar is not None:
-            if _lock_created:
-                launch_lock.release(role_id, eff_task)
-            return bar
-    else:
+    if phase == "spawn":
         # Spawn phase: the pre-check, the placeholder->task transfer, and
         # the marker write all happen inside ONE queue_io.queue_lock
         # critical section, so rival spawns serialize and exactly one
@@ -365,10 +379,13 @@ def mark_inflight(role_id, task_id=None, phase="claim", company=None,
                 return _refuse(str(ex))
             if e is None:
                 return _refuse(f"role_id {role_id} not found in any queue")
+            barrier = _admission_bar(home, e, company=company, title=title)
+            if barrier is not None:
+                return barrier
             st = str(e.get("status") or "")
             mt = e.get("browser_task_id")
-            if is_inflight_status(st) and mt not in (None, "", task_id):
-                return _refuse("marker already IN-FLIGHT owned by "
+            if mt not in (None, "", task_id):
+                return _refuse("marker already owned by "
                                f"{mt}; refusing foreign takeover",
                                marker_task_id=mt)
             if not is_inflight_status(st) and st not in READY_STATES:
@@ -403,28 +420,52 @@ def mark_inflight(role_id, task_id=None, phase="claim", company=None,
                 "browser_task_id": task_id, "note": note}
 
     with queue_io.queue_lock():
-        # Silent-defect sweep 2026-09-19: the placeholder lock is
-        # acquired BEFORE queue_io.queue_lock(), so a write failure
-        # (or a corrupt queue raising from _locate) would otherwise
-        # leave a fresh 2h placeholder lock. The refusal branches
-        # already release; this catches the exception paths they
-        # cannot, mirroring the same release call.
+        # Serialize placeholder acquisition with marker ownership. The
+        # placeholder is shared by role ID, so acquiring it before the
+        # queue lock lets two fresh callers both appear to own one claim.
+        ok, info = launch_lock.acquire(role_id, eff_task, owner or "claim")
+        if not ok:
+            return _refuse(f"launch lock not acquired: {info.get('status')}",
+                           lock=info.get("lock"))
+        # Release only a lease created by this call. An idempotent replay
+        # or refused rival must not drop an existing claim's lease.
+        _lock_created = (info.get("status") == "ACQUIRED"
+                         and info.get("note") != "already owner")
+        bar = _open_intent_bar(role_id, attempt_id)
+        if bar is not None:
+            if _lock_created:
+                launch_lock.release(role_id, eff_task)
+            return bar
+        # A failed/corrupt queue write must not leave a phantom lease.
         try:
             try:
                 home, path, raw, items, e = _locate(role_id)
             except ValueError as ex:
-                launch_lock.release(role_id, eff_task)
+                if _lock_created:
+                    launch_lock.release(role_id, eff_task)
                 return _refuse(str(ex))
             if e is None:
-                launch_lock.release(role_id, eff_task)
+                if _lock_created:
+                    launch_lock.release(role_id, eff_task)
                 return _refuse(f"role_id {role_id} not found in any queue")
+            barrier = _admission_bar(home, e, company=company, title=title)
+            if barrier is not None:
+                if _lock_created:
+                    launch_lock.release(role_id, eff_task)
+                return barrier
             status = str(e.get("status") or "")
             marker_task = e.get("browser_task_id")
             if is_inflight_status(status):
-                # Already marked: idempotent only when WE own it.
+                # A role-based placeholder is not caller identity. Only
+                # an exact task or exact attempt may replay a claim.
+                same_attempt = bool(
+                    attempt_id and e.get("attempt_id") == attempt_id)
+                same_task = bool(task_id and marker_task == task_id)
                 owned = (marker_task in (None, "", eff_task)
-                         or info["lock"].get("task_id") == eff_task)
+                         and (same_attempt or same_task))
                 if not owned:
+                    if _lock_created:
+                        launch_lock.release(role_id, eff_task)
                     return _refuse("marker already IN-FLIGHT owned by "
                                    f"{marker_task or 'another task'}; refusing "
                                    "foreign takeover",
@@ -433,11 +474,83 @@ def mark_inflight(role_id, task_id=None, phase="claim", company=None,
                     e["attempt_id"] = attempt_id  # P1: backfill our join key
                 note = "already marked by us (idempotent)"
             elif status in READY_STATES:
+                if marker_task not in (None, ""):
+                    fingerprint = json.dumps(e, sort_keys=True,
+                                             separators=(",", ":"))
+                    prior_task = None
+                    if task_state_provider is not None:
+                        try:
+                            prior_task = task_state_provider(marker_task)
+                        except Exception:
+                            # No row is no evidence: never infer a phantom
+                            # launch from provider failure or absence.
+                            prior_task = None
+                    liveness = task_liveness.classify_task(
+                        prior_task, task_id=marker_task)
+                    if liveness != task_liveness.TERMINAL:
+                        if _lock_created:
+                            launch_lock.release(role_id, eff_task)
+                        return _refuse(
+                            "prior browser task is live or unknown; "
+                            "refusing fresh claim",
+                            marker_task_id=marker_task,
+                            task_liveness=liveness)
+                    # Re-read after the injected lookup. queue_lock
+                    # serializes cooperating writers; this CAS also
+                    # refuses a changed row and retains unrelated updates.
+                    try:
+                        home2, path2, raw2, items2, entry2 = _locate(role_id)
+                    except (OSError, ValueError) as exc:
+                        if _lock_created:
+                            launch_lock.release(role_id, eff_task)
+                        return _refuse(
+                            "claim source changed or unconfirmed during task lookup: " + str(exc),
+                            marker_task_id=marker_task)
+                    if (entry2 is None or home2 != home or path2 != path
+                            or json.dumps(entry2, sort_keys=True,
+                                          separators=(",", ":"))
+                            != fingerprint):
+                        if _lock_created:
+                            launch_lock.release(role_id, eff_task)
+                        return _refuse(
+                            "claim source changed during task lookup; "
+                            "refusing stale owner repair",
+                            marker_task_id=marker_task)
+                    # The local runtime lookup may reveal concurrent
+                    # history/policy updates too. Re-read the ledger and
+                    # static gate before publishing a fresh claim.
+                    barrier = _admission_bar(home2, entry2, company=company, title=title)
+                    if barrier is not None:
+                        if _lock_created:
+                            launch_lock.release(role_id, eff_task)
+                        return barrier
+                    raw, items, e = raw2, items2, entry2
+                    e["browser_task_id"] = None
+                    e["claim_stale_owner_repair"] = {
+                        "schema_version": 1,
+                        "prior_browser_task_id": marker_task,
+                        "prior_attempt_id": e.get("attempt_id"),
+                        "observed_at": _utc_now(),
+                        "authority": "task_state_provider",
+                        "status": (prior_task.get("status")
+                                   if isinstance(prior_task.get("status"), str)
+                                   else None),
+                        "outcome_status": (
+                            prior_task.get("outcome_status")
+                            if isinstance(prior_task.get("outcome_status"), str)
+                            else None),
+                        "terminal_reason_present": bool(
+                            prior_task.get("terminal_reason")),
+                    }
+                    _append_qnote(
+                        e, f"terminal prior browser_task_id cleared: "
+                        f"{marker_task} (authoritative task state)")
                 e["status"] = "IN-FLIGHT"
                 e["status_updated"] = _pdt_now()
                 e["in_flight_at"] = _utc_now()
-                if attempt_id:
-                    e["attempt_id"] = attempt_id  # P1: join key, both phases
+                # A fresh claim may not inherit the previous attempt's
+                # identity. An explicit new attempt is the only join key.
+                e["attempt_id"] = attempt_id
                 prev = e.get("queue_notes") or ""
                 if isinstance(prev, list):  # 2026-09-17: normalize list-form notes
                     prev = "\n".join(str(x) for x in prev)
@@ -448,7 +561,8 @@ def mark_inflight(role_id, task_id=None, phase="claim", company=None,
             else:
                 # Acquire-then-fail must not leave a phantom lock: the
                 # placeholder is ours by construction (atomic acquire).
-                launch_lock.release(role_id, eff_task)
+                if _lock_created:
+                    launch_lock.release(role_id, eff_task)
                 return _refuse(f"lead status is {status}; only "
                                f"{'/'.join(READY_STATES)} (or our own marker) "
                                "may transition to IN-FLIGHT")
@@ -459,7 +573,7 @@ def mark_inflight(role_id, task_id=None, phase="claim", company=None,
             raise
     return {"ok": True, "role_id": role_id, "queue_home": home,
             "phase": phase, "lock_task_id": eff_task,
-            "browser_task_id": None, "note": note}
+            "browser_task_id": e.get("browser_task_id"), "note": note}
 
 
 def rollback_inflight(role_id, task_id, reason="spawn-failed"):

@@ -1,8 +1,10 @@
 """Real extracted local-profile smoke checks; all workspace state is synthetic."""
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
+import shlex
 import sys
 import tempfile
 import unittest
@@ -108,6 +110,19 @@ class ProfilePackagingTests(unittest.TestCase):
                          'sample_data/machine-plan.example.json'):
             self.assertIn(required, names)
         self.assertNotIn('README.md', names)  # audit README contains historical assertions
+        self.assertIn('QUICKSTART.md', names)
+        self.assertIn('docs/PIPELINE_RECOVERY.md', names)
+        self.assertIn('requirements-dev.txt', names)
+        workflow = '.github/workflows/recovery-profile.yml'
+        self.assertIn(workflow, names)
+        workflow_tests = set(re.findall(r'tests/[A-Za-z0-9_.-]+\.py',
+                                      (ROOT / workflow).read_text()))
+        self.assertGreaterEqual(len(workflow_tests), 11)
+        self.assertTrue(workflow_tests <= set(names),
+                        'maintained recovery workflow tests must ship in the clean profile')
+        for staged in ('engines/stage_ready_launches.py', 'engines/batch_staged_launches.py',
+                       'engines/staged-launch-preflight.py', 'tests/test_staged_admission_recovery.py'):
+            self.assertIn(staged, names)
         for name in names:
             self.assertTrue((ROOT / name).is_file(), name)
             package._release_path(name)
@@ -131,6 +146,50 @@ class ProfilePackagingTests(unittest.TestCase):
             env['KEEL_HOME'] = str(temp / 'cold-api-workspace')
             home = temp / 'synthetic-workspace'
 
+            # Test the distributed wrappers against an explicit workspace,
+            # with site packages disabled and an unrelated KEEL_HOME. The old
+            # setup copied asserted examples into the code tree even when the
+            # engines were configured to read a different home.
+            python_shim = temp / 'python-no-site'
+            python_shim.write_text('#!/bin/sh\nexec ' + shlex.quote(sys.executable) + ' -S "$@"\n')
+            python_shim.chmod(0o700)
+            wrapper_env = dict(env, KEEL_PYTHON=str(python_shim))
+            wrapper_home = temp / 'wrapper-workspace'
+            setup = subprocess.run(['bash', str(code / 'setup.sh'), str(wrapper_home)],
+                cwd=temp, env=wrapper_env, capture_output=True, text=True, timeout=30)
+            self.assertEqual(setup.returncode, 0, setup.stdout + setup.stderr)
+            bank = json.loads((wrapper_home / 'data/answer_bank.json').read_text())
+            self.assertTrue(all(value is None for value in bank['answers'].values()))
+            self.assertEqual(bank['_provenance'], {})
+            self.assertEqual(bank['attestation_scope']['preauthorized_attestation_keys'], [])
+            self.assertFalse((code / 'data').exists())
+            self.assertFalse(Path(env['KEEL_HOME']).exists())
+            tracked_before = {p.relative_to(wrapper_home).as_posix(): p.read_bytes()
+                              for p in wrapper_home.rglob('*.json')}
+            start = subprocess.run(['bash', str(code / 'start.sh'), str(wrapper_home)],
+                cwd=temp, env=wrapper_env, capture_output=True, text=True, timeout=30)
+            self.assertEqual(start.returncode, 1, start.stdout + start.stderr)
+            self.assertIn('"ready_for_local_preparation": false', start.stdout)
+            self.assertIn('"queue_rows": 0', start.stdout)
+            self.assertIn('"mode": "OFFLINE_DIAGNOSTIC"', start.stdout)
+            self.assertIn('"launchable_ready": null', start.stdout)
+            self.assertEqual(tracked_before,
+                {p.relative_to(wrapper_home).as_posix(): p.read_bytes()
+                 for p in wrapper_home.rglob('*.json')})
+            setup_again = subprocess.run(['bash', str(code / 'setup.sh')],
+                cwd=temp, env=dict(wrapper_env, KEEL_HOME=str(wrapper_home)),
+                capture_output=True, text=True, timeout=30)
+            self.assertEqual(setup_again.returncode, 0, setup_again.stdout + setup_again.stderr)
+            self.assertEqual(tracked_before,
+                {p.relative_to(wrapper_home).as_posix(): p.read_bytes()
+                 for p in wrapper_home.rglob('*.json')})
+            corrupt = wrapper_home / 'data/policy.json'
+            corrupt.write_bytes(b'{invalid-json')
+            invalid = subprocess.run(['bash', str(code / 'setup.sh'), str(wrapper_home)],
+                cwd=temp, env=wrapper_env, capture_output=True, text=True, timeout=30)
+            self.assertNotEqual(invalid.returncode, 0)
+            self.assertEqual(corrupt.read_bytes(), b'{invalid-json')
+
             def cli(*args, expected=0, workspace=home):
                 result = subprocess.run([sys.executable, '-S', str(code / 'keel.py'),
                                          '--home', str(workspace), *args], cwd=temp,
@@ -147,6 +206,26 @@ class ProfilePackagingTests(unittest.TestCase):
             after = cli('doctor', '--capabilities')
             self.assertTrue(after['ready_for_local_preparation'])
             self.assertFalse(after['provider_verification_available'])
+            conversion = cli('pipeline-doctor')
+            self.assertTrue(conversion['data_complete'])
+            self.assertEqual(conversion['nominal_ready'], 0)
+            self.assertIsNone(conversion['launchable_ready'])
+            self.assertEqual(conversion['network_reads'], 0)
+            # The repaired staged consumers must import from the extracted
+            # candidate without private helpers or installed site packages.
+            staging_import = subprocess.run([sys.executable, '-S', '-c',
+                'import importlib.util, sys; from pathlib import Path; '
+                'root = Path(sys.argv[1]); sys.path.insert(0, str(root / "engines")); '
+                'sys.path.insert(0, str(root)); '
+                'import stage_ready_launches, batch_staged_launches, receipt_projection; '
+                'spec = importlib.util.spec_from_file_location("staged_preflight", '
+                'str(root / "engines/staged-launch-preflight.py")); '
+                'module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module); '
+                'print("staged imports PASS")', str(code)], cwd=temp,
+                env=dict(env, KEEL_HOME=str(home)), capture_output=True, text=True, timeout=30)
+            self.assertEqual(staging_import.returncode, 0,
+                             staging_import.stdout + staging_import.stderr)
+            self.assertIn('staged imports PASS', staging_import.stdout)
             cli('dashboard')
             cli('supply')
             productivity = cli('productivity-status')

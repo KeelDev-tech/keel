@@ -1,0 +1,192 @@
+{
+  "audit_hook": "The separately referenced guard file is absent; broad runs explicitly allowed reviewed unguarded execution. No hook enforcement or OS sandbox is claimed.",
+  "baseline_commit": "326532ea250c3e00e7924ad175e2fb744b3104d9",
+  "baseline_core": {
+    "errors": 0,
+    "failed": 50,
+    "passed": 5932,
+    "skipped": 23
+  },
+  "candidate_suites": [
+    {
+      "counts": {
+        "errors": 0,
+        "failed": 44,
+        "passed": 6231,
+        "skipped": 23
+      },
+      "exit_code": 1,
+      "isolation": {
+        "audit_guard_file_present": false,
+        "audit_hook_enforcement_verified": false,
+        "os_sandbox": false,
+        "python_audit_hook": "unavailable",
+        "scope": "explicitly unguarded reviewed local checks",
+        "unguarded_explicitly_allowed": true,
+        "workspace": "temporary synthetic workspace"
+      },
+      "suite": "core"
+    },
+    {
+      "counts": {
+        "errors": 0,
+        "failed": 0,
+        "passed": 8,
+        "skipped": 0
+      },
+      "exit_code": 0,
+      "isolation": {
+        "audit_guard_file_present": false,
+        "audit_hook_enforcement_verified": false,
+        "os_sandbox": false,
+        "python_audit_hook": "not_configured",
+        "scope": "reviewed extracted-profile checks; Python -S children; no live network workflow",
+        "unguarded_explicitly_allowed": false,
+        "workspace": "temporary synthetic workspace"
+      },
+      "suite": "local_profile"
+    },
+    {
+      "counts": {
+        "errors": 1,
+        "failed": 0,
+        "passed": 316,
+        "skipped": 1
+      },
+      "exit_code": 1,
+      "isolation": {
+        "audit_guard_file_present": false,
+        "audit_hook_enforcement_verified": false,
+        "os_sandbox": false,
+        "python_audit_hook": "unavailable",
+        "scope": "explicitly unguarded reviewed local checks",
+        "unguarded_explicitly_allowed": true,
+        "workspace": "temporary synthetic workspace"
+      },
+      "suite": "security"
+    },
+    {
+      "counts": {
+        "errors": 0,
+        "failed": 0,
+        "passed": 94,
+        "skipped": 5
+      },
+      "exit_code": 0,
+      "isolation": {
+        "audit_guard_file_present": false,
+        "audit_hook_enforcement_verified": false,
+        "os_sandbox": false,
+        "python_audit_hook": "unavailable",
+        "scope": "explicitly unguarded reviewed local checks",
+        "unguarded_explicitly_allowed": true,
+        "workspace": "temporary synthetic workspace"
+      },
+      "suite": "privacy"
+    },
+    {
+      "counts": {
+        "errors": 0,
+        "failed": 0,
+        "passed": 0,
+        "skipped": 0
+      },
+      "exit_code": 5,
+      "isolation": {
+        "audit_guard_file_present": false,
+        "audit_hook_enforcement_verified": false,
+        "os_sandbox": false,
+        "python_audit_hook": "unavailable",
+        "scope": "explicitly unguarded reviewed local checks",
+        "unguarded_explicitly_allowed": true,
+        "workspace": "temporary synthetic workspace"
+      },
+      "suite": "monitors"
+    }
+  ],
+  "ci_execution": "not observed",
+  "core_comparison": {
+    "inherited_failures": [
+      "tests.test_monitors_audit_20260924.test_calibrated_drought_survives_future_watermark_and_event",
+      "tests.test_monitors_audit_20260924.test_future_worker_event_cannot_clear_drought",
+      "tests.test_monitors_audit_20260924.test_malformed_counter_alarms_instead_of_crashing",
+      "tests.test_monitors_audit_20260924.test_malformed_event_does_not_hide_later_worker_signal[7]",
+      "tests.test_monitors_audit_20260924.test_malformed_event_does_not_hide_later_worker_signal[None]",
+      "tests.test_monitors_audit_20260924.test_malformed_event_does_not_hide_later_worker_signal[bad1]",
+      "tests.test_monitors_audit_20260924.test_malformed_event_does_not_hide_later_worker_signal[bad3]",
+      "tests.test_monitors_audit_20260924.test_missing_queue_is_unknown_not_zero_backlog",
+      "tests.test_monitors_audit_20260924.test_repeatedly_unreadable_watched_files_never_quiet",
+      "tests.test_monitors_audit_20260924.test_wrapped_queue_is_counted",
+      "tests.test_packet_dependency_shadow.test_board_without_envelope_is_unverified_with_zero_coverage",
+      "tests.test_packet_dependency_shadow.test_shadow_report_records_fail_closed_states",
+      "tests.test_packet_dependency_shadow.test_workflow_refuses_evaluation_without_assurance_export",
+      "tests.test_pulse_snapshot_apidirect.test_legacy_keys_still_emitted_retired_state",
+      "tests.test_pulse_snapshot_apidirect.test_malformed_rows_never_raise",
+      "tests.test_pulse_snapshot_apidirect.test_missing_data_files_never_raise",
+      "tests.test_pulse_snapshot_apidirect.test_new_keys_present_and_typed",
+      "tests.test_pulse_snapshot_apidirect.test_refused_keys_move_when_loop_decides",
+      "tests.test_pulse_snapshot_apidirect.test_snapshot_top_level_field_set_unchanged",
+      "tests.test_pulse_snapshot_refused_alias.test_alias_equals_canonical_on_synthetic",
+      "tests.test_pulse_snapshot_refused_alias.test_alias_present_on_live_inputs",
+      "tests.test_pulse_snapshot_refused_alias.test_alias_tracks_canonical_when_refusals_move",
+      "tests.test_pulse_snapshot_refused_alias.test_alias_zero_state",
+      "tests.test_pulse_snapshot_refused_alias.test_canonical_name_documented_at_definition_site",
+      "tests.test_vercel_funding_state.test_all_material_files_exist",
+      "tests.test_vercel_funding_state.test_claim_evidence_registry_covers_prose_materials",
+      "tests.test_vercel_funding_state.test_each_prose_material_has_evidence_section",
+      "tests.test_vercel_funding_state.test_every_opportunity_has_explicit_type",
+      "tests.test_vercel_funding_state.test_forbidden_claims_have_evidence_or_denial",
+      "tests.test_vercel_funding_state.test_infra_credit_never_described_as_cash_funding",
+      "tests.test_vercel_funding_state.test_packet_submittable_shape_but_not_submitted",
+      "tests.test_vercel_funding_state.test_packet_unknowns_not_invented",
+      "tests.test_vercel_funding_state.test_tracker_file_exists",
+      "tests.test_vercel_funding_state.test_type_separation_exercised_both_sides",
+      "tests.test_vercel_funding_state.test_vercel_oss_prepare_next_window",
+      "tests.test_vercel_funding_state.test_vercel_startups_hold_eligibility",
+      "tests.vendor-port-2026-09-21.test_dispatch_security_regressions.DispatchSecurityRegressions.test_authority_must_return_explicit_allow",
+      "tests.vendor-port-2026-09-21.test_dispatch_security_regressions.DispatchSecurityRegressions.test_authority_unavailable_fails_closed",
+      "tests.vendor-port-2026-09-21.test_dispatch_security_regressions.DispatchSecurityRegressions.test_authorization_error_does_not_leak_exception_secrets",
+      "tests.vendor-port-2026-09-21.test_dispatch_security_regressions.DispatchSecurityRegressions.test_batch_requires_explicit_allow_result",
+      "tests.vendor-port-2026-09-21.test_dispatch_security_regressions.DispatchSecurityRegressions.test_dry_run_remains_available_without_authorizing_execution",
+      "tests.vendor-port-2026-09-21.test_dispatch_security_regressions.DispatchSecurityRegressions.test_fingerprint_must_match_actual_bundle",
+      "tests.vendor-port-2026-09-21.test_dispatch_security_regressions.DispatchSecurityRegressions.test_malformed_bundle_refuses_before_upload",
+      "tests.vendor-port-2026-09-21.test_dispatch_security_regressions.DispatchSecurityRegressions.test_safe_mode_denies_with_zero_requests"
+    ],
+    "new_failures": [],
+    "resolved_failures": [
+      "tests.test_event_naming_port.TestSecurityBlockedChoke.test_authority_allow_records_submission_claimed",
+      "tests.test_export_adapter_v11.test_synthetic_flow_attempt_excluded",
+      "tests.test_verify_retry_scan_apply_port.test_scan_and_apply_default_limit_is_100",
+      "tests.test_verify_retry_scan_apply_port.test_scan_and_apply_delegates_to_pipeline_service_verify",
+      "tests.test_verify_retry_scan_apply_port.test_scan_and_apply_forwards_live_flag",
+      "tests.test_verify_retry_scan_apply_port.test_verification_unavailable_is_runtime_error"
+    ]
+  },
+  "date": "2026-09-30",
+  "live_rollout": "not performed",
+  "live_supply_recovery": "not measured",
+  "maintained_extracted_profile": {
+    "errors": 0,
+    "failed": 0,
+    "modules": 11,
+    "passed": 301,
+    "skipped": 0,
+    "source_imports_removed": true,
+    "unique_tests": 301,
+    "workspace": "fresh synthetic HOME and KEEL_HOME"
+  },
+  "monitors": "No tests collected in the monitors directory; exit 5 is not a pass.",
+  "remaining_host_work": [
+    "Integrate against the canonical live revision and exact task-state provider.",
+    "Qualify private material, rendered-form and receipt adapters.",
+    "Reconcile production queue/ledger/attempt history before a bounded no-submission rehearsal."
+  ],
+  "runtime": {
+    "os": "Linux",
+    "python": "3.12.14",
+    "python_3_11_ci": "configured; not observed"
+  },
+  "schema_version": 1,
+  "security_collection_error": "security.secrets.broker is absent from the public checkout",
+  "status": "MAINTAINED_PROFILE_PASS_BROADER_INCOMPLETE"
+}

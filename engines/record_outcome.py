@@ -16,7 +16,7 @@ Validated, append-only outcome recording:
     from misordered CLI invocations — is refused, never written.
   - Placeholder refusal: literal 'tech'/'note' smoke-test values are
     refused before any telemetry emission.
-  - Every accepted record emits a submitted / gate_blocked telemetry event
+  - Every accepted record emits a submission_claimed / gate_blocked telemetry event
     (via log_event.py) so the append-only event log is the durable
     evidence base. --no-telemetry suppresses the event for honest
     backfills of rows whose telemetry already exists (no double-counting);
@@ -63,7 +63,7 @@ LEGACY_ATS_KEYS = frozenset({
 VALID_ATS = frozenset(ATS_PATTERNS) | LEGACY_ATS_KEYS
 # Closed outcome vocabulary: the only two outcomes this writer records.
 # Anything else (e.g. 'maybe') is refused before any side effect — the
-# telemetry gate values ('submitted'/'gate_blocked') are derived from this
+# telemetry event values ('submission_claimed'/'gate_blocked') are derived from this
 # outcome, so an unknown outcome can never be written.
 VALID_OUTCOMES = frozenset({"submitted", "blocked"})
 # fit_score domain: a real (finite, non-bool) number on the 0–100 scale.
@@ -198,7 +198,7 @@ def record(ats: str, technique: str, outcome: str, note: str,
             "note.")
     # Fail closed on unknown outcomes: the closed outcome vocabulary is
     # submitted/blocked — anything else (e.g. 'maybe') refuses before any
-    # side effect, because the emitted telemetry gate ('submitted' vs
+    # side effect, because the emitted telemetry event ('submission_claimed' vs
     # 'gate_blocked') is derived from the outcome and an unknown outcome
     # must never be written.
     if outcome not in VALID_OUTCOMES:
@@ -269,7 +269,7 @@ def record(ats: str, technique: str, outcome: str, note: str,
     # event carries ats (top level) and resume_lane (fail-closed to
     # 'unknown' when the caller lacks it) so ATS/lane conversion analysis
     # has attribution going forward.
-    ev_type = "submitted" if outcome == "submitted" else "gate_blocked"
+    ev_type = "submission_claimed" if outcome == "submitted" else "gate_blocked"
     # Occurred-vs-observed separation: occurred_at is the validated
     # evidence date (when the outcome happened); observed_at is the UTC
     # emission time (when this writer saw it). evidence_date is kept as a

@@ -26,6 +26,7 @@ sys.path.insert(0, ENGINES)
 import batch_staged_launches as bsl
 import launch_lock
 import queue_io
+import ready_gate
 
 
 @pytest.fixture()
@@ -46,12 +47,34 @@ def _write_staged(iso, entries):
     staged_file.write_text(json.dumps({"entries": entries}))
     packet_dir = tmp / "packets"
     packet_dir.mkdir(exist_ok=True)
+    data = tmp / "data"
+    queues = data / "queues"
+    queues.mkdir(parents=True, exist_ok=True)
+    (tmp / "resume.txt").write_text("Synthetic prepared resume")
+    bank = {"answers": {}, "gates": {}, "banded_questions": {}}
+    (data / "answer_bank.json").write_text(json.dumps(bank))
+    (data / "employer-blocklist.md").write_text("# Blocked employers\n")
+    (data / "application-ledger.json").write_text("[]")
+    canonical = []
     for e in entries:
-        (packet_dir / f"{e['role_id']}.json").write_text("{}")
+        current = {**e, "status": "READY", "fit_score": 75,
+                   "action_band": "APPLY", "ats_url": "https://example.invalid/jobs/" + e["role_id"]}
+        canonical.append(current)
+        packet = {**{k: current[k] for k in ("role_id", "company", "title", "ats_url")},
+                  "brief": "Synthetic prepared application", "upload_files": [str(tmp / "resume.txt")],
+                  "scope": "application", "execution_authorized": True}
+        ready_gate.seal_packet(packet, current, bank, workspace=str(tmp))
+        (packet_dir / f"{e['role_id']}.json").write_text(json.dumps(packet))
+    (queues / "standard-queue.json").write_text(json.dumps(canonical))
+    (queues / "needs_input-queue.json").write_text("[]")
+    (queues / "strategic-queue.json").write_text("[]")
+    (queues / "rejected-queue.json").write_text("[]")
     return staged_file, packet_dir
 
 
 def _point_at_tmp(iso, monkeypatch, staged_file, packet_dir):
+    monkeypatch.setattr(bsl, "HOME", str(iso["tmp"]))
+    monkeypatch.setattr(bsl, "DATA", str(iso["tmp"] / "data"))
     monkeypatch.setattr(bsl, "STAGED_FILE", str(staged_file))
     monkeypatch.setattr(bsl, "MAXMODE_FILE", str(iso["tmp"] / "max-mode.json"))
     monkeypatch.setattr(bsl, "PACKET_DIR", str(packet_dir))

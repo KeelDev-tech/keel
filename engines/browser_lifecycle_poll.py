@@ -47,6 +47,7 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE)
 import log_event  # noqa: E402 — sanctioned telemetry path
 import parked_task_sweep as sweep  # noqa: E402 — title/role matching
+import task_liveness  # noqa: E402 — shared pure runtime-row classification
 from keel_paths import HOME, DATA  # noqa: E402 — repo path convention
 
 QUEUE = os.path.join(DATA, "queues", "standard-queue.json")
@@ -54,6 +55,15 @@ SEEN = os.path.join(HOME, "hidden_files", "browser-lifecycle-seen.json")
 SOURCE = "browser-lifecycle-poll"
 ANCHOR_MIN = 60   # task created_at must be within this of a launch anchor
 STAGES = ("browser_task_started", "browser_ready", "form_started")
+
+
+def is_terminal(task):
+    """Terminal runtime evidence only; never a submission verdict.
+
+    Attempt closure requires an exact attempt-chain join, unavailable in
+    this portable checkout. Missing or unknown rows remain non-terminal.
+    """
+    return task_liveness.is_terminal(task)
 
 
 def parse_ts(s):
@@ -258,6 +268,11 @@ def poll(snapshot_path, dry_run=True, now=None, events_path=None,
                             "note": note})
         seen[tid] = {"seen_at": now.isoformat(),
                      "status": task.get("status"),
+                     "outcome_status": task.get("outcome_status"),
+                     "task_liveness": task_liveness.classify_task(
+                         task, task_id=tid),
+                     "terminal_reason_present": bool(
+                         task.get("terminal_reason")),
                      "step_count": task.get("step_count"),
                      "nav": bool(task.get("browser_navigation_attempted")) or
                      (task.get("step_count") or 0) > 0}

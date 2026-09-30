@@ -129,7 +129,7 @@ class PipelineOptimizationTests(unittest.TestCase):
         self.assertNotIn('posting_verification', after[0])
         self.assertEqual(after[1]['posting_verification']['identity'], ['greenhouse', 'b', '0'])
 
-    def test_rate_limit_preserves_unattempted_rows_and_withholds_prior_live_evidence(self):
+    def test_rate_limit_preserves_unattempted_rows_and_actual_prior_live_evidence(self):
         before = self.interleaved()
         def fetch(url, timeout):
             self.calls.append(url)
@@ -141,24 +141,29 @@ class PipelineOptimizationTests(unittest.TestCase):
         self.assertEqual(len(self.calls), 2)
         self.assertTrue(report['rate_limit_hold'])
         self.assertEqual(report['deferred_without_attempt'], {'http_429': 3})
-        self.assertEqual(report['verdicts'], {'ambiguous': 6})
+        self.assertEqual(report['verdicts'], {'live': 3, 'none': 3})
         for old, current in zip(before, read_json(self.queue)):
             if old['role_id'].endswith('-c'):
                 self.assertEqual(old, current)
+            elif old['role_id'].endswith('-a'):
+                self.assertEqual(current['posting_verification']['verdict'], 'live')
             else:
-                observation = current['posting_verification']
-                self.assertEqual(observation['reason'], 'batch_withheld_after_http_429')
-                self.assertEqual((aware_time(observation['next_eligible_at']) -
-                                  aware_time(observation['observed_at'])).total_seconds(), 300)
+                self.assertNotIn('posting_verification', current)
+                attempt = current['verification_attempt']
+                self.assertEqual(attempt['signal'], 'NONE')
+                self.assertEqual(attempt['transport_class'], 'HTTP_429')
+                self.assertEqual((aware_time(attempt['next_eligible_at']) -
+                                  aware_time(attempt['observed_at'])).total_seconds(), 300)
 
-    def test_partial_lever_page_attempt_remains_ambiguous_not_unattempted(self):
+    def test_partial_lever_page_attempt_contains_no_lead_signal(self):
         atomic_json(self.queue, [{'role_id': 'lever-1', 'application_url': 'https://jobs.lever.co/a/one',
                                  'status': 'PARKED-PENDING-VERIFICATION'}])
         page = [{'id': str(i), 'text': f'Synthetic {i}'} for i in range(service.PAGE_SIZE)]
         reader = service.PublicBoardReader(max_requests=1, fetcher=lambda *_: page)
         report = service.verify(self.home, live=True, reader=reader)
         self.assertEqual(report['observed'], 1)
-        self.assertEqual(report['verdicts'], {'ambiguous': 1})
+        self.assertEqual(report['verdicts'], {'none': 1})
+        self.assertEqual(report['transport_classes'], {'REQUEST_BUDGET': 1})
         self.assertEqual(report['deferred_without_attempt'], {})
 
     def test_persisted_http_hold_stops_without_restamping_any_posting(self):
@@ -175,7 +180,7 @@ class PipelineOptimizationTests(unittest.TestCase):
         self.assertTrue(reader.stopped)
         self.assertEqual(read_json(self.queue), before)
 
-    def test_failed_board_is_attempted_once_and_all_cohort_rows_remain_ambiguous(self):
+    def test_failed_board_is_attempted_once_and_all_cohort_rows_have_no_signal(self):
         self.interleaved()
         def fetch(url, timeout):
             self.calls.append(url)
@@ -184,7 +189,7 @@ class PipelineOptimizationTests(unittest.TestCase):
             return response()
         report = service.verify(self.home, reader=service.PublicBoardReader(fetcher=fetch))
         self.assertEqual(report['requests'], 3)
-        self.assertEqual(report['verdicts'], {'ambiguous': 3, 'live': 6})
+        self.assertEqual(report['verdicts'], {'none': 3, 'live': 6})
 
     def test_terminal_ledger_exact_identity_blocks_different_role_id(self):
         target = queued('a', 0)
