@@ -1,4 +1,10 @@
-# Validation: 0.3.2-supply-review.1
+# Validation history
+
+The current verification and READY candidate is qualified in
+[VERIFICATION_READY_VALIDATION.md](VERIFICATION_READY_VALIDATION.md).
+The results below describe the earlier 0.3.2 review and are not current counts.
+
+## Validation: 0.3.2-supply-review.1
 
 The 0.3.1 baseline was reproduced at **262 passed**. The supply recovery
 candidate passes **312 tests: zero failures, errors or skips**, including all
@@ -31,7 +37,7 @@ explicitly outside this incident's scope.
 python3 -m venv .venv
 . .venv/bin/activate
 python3 -m pip install -r requirements-dev.txt
-python3 tools/run_tests.py --report-dir /tmp/keel-supply-tests
+python3 tools/run_tests.py --allow-unguarded --report-dir /tmp/keel-supply-tests
 ```
 
 This run used Python 3.12.14 on Linux with pytest
@@ -40,3 +46,10 @@ account, subscription or runtime dependency was added. The original 0.3.1
 validation history is retained in `docs/VALIDATION_0.3.1.md` and its existing
 `audit/` files. Its 61-finding register is historical and is not represented as a
 new comprehensive audit in this targeted revision.
+
+Current runner note: the fresh checkout does not contain
+`tools/test_guard/sitecustomize.py`. The command above explicitly runs reviewed
+local tests without that guard. Its new reports mark the hook `unavailable`,
+with enforcement unverified and no OS sandbox claim. The historical results
+above do not prove hook availability in this checkout; reports that merely
+labeled the missing file's configuration inherited cannot establish isolation.

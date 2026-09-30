@@ -37,14 +37,11 @@ Field-mapping honesty (fail closed where the live system has no evidence):
   - approval_valid/packet_present: evidence-bound (ARM 3). packet_present is
     True only for a staged-launch entry whose packet file exists, parses, and
     whose brief renders the identity answers (email marker); anything less
-    fails closed to False. approval_valid follows the contract-governance
-    definition (NOT the operator's personal input): under the standing FULL
-    AUTOPILOT scope the apply-loop buffer guard only stages leads that
-    passed its attestation/answer-consistency checks, so a staged lead with
-    an identity-complete packet carries the lane's launch authorization.
-    approval_expires_at is then REQUIRED by the contract; it is an EXPORT
-    CONVENTION (staged_at + 24h, bounding the single-batch staging claim --
-    the lane purges stale staged entries), never a lane-issued expiry.
+    fails closed to False. Packet presence, identity markers, staging, and
+    mutable execution_authorized flags do not prove host authorization.
+    This exporter has no authoritative host approval receipt adapter, so
+    approval_valid remains False and approval_expires_at remains None.
+    Preparation-only packets never authorize launch.
     provider_contract_validated stays False (fail closed): the exporter has
     no provider-contract validation evidence, and the gate only applies to
     api-route leads.
@@ -54,8 +51,9 @@ Field-mapping honesty (fail closed where the live system has no evidence):
     packet is present (see packet_present), each key carries a mechanical
     content hash derived from the packet and the queue entry (policy inputs;
     brief structure lines; brief answer lines; upload_files; target URL;
-    the staged approval artifact; the route) -- real revisions, never
-    placeholders -- and packet_dependency_hash is pinned to
+    the route) -- mechanical revisions of those observed artifacts. The
+    approval key remains "unobserved" because no validated host approval
+    source is available. packet_dependency_hash is pinned to
     dependency_hash() of exactly that set, so the export is internally
     consistent and pin comparisons across snapshots detect packet rebuilds.
     With no packet, each key keeps the explicit sentinel "unobserved" and
@@ -108,12 +106,12 @@ sys.path.insert(0, KEEL_DIR)          # keel_flow, keel_local resolve live
 # _pipeline_module() below, which never touches sys.path.
 
 
-ADAPTER_VERSION = "export_flow_snapshot/1.3.0"  # 1.3.0 (2026-09-20 ARM 3):
+ADAPTER_VERSION = "export_flow_snapshot/1.4.0"  # evidence-bound approval correction
 # readiness gates mapped to real ledger / lock-dir / buffer evidence
 # (J-20260920-1831-feed-3884): attempt_state from ledger + attempt journal,
 # launch_lock_held from the canonical lease registry, history_reconciled
-# per-lead, approval_valid per contract-governance (lane staging, not the operator's
-# input), packet_present from staged packets with identity coverage, and a
+# per-lead, approval_valid False without a validated host receipt adapter,
+# packet_present from staged packets with identity coverage, and a
 # mechanical per-key dependency pin when a real packet is present. Every
 # mapping fails closed to the v1 placeholder posture when its evidence is
 # absent; lead_row() without an evidence dict keeps the exact v1 behavior.
@@ -550,7 +548,15 @@ def _pipeline_module(name):
         spec = importlib.util.spec_from_file_location(key, path)
         mod = importlib.util.module_from_spec(spec)
         sys.modules[key] = mod
-        spec.loader.exec_module(mod)
+        try:
+            spec.loader.exec_module(mod)
+        except BaseException:
+            # A partially executed receiver is not authoritative. Leaving
+            # it cached could let a subsequent scan use a classifier whose
+            # module initialization actually failed.
+            if sys.modules.get(key) is mod:
+                del sys.modules[key]
+            raise
     return mod
 
 
@@ -625,10 +631,6 @@ def _load_identity_markers():
 
 
 PACKET_IDENTITY_MARKERS = _load_identity_markers()
-# Export convention bounding the staging-approval claim (see
-# approval_evidence): the lane purges stale staged entries, so a staging
-# authorization is a single-batch claim, never open-ended.
-APPROVAL_VALIDITY_HOURS = 24.0
 DEPENDENCY_KEYS = ("policy", "form", "answers", "attachments", "target",
                    "approval", "route")
 
@@ -800,14 +802,15 @@ def _brief_lines(brief):
 def packet_dependencies(entry, packet, staged_at, route):
     """Mechanical per-key dependency revisions from the buffered packet.
 
-    Each value is a content hash of the real artifact, never a placeholder:
+    Observed artifact revisions are content hashes; absent approval stays
+    explicitly unobserved:
     - policy: the policy inputs the packet was built under
       (action_band / fit_score / resume_lane).
     - form: the brief's structure lines (answer lines excluded).
     - answers: the brief's rendered answer lines.
     - attachments: the packet's upload_files list.
     - target: the URL the packet targets.
-    - approval: the governance approval artifact (staged role + staged_at).
+    - approval: "unobserved"; staging is not an approval source.
     - route: the dispatch route (stable opaque revision).
     All values are non-empty strings, satisfying dependency_hash(). The
     pin (packet_dependency_hash) is set to dependency_hash() of exactly
@@ -829,38 +832,21 @@ def packet_dependencies(entry, packet, staged_at, route):
         "target": _sha256_text(
             packet.get("ats_url") or entry.get("posting_url")
             or entry.get("application_url") or ""),
-        "approval": _sha256_text(json.dumps({
-            "staged_role": entry.get("role_id"),
-            "staged_at": staged_at.isoformat() if staged_at else None},
-            sort_keys=True)),
+        "approval": "unobserved",
         "route": route,
     }
 
 
 def approval_evidence(role_id, staged_packets, now):
-    """(approval_valid, approval_expires_at): the contract-governance definition.
+    """Export no launch authority without an authoritative host adapter.
 
-    The flow model's approval is the LANE's launch authorization, not
-    the operator's personal input. Under the standing FULL AUTOPILOT scope
-    (standard legal attestations pre-authorized; the apply-loop buffer
-    guard parks anything unattested), a lead the sanctioned pipeline has
-    staged with a loadable, identity-complete packet carries the lane's
-    governance approval -- the buffer guard only stages leads that passed
-    its attestation/answer-consistency checks. approval_valid=True exactly
-    then; otherwise False (fail closed, the v1 posture).
-
-    approval_expires_at is REQUIRED by the contract whenever an approval
-    is claimed (a missing expiry raises input_contract_invalid). It is an
-    EXPORT CONVENTION, not a lane-issued expiry: staged_at +
-    APPROVAL_VALIDITY_HOURS bounds the single-batch staging claim (the
-    lane purges stale staged entries -- 2026-09-16 precedent). Labeled as
-    convention so the timestamp is never mistaken for a governance fact.
+    Identity coverage and staged packet presence establish only artifact
+    observations. Neither a mutable authorization flag nor an unvalidated
+    receipt embedded in a packet can establish host governance. No such
+    receipt adapter exists here; do not invent approval or an expiry.
+    The existing function shape remains compatible with export consumers.
     """
-    rec = (staged_packets or {}).get(role_id)
-    if not rec or not rec.get("packet") or not rec.get("identity_covered"):
-        return False, None
-    base = rec.get("staged_at") or now
-    return True, (base + timedelta(hours=APPROVAL_VALIDITY_HOURS)).isoformat()
+    return False, None
 
 
 # 2026-09-18 (J-20260918-1911-inte-2246): the cooldown-released cohort is

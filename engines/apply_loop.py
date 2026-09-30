@@ -41,10 +41,9 @@ watchdog's orphan scan — which only lists root-level files — never sees
 them. Leads stay READY while buffered: refresh never writes IN-FLIGHT
 markers, so in-flight slot accounting is never reset by a prefetch.
 
-Second launch source: data/queues/strategic-queue.json. Strategic READY
-leads compete alongside standard READY leads; all queue writes (parks,
-IN-FLIGHT marks) go back to the owning file — one-lead-one-queue is
-preserved. Strategic entries carry resume_version (a bare filename) instead
+Second preparation source: data/queues/strategic-queue.json. Strategic READY
+leads compete alongside standard READY leads. Strategic entries carry
+resume_version (a bare filename) instead
 of a materials dict; the resumes/ path is derived transiently for the check
 and never persisted to the entry.
 
@@ -55,10 +54,9 @@ on it. The acquired task_id is stored in the packet so the executor can
 release the lock when the launch resolves.
 
 Claim gate: a buffered packet is re-verified for liveness (live_cache TTL
-when available, local 2h file cache otherwise) before the IN-FLIGHT mark.
+when available, local 2h file cache otherwise) before returning the artifact.
 DEAD -> the packet is dropped and a lead_dead gate is logged (fail closed:
-never launch a dead posting). Unverifiable-over-HTTP -> proceeds with a
-note; the executor re-verifies at Step 1.
+never count a dead posting). Unverifiable-over-HTTP -> hold for verification.
 
 Mapper plateau park: if the question mapper refuses the same form twice
 with an IDENTICAL unmapped-question set AND the set contains a
@@ -76,18 +74,19 @@ What it does:
   2. Claims a fresh buffered packet, or builds one (form_intel.probe on
      the final ATS URL -> intel JSON, generic brief).
   3. Runs the live-cache claim gate on buffered packets.
-  4. Marks the lead IN-FLIGHT so a second loop run cannot double-process.
+  4. Leaves queue ownership unchanged and returns a preparation artifact.
+     Runtime task ownership belongs to the separate inflight_marker contract.
 
-After the executor reports, log the outcome with record_outcome.py and update
-the ledger; the packet is then archived.
+No packet prepared here authorizes external execution or changes READY status.
 
 Usage:
     python3 apply_loop.py            # process one lead (highest fit)
-    python3 apply_loop.py --all      # process every eligible lead, one packet each
+    python3 apply_loop.py --all      # prepare every eligible lead, one packet each
     python3 apply_loop.py --refresh  # refill the packet buffer only, no claims
 
 Env:
     KEEL_HOME  workspace root (default ~/keel)
+    KEEL_BUFFER_SCAN_LIMIT  candidates inspected per refill (1..1000; default100)
 """
 import json
 import os
@@ -95,13 +94,14 @@ import re
 import subprocess
 import sys
 import urllib.request
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE)
 from keel_paths import HOME, DATA, TELEMETRY  # noqa: E402 — repo path convention
-from safe_io import read_json, loads as strict_json  # noqa: E402 — bounded/strict JSON reads
+from safe_io import atomic_json, read_json, rows as json_rows, loads as strict_json  # noqa: E402 — bounded/strict JSON reads
 import safe_http  # noqa: E402 — policy-checked transport
 try:
     import launch_lock  # noqa: E402 — atomic per-role lock + prelaunch guard
@@ -114,6 +114,7 @@ import prescreen  # noqa: E402 — pre-launch packet screen (PARK before spend)
 import queue_io  # noqa: E402 — canonical locked queue writes (silent-defect sweep 2026-09-19)
 import rate_limits  # noqa: E402 — employer application budgets
 import record_outcome  # noqa: E402 — outcome telemetry
+import ready_gate  # noqa: E402 — shared static admission and scoped packet manifest
 
 QUEUE = os.path.join(DATA, "queues", "standard-queue.json")
 SQUEUE = os.path.join(DATA, "queues", "strategic-queue.json")
@@ -136,6 +137,9 @@ READY_STATES = ("READY", "READY-FOR-BROWSER")
 # every cycle overbuilds — most prefetched packets were never launched).
 BUFFER_SIZE = 8
 BUFFER_MIN_FRESH = 4
+# At most this many queue candidates reach eligibility per refresh. Operators
+# may set KEEL_BUFFER_SCAN_LIMIT to an integer in 1..1000; default 100.
+BUFFER_SCAN_LIMIT = 100
 BUFFER_MAX_AGE_HOURS = 12
 LIVE_CACHE_TTL_HOURS = 2
 BUFFER_LOCK_FILE = os.path.join(STATE_DIR, "packet-buffer.lock")
@@ -177,11 +181,11 @@ def load_answer_bank():
     # the engines/ copy is only a fallback for runs outside a workspace.
     data_bank = os.path.join(DATA, "answer_bank.json")
     if os.path.exists(data_bank):
-        return json.load(open(data_bank))
+        return read_json(data_bank)
     for name in ("answer_bank.json", "answer_bank.example.json"):
         p = os.path.join(BASE, name)
         if os.path.exists(p):
-            return json.load(open(p))
+            return read_json(p)
     return {"answers": {}, "banded_questions": {}, "gates": {}}
 
 
@@ -242,24 +246,12 @@ def save_strategic_queue(items):
 
 
 def mark_inflight(role_id, origin):
-    """Mark one lead IN-FLIGHT in its OWNING queue file (one-lead-one-queue)."""
-    if origin == "strategic":
-        items, saver = load_strategic_queue(), save_strategic_queue
-    else:
-        items, saver = load_queue(), save_queue
-    for e in items:
-        if e.get("role_id") == role_id:
-            e["status"] = "IN-FLIGHT"
-            e["status_updated"] = datetime.now(PDT).strftime("%Y-%m-%d %H:%M PDT")
-    saver(items)
+    """Retired public writer: preparation is not runtime task ownership."""
+    raise RuntimeError("Public packet preparation cannot mark IN-FLIGHT; use the runtime ownership contract")
 
 
 def blocklisted(company):
-    try:
-        txt = open(BLOCKLIST).read().lower()
-    except FileNotFoundError:
-        return False
-    return company.lower() in txt if company else False
+    return ready_gate.employer_blocklisted(company, HOME, path=BLOCKLIST)
 
 
 # ---------------------------------------------------------------------------
@@ -325,33 +317,46 @@ def _norm(s):
 def already_submitted(company, title, role_id=None):
     """True when the ledger says this role is already applied.
 
-    Three independent checks (any hit blocks):
-      1. the existing employer-level check (same company, any SUBMITTED row)
-      2. exact role_id match on a SUBMITTED row
-      3. twin-submit guard: same normalized company+title under a DIFFERENT
+    Two independent identity checks (any hit blocks):
+      1. exact role_id match on a SUBMITTED row
+      2. twin-submit guard: same normalized company+title under a DIFFERENT
          role_id — the duplicate-application class the launch-lock --guard
          closes at spawn time (fail closed: HOLD/skip for adjudication)
     """
+    document = read_json(LEDGER)
+    if document is None:
+        raise ValueError("submission ledger missing; initialize or restore before preparing")
+    return ready_gate.ledger_holds({"company": company, "title": title, "role_id": role_id}, json_rows(document))
+
+
+def _canonical_queue_guard(entry, origin):
+    """Every operational candidate must have exactly one canonical home."""
     try:
-        rows = json.load(open(LEDGER))
-    except FileNotFoundError:
-        return False
-    rows = rows if isinstance(rows, list) else rows.get("rows", [])
-    c = (company or "").lower()
-    t = _norm(title)
-    for r in rows:
-        if str(r.get("status", "")).upper() != "SUBMITTED":
-            continue
-        if c and c in (r.get("company") or "").lower():
-            return True
-        if role_id and r.get("role_id") == role_id:
-            return True
-        rt = _norm(r.get("role_title") or r.get("title"))
-        rc = _norm(r.get("company"))
-        if c and t and rt and _norm(c) == rc and t == rt \
-                and r.get("role_id") != role_id:
-            return True  # twin-submit: same employer+role, different role_id
-    return False
+        with queue_io.queue_lock(timeout=10, owner="apply_loop:admission", recover=False):
+            matches = []
+            for name, path in (("standard", QUEUE), ("strategic", SQUEUE),
+                    ("needs_input", os.path.join(DATA, "queues", "needs_input-queue.json")),
+                    ("rejected", os.path.join(DATA, "queues", "rejected-queue.json"))):
+                document = read_json(path)
+                if document is None:
+                    raise ValueError("canonical queue missing")
+                matches.extend((name, row) for row in json_rows(document)
+                               if row.get("role_id") == entry.get("role_id"))
+            if len(matches) != 1:
+                return False, "role has missing or duplicate canonical queue homes"
+            name, current = matches[0]
+            if name not in {"standard", "strategic"} or name != origin:
+                return False, "role is outside its admission queue"
+            if current != entry:
+                return False, "queue entry changed since selection"
+            ledger = read_json(LEDGER)
+            if ledger is None:
+                raise ValueError("submission ledger missing")
+            if ready_gate.ledger_holds(current, json_rows(ledger)):
+                return False, "role has active or terminal ledger history"
+    except (ValueError, OSError, TypeError):
+        return False, "canonical queue or submission history unconfirmed"
+    return True, "ok"
 
 
 # ---------------------------------------------------------------------------
@@ -680,8 +685,9 @@ def _release_launch_lock(role_id, task_id):
 # ---------------------------------------------------------------------------
 
 def eligible(entry, origin="standard"):
-    if entry.get("status") not in READY_STATES:
-        return False, "not READY"
+    admission = ready_gate.entry_admission(entry, origin)
+    if not admission["allowed"]:
+        return False, "; ".join(admission["reasons"])
     # Park-divergence tripwire: needs_input-family gate_blocked newer than
     # the queue status_updated means the park write diverged — never select.
     if _tripwire_skip(entry):
@@ -700,11 +706,21 @@ def eligible(entry, origin="standard"):
         band_ok = (band == "APPLY")
     if not band_ok:
         return False, f"not APPLY band ({band})"
-    if blocklisted(entry.get("company")):
-        return False, "blocklisted employer"
-    if already_submitted(entry.get("company"), entry.get("title"),
-                         entry.get("role_id")):
-        return False, "already submitted (role_id, twin, or employer match)"
+    try:
+        if blocklisted(entry.get("company")):
+            return False, "blocklisted employer"
+    except (ValueError, OSError, TypeError):
+        return False, "employer blocklist unconfirmed"
+    try:
+        submitted = already_submitted(entry.get("company"), entry.get("title"),
+                                      entry.get("role_id"))
+    except (ValueError, OSError, TypeError, AttributeError):
+        return False, "submission history unconfirmed"
+    if submitted:
+        return False, "active or terminal ledger history (exact role_id or employer/title twin)"
+    home_ok, why = _canonical_queue_guard(entry, origin)
+    if not home_ok:
+        return False, why
     if not materials_ok(entry, origin):
         return False, "materials not prepared"
     url = entry.get("ats_url") or entry.get("application_url")
@@ -713,9 +729,8 @@ def eligible(entry, origin="standard"):
     lv = live(url)
     if lv is False:
         return False, "posting dead (404/410)"
-    if lv is None:
-        print(f"  note: {entry['role_id']} unverifiable over HTTP "
-              f"— executor re-verifies")
+    if lv is not True:
+        return False, "posting liveness unconfirmed"
     return True, "ok"
 
 
@@ -873,11 +888,21 @@ def _buffer_lock():
     return fh
 
 
-def _buffer_fresh_count(state, now=None):
+def _buffer_fresh_count(state, now=None, tagged=None, bank=None):
     """Number of buffer-state entries that are fresh: packet file present
     AND age <= BUFFER_MAX_AGE_HOURS. Fail-open per entry: a malformed or
     unreadable entry counts as not-fresh, never as fresh."""
     now = now or datetime.now(timezone.utc)
+    try:
+        tagged = tagged if tagged is not None else (
+            [(e, "standard") for e in load_queue()] +
+            [(e, "strategic") for e in load_strategic_queue()])
+        id_counts = Counter(e.get("role_id") for e, _origin in tagged)
+        by_id = {e.get("role_id"): (e, origin) for e, origin in tagged
+                 if id_counts[e.get("role_id")] == 1}
+        bank = load_answer_bank() if bank is None else bank
+    except (ValueError, OSError, SystemExit):
+        return 0
     n = 0
     for s in state or []:
         pkt = s.get("packet_path")
@@ -889,8 +914,19 @@ def _buffer_fresh_count(state, now=None):
                 built = built.replace(tzinfo=timezone.utc)
         except (ValueError, TypeError):
             continue
-        if (now - built).total_seconds() / 3600 <= BUFFER_MAX_AGE_HOURS:
-            n += 1
+        age = (now - built).total_seconds() / 3600
+        target = by_id.get(s.get("role_id"))
+        if 0 <= age <= BUFFER_MAX_AGE_HOURS and target:
+            entry, origin = target
+            try:
+                packet = read_json(pkt)
+                if (ready_gate.entry_admission(entry, origin, now=now)["allowed"]
+                        and _canonical_queue_guard(entry, origin)[0]
+                        and not blocklisted(entry.get("company"))
+                        and ready_gate.packet_admission(packet, entry, bank, now=now, workspace=HOME, for_execution=False)["allowed"]):
+                    n += 1
+            except (ValueError, OSError):
+                continue
     return n
 
 
@@ -909,8 +945,22 @@ def _buffered_fresh_packet(role_id, now=None):
                 built = built.replace(tzinfo=timezone.utc)
         except (ValueError, TypeError):
             continue
-        if (now - built).total_seconds() / 3600 <= BUFFER_MAX_AGE_HOURS:
-            return pkt
+        age = (now - built).total_seconds() / 3600
+        if 0 <= age <= BUFFER_MAX_AGE_HOURS:
+            try:
+                tagged = ([(e, "standard") for e in load_queue()] +
+                          [(e, "strategic") for e in load_strategic_queue()])
+                matches = [(e, origin) for e, origin in tagged if e.get("role_id") == role_id]
+                if len(matches) != 1:
+                    continue
+                entry, origin = matches[0]
+                if (ready_gate.entry_admission(entry, origin, now=now)["allowed"]
+                        and _canonical_queue_guard(entry, origin)[0]
+                        and not blocklisted(entry.get("company"))
+                        and ready_gate.packet_admission(read_json(pkt), entry, load_answer_bank(), now=now, workspace=HOME, for_execution=False)["allowed"]):
+                    return pkt
+            except (ValueError, OSError, SystemExit):
+                continue
     return None
 
 
@@ -948,10 +998,13 @@ def refresh_buffer(tagged=None, now=None):
             tagged = ([(e, "standard") for e in load_queue()]
                       + [(e, "strategic") for e in load_strategic_queue()])
         state = load_buffer_state()
+        bank = load_answer_bank()
 
         # Reconcile: drop entries whose lead left READY, whose packet file
         # is gone, or whose packet aged out (stale packets are archived).
-        by_id = {e.get("role_id"): e for e, _ in tagged if e.get("role_id")}
+        id_counts = Counter(e.get("role_id") for e, _origin in tagged)
+        by_id = {e.get("role_id"): (e, origin) for e, origin in tagged
+                 if e.get("role_id") and id_counts[e.get("role_id")] == 1}
         fresh_state = []
         for s in state:
             rid = s.get("role_id")
@@ -961,18 +1014,29 @@ def refresh_buffer(tagged=None, now=None):
                 built = datetime.fromisoformat(s.get("built_at", ""))
                 if built.tzinfo is None:
                     built = built.replace(tzinfo=timezone.utc)
-                stale = (now - built).total_seconds() / 3600 > BUFFER_MAX_AGE_HOURS
+                age = (now - built).total_seconds() / 3600
+                stale = not 0 <= age <= BUFFER_MAX_AGE_HOURS
             except (ValueError, TypeError):
                 pass
-            e = by_id.get(rid)
-            if (e is None or e.get("status") not in READY_STATES
-                    or not (pkt and os.path.isfile(pkt)) or stale):
+            target = by_id.get(rid)
+            admitted = False
+            if target and pkt and os.path.isfile(pkt) and not stale:
+                e, origin = target
+                try:
+                    admitted = (ready_gate.entry_admission(e, origin, now=now)["allowed"]
+                        and _canonical_queue_guard(e, origin)[0]
+                        and not blocklisted(e.get("company"))
+                        and ready_gate.packet_admission(read_json(pkt), e, bank, now=now, workspace=HOME, for_execution=False)["allowed"])
+                except (ValueError, OSError):
+                    pass
+            if not admitted:
                 if pkt and os.path.isfile(pkt):
                     _archive_packet(pkt)
+                _release_launch_lock(rid, s.get("launch_task_id"))
                 continue
             fresh_state.append(s)
         state = fresh_state
-        fresh = _buffer_fresh_count(state, now)
+        fresh = _buffer_fresh_count(state, now, tagged, bank)
 
         # Refresh-skip watermark: identical queue content + full fresh
         # buffer means there is nothing to do.
@@ -987,14 +1051,20 @@ def refresh_buffer(tagged=None, now=None):
             (e, origin) for e, origin in tagged
             if e.get("status") in READY_STATES
             and e.get("role_id") not in buffered_ids
+            and id_counts[e.get("role_id")] == 1
         ]
         candidates.sort(key=lambda p: _eff_score(p[0]), reverse=True)
         need = max(0, BUFFER_MIN_FRESH - fresh)
         room = max(0, BUFFER_SIZE - len(state))
-        bank = load_answer_bank()
         built = 0
-        for entry, origin in candidates[:max(need, 0)]:
-            if built >= room:
+        scan_limit = int(os.environ.get("KEEL_BUFFER_SCAN_LIMIT", BUFFER_SCAN_LIMIT))
+        if not 1 <= scan_limit <= 1000:
+            raise ValueError("KEEL_BUFFER_SCAN_LIMIT must be an integer in 1..1000")
+        # A blocked high-score head must not starve eligible leads below it.
+        # Scan the bounded queue until the fill target is met, rather than
+        # slicing before the eligibility checks.
+        for entry, origin in candidates[:scan_limit]:
+            if built >= min(need, room):
                 break
             role_id = entry.get("role_id", "")
             ok, why = eligible(entry, origin)
@@ -1005,11 +1075,16 @@ def refresh_buffer(tagged=None, now=None):
             if not go:
                 print(f"BUFFER-SKIP {role_id}: {greason}")
                 continue
-            path = build_packet(entry, origin=origin, dest_dir=BUFFER_DIR,
-                                task_id=task_id)
-            packet = json.load(open(path))
+            path = None
             try:
+                path = build_packet(entry, origin=origin, dest_dir=BUFFER_DIR,
+                                    task_id=task_id)
+                packet = read_json(path)
                 verdict = _checked_prescreen(packet, bank)
+                admission = ready_gate.packet_admission(
+                    packet, entry, bank, now=max(now, datetime.now(timezone.utc)), workspace=HOME, for_execution=False)
+                if not admission["allowed"]:
+                    raise ValueError("; ".join(admission["reasons"]))
             except Exception as ex:
                 try:
                     _archive_packet(path)
@@ -1046,7 +1121,7 @@ def refresh_buffer(tagged=None, now=None):
             print(f"BUFFERED {role_id} -> {path}")
         save_buffer_state(state)
         _save_buffer_watermark(qhash)
-        return _buffer_fresh_count(state, now)
+        return _buffer_fresh_count(state, max(now, datetime.now(timezone.utc)), tagged, bank)
     finally:
         try:
             lock.close()
@@ -1077,7 +1152,9 @@ def _claim_or_release(entry, bpath, role_id):
     (silent-defect sweep 2026-09-19). _release_launch_lock is a no-op when
     the task_id is unknown."""
     claim_task_id = _buffered_launch_task_id(role_id)
-    path = _claim_buffered(entry, bpath)
+    origin = next((row.get("origin", "standard") for row in load_buffer_state()
+                   if row.get("role_id") == role_id), "standard")
+    path = _claim_buffered(entry, bpath, origin=origin)
     if not path:
         # claim-dead: posting dead, packet dropped — release the
         # buffer-time launch lock.
@@ -1085,11 +1162,21 @@ def _claim_or_release(entry, bpath, role_id):
     return path
 
 
-def _claim_buffered(entry, bpath):
+def _claim_buffered(entry, bpath, origin="standard"):
     """Claim a fresh buffered packet: move it to the packets root and run
     the live-cache claim gate. DEAD -> drop the packet, log lead_dead, and
     return None (fail closed: never launch a dead posting)."""
     role_id = entry.get("role_id", "")
+    try:
+        packet = read_json(bpath)
+        admission = ready_gate.packet_admission(packet, entry, load_answer_bank(), workspace=HOME, for_execution=False)
+        if not ready_gate.entry_admission(entry, origin)["allowed"] or not admission["allowed"]:
+            raise ValueError("packet or current entry is not admissible")
+    except (ValueError, OSError):
+        _archive_packet(bpath)
+        _drop_buffer_entry(role_id)
+        print(f"CLAIM-HOLD {role_id}: packet integrity or current gates unconfirmed")
+        return None
     dest = os.path.join(PACKETS, os.path.basename(bpath))
     os.makedirs(PACKETS, exist_ok=True)
     os.replace(bpath, dest)
@@ -1107,8 +1194,10 @@ def _claim_buffered(entry, bpath):
         os.path.exists(dest) and os.remove(dest)
         print(f"CLAIM-DEAD {role_id}: packet dropped, posting dead")
         return None
-    if lv is None:
-        print(f"  note: {role_id} unverifiable over HTTP — executor re-verifies")
+    if lv is not True:
+        _archive_packet(dest)
+        print(f"CLAIM-HOLD {role_id}: posting liveness unconfirmed")
+        return None
     print(f"CLAIMED {role_id} -> {dest}")
     return dest
 
@@ -1125,11 +1214,12 @@ def build_generic_brief(entry, intel, bank):
     per-field verification protocol. ATS-specific event-sequencing
     techniques are the private layer's job (see SPLIT.md).
     """
-    answers = bank.get("answers", {})
+    answers, authority = ready_gate.scoped_answers(entry, bank)
     lines = [
-        f"Submit a job application for the applicant to {entry.get('company')} "
+        f"Prepare an application for applicant review at {entry.get('company')} "
         f"for the role \"{entry.get('title')}\".",
         "",
+        "PREPARATION ONLY. This packet does not authorize a browser task or submission.",
         "STEP 1 — RE-VERIFY LIVE. Confirm the posting is live and accepting "
         "applications BEFORE filling anything. If the posting is gone, expired, "
         "or the apply route is gated/paywalled, STOP and report — do not submit.",
@@ -1142,10 +1232,13 @@ def build_generic_brief(entry, intel, bank):
         lines.append(f"Detected ATS: {intel.get('ats', 'unknown')}")
     lines += [
         "",
-        "Fill the form with these truthful values (never invent anything else):",
+        "Review these scoped values before any separately authorized external action:",
     ]
     for k, v in answers.items():
         lines.append(f"  - {k}: {v}")
+    if authority["abstained_keys"]:
+        lines.append("  - Leave these keys blank; scope or authority is unresolved: " +
+                     ", ".join(row["key"] for row in authority["abstained_keys"]))
     lines += ["", "BANDED-QUESTION RULES (pre-approved — apply without improvising):"]
     for k, rule in bank.get("banded_questions", {}).items():
         r = rule.get("rule", rule) if isinstance(rule, dict) else rule
@@ -1160,9 +1253,9 @@ def build_generic_brief(entry, intel, bank):
         "    error, and the entered value must persist after clicking elsewhere (blur test).",
         "  - For dropdowns: reopen the menu and confirm the option carries a selected marker.",
         "  - Never batch-fill then check at the end. One field, one verification, then next.",
-        "  - Only when all required fields verify clean may Submit be clicked.",
+        "  - Record unresolved required fields for applicant review.",
         "",
-        "STEP 4 — SUBMIT only when every required field verifies clean. If an email/phone",
+        "STEP 4 — STOP FOR REVIEW. Any external submission needs separate authorization. If an email/phone",
         "verification code screen appears, PAUSE and hand off — do not guess codes.",
         "Report the EXACT confirmation page text/message. Explicit confirmation is the",
         "only acceptable success evidence.",
@@ -1182,14 +1275,16 @@ def build_packet(entry, origin="standard", dest_dir=None, task_id=""):
     """Build a launch packet. dest_dir defaults to the packets root;
     the buffer refresh passes BUFFER_DIR."""
     role_id = entry["role_id"]
+    if (not isinstance(role_id, str) or len(role_id) > 256
+            or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", role_id)):
+        raise ValueError("role_id is unsafe for a packet filename")
     url = entry.get("ats_url") or entry.get("application_url")
     try:
         intel = form_intel.probe_url(url)
         intel["role_id"] = role_id
         intel["source_url"] = url
-        intel_path = os.path.join(BASE, "briefs", f"{role_id}.intel.json")
-        os.makedirs(os.path.dirname(intel_path), exist_ok=True)
-        json.dump(intel, open(intel_path, "w"), indent=2)
+        intel_path = os.path.join(HOME, "data", "form-intel", f"{role_id}.intel.json")
+        atomic_json(intel_path, intel)
         ats = intel.get("ats")
     except Exception as ex:
         print(f"  intel failed for {role_id} ({ex}); continuing without it")
@@ -1208,6 +1303,9 @@ def build_packet(entry, origin="standard", dest_dir=None, task_id=""):
         "brief_chars": len(brief),
         "brief": brief,
         "executor": "pluggable — implement the EXECUTOR CONTRACT in the brief",
+        "scope": "preparation_only",
+        "execution_authorized": False,
+        "status": "PREPARED_REVIEW_REQUIRED",
     }
     if task_id:
         packet["launch_task_id"] = task_id
@@ -1215,10 +1313,11 @@ def build_packet(entry, origin="standard", dest_dir=None, task_id=""):
     # the screen runs BEFORE any file is written. If the screen raises, the
     # error propagates and zero packet files are published (fail-closed).
     _checked_prescreen(packet, bank)
+    ready_gate.seal_packet(packet, entry, bank, workspace=HOME)
     dest = dest_dir or PACKETS
     os.makedirs(dest, exist_ok=True)
     path = os.path.join(dest, f"{role_id}.json")
-    json.dump(packet, open(path, "w"), indent=2)
+    atomic_json(path, packet)
     return path
 
 
@@ -1244,6 +1343,7 @@ def main():
         print(f"Buffer refresh done: {fresh} fresh packet(s) on hand.")
         return
     bank = load_answer_bank()
+    id_counts = Counter(e.get("role_id") for e, _origin in tagged)
     todo = sorted(
         (p for p in tagged if p[0].get("status") in READY_STATES),
         key=lambda p: _eff_score(p[0]),
@@ -1251,11 +1351,13 @@ def main():
     if not todo:
         print("No READY leads. Nothing to do.")
         return
-    inflight_ids = []
     made = 0
     for entry, origin in todo:
         role_id = entry.get("role_id", "")
         company = entry.get("company", "")
+        if id_counts[role_id] != 1:
+            print(f"SKIP {role_id}: duplicate queue role_id")
+            continue
         ok, why = eligible(entry, origin)
         if not ok:
             log_event.log(
@@ -1280,6 +1382,7 @@ def main():
         bpath = _buffered_fresh_packet(role_id)
         task_id = ""
         if bpath:
+            task_id = _buffered_launch_task_id(role_id)
             path = _claim_or_release(entry, bpath, role_id)
             if not path:
                 continue  # claim-dead: posting dead, packet dropped, lock released
@@ -1296,15 +1399,20 @@ def main():
                 continue
             if greason:
                 print(f"  note: {role_id} {greason}")
-            path = build_packet(entry, origin=origin, task_id=task_id)
-        packet = json.load(open(path))
-        if not task_id:
-            # Buffered-claim path: the launch lock was acquired at
-            # buffer-build time; recover its task_id from the packet so a
-            # later PARK can release the lock instead of leaking it.
-            task_id = packet.get("launch_task_id", "") or ""
+            try:
+                path = build_packet(entry, origin=origin, task_id=task_id)
+            except Exception as ex:
+                _release_launch_lock(role_id, task_id)
+                print(f"PACKET-HOLD {role_id}: {type(ex).__name__}")
+                continue
         try:
+            packet = read_json(path)
+            if not task_id:
+                task_id = packet.get("launch_task_id", "") or ""
             verdict = _checked_prescreen(packet, bank)
+            admission = ready_gate.packet_admission(packet, entry, bank, workspace=HOME, for_execution=False)
+            if not admission["allowed"]:
+                raise ValueError("; ".join(admission["reasons"]))
         except Exception as ex:
             # A failed recheck cannot authorize a packet or an IN-FLIGHT mark.
             # Retire the active artifact so a separate packet consumer cannot
@@ -1320,6 +1428,7 @@ def main():
             continue
         if verdict["verdict"] == "PARK":
             res = prescreen.park_lead(role_id, verdict["reasons"])
+            _archive_packet(path)
             _release_launch_lock(role_id, task_id)
             if res.get("ok"):
                 first = verdict["reasons"][0] if verdict["reasons"] else "blocked"
@@ -1330,7 +1439,6 @@ def main():
             if "--all" not in sys.argv:
                 break
             continue
-        inflight_ids.append((role_id, origin))
         log_event.log(
             "lead_verified", role_id=role_id, company=company, ats="",
             source="apply_loop",
@@ -1343,12 +1451,11 @@ def main():
             details={"packet": path, "fit_score": entry.get("fit_score")},
         )
         print(f"PACKET {role_id} -> {path}")
+        _release_launch_lock(role_id, task_id)
         made += 1
         if "--all" not in sys.argv:
             break
-    for role_id, origin in inflight_ids:
-        mark_inflight(role_id, origin)
-    print(f"Done: {made} launch packet(s).")
+    print(f"Done: {made} preparation packet(s); applicant review required.")
 
 
 if __name__ == "__main__":

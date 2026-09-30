@@ -478,7 +478,7 @@ def screen_promotion_form(entry, url):
     return []
 
 
-class VerificationUnavailable(Exception):
+class VerificationUnavailable(RuntimeError):
     """The pre-promotion form screen could not run (probe/network failure).
 
     Fail-closed: a lead whose form screen is UNKNOWN remains verification
@@ -1351,6 +1351,22 @@ def main():
 
 
 def _scan_and_apply(live, limit, wave_id=None):
+    """Use the bounded public verifier; presence alone never promotes READY.
+
+    The historical bulk writer below remains importable for incident replay.
+    It is not an operational entry point: its promotion and cross-file writes
+    bypass current admission and transaction contracts.
+    """
+    from pathlib import Path
+    import pipeline_service
+    report = pipeline_service.verify(Path(STD_Q).absolute().parents[2],
+                                     limit=100 if limit is None else limit,
+                                     timeout=120, live=live)
+    print(json.dumps(report, indent=2))
+    return report
+
+
+def _legacy_scan_and_apply(live, limit, wave_id=None):
     url_bearing_only = "--url-bearing-only" in sys.argv
     std, ni, rej = load(STD_Q), load(NI_Q), load(REJ_Q)
     std_by_id = {e.get("role_id"): e for e in std}

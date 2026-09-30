@@ -132,7 +132,7 @@ class ProductivityCommitMetricsTests(unittest.TestCase):
                 self.assert_conserved(report)
                 self.assertNotIn('posting_verification', read_json(failed)[0])
 
-    def test_http_429_withheld_batch_never_credits_prior_live_evidence(self):
+    def test_http_429_preserves_prior_live_evidence_and_classifies_transport(self):
         atomic_json(self.queue, [queued(1, board='a'), queued(2, board='b')])
 
         def fetch(url, timeout):
@@ -143,10 +143,13 @@ class ProductivityCommitMetricsTests(unittest.TestCase):
         report = service.verify(self.home, live=True,
                                 reader=service.PublicBoardReader(fetcher=fetch))
         self.assertTrue(report['rate_limit_hold'])
-        self.assertEqual(report['committed_verdicts'], {'ambiguous': 2})
+        self.assertEqual(report['committed_verdicts'], {'live': 1, 'none': 1})
         self.assert_conserved(report)
-        self.assertTrue(all(row['posting_verification']['reason'] == 'batch_withheld_after_http_429'
-                            for row in read_json(self.queue)))
+        first, second = read_json(self.queue)
+        self.assertEqual(first['posting_verification']['verdict'], 'live')
+        self.assertNotIn('posting_verification', second)
+        self.assertEqual(second['verification_attempt']['signal'], 'NONE')
+        self.assertEqual(second['verification_attempt']['transport_class'], 'HTTP_429')
 
     def test_idle_run_has_no_completion_credit(self):
         atomic_json(self.queue, [{**queued(1), 'holds': ['consent_quarantine']}])

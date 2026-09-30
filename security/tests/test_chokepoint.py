@@ -5,13 +5,13 @@ must pass the security authority before telemetry mutates. Telemetry
 writes are monkeypatched out — these tests prove the gate, not the log.
 """
 import os
+from pathlib import Path
 import sys
 import tempfile
 import unittest
 
-ENGINES = os.path.join(os.path.expanduser("~"), "workspace", "keel",
-                       "engines")
-KEEL = os.path.join(os.path.expanduser("~"), "workspace", "keel")
+KEEL = str(Path(__file__).resolve().parents[2])
+ENGINES = os.path.join(KEEL, "engines")
 for p in (ENGINES, KEEL):
     if p not in sys.path:
         sys.path.insert(0, p)
@@ -50,8 +50,11 @@ class TestSubmissionChokePoint(unittest.TestCase):
     def test_clean_submission_records(self):
         self._record(outcome="submitted", technique="greenhouse_api",
                      note="Your application was submitted successfully.")
-        self.assertTrue(any(a and a[0] == "submitted" for a, _ in
+        # This writer records an authority-checked claim. Accepted employer
+        # outcomes require their separate receipt projection.
+        self.assertTrue(any(a and a[0] == "submission_claimed" for a, _ in
                             self.logged))
+        self.assertFalse(any(a and a[0] == "submitted" for a, _ in self.logged))
 
     def test_empty_note_refused(self):
         with self.assertRaises(ValueError):

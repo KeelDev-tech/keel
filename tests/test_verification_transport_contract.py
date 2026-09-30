@@ -1,0 +1,225 @@
+"""Posting evidence survives transport failures; scheduling still moves on."""
+from datetime import timedelta
+from pathlib import Path
+import socket
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+from urllib.error import HTTPError, URLError
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'engines'))
+import pipeline_service as service
+import queue_io
+from safe_io import atomic_json, read_json, canonical
+
+
+def queued(job, *, board='fixture', fit=75):
+    return {'role_id': f'{job:03d}-{board}', 'company': 'Same employer',
+            'application_url': f'https://job-boards.greenhouse.io/{board}/jobs/{job}',
+            'status': 'PARKED-PENDING-VERIFICATION', 'fit_score': fit,
+            'last_verify_source': 'board_api_72h',
+            'recovery_track': {'source': 'board_api_72h', 'checks': ['prior-decisive']},
+            'ambiguity_streak': 2, 'quarantine_streak': 3}
+
+
+class VerificationTransportContractTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix='keel-verify-transport-')
+        self.addCleanup(temporary.cleanup)
+        self.home = Path(temporary.name)
+        self.queue = self.home / 'data/queues/standard-queue.json'
+        for name in service.QUEUES:
+            atomic_json(self.home / f'data/queues/{name}-queue.json', [])
+        atomic_json(self.home / 'data/application-ledger.json', [])
+        for item in (patch.object(queue_io, '_LOCK_PATH', str(self.home / 'queue.lock')),
+                     patch.object(service, 'flush_outbox', return_value={'emitted': 0, 'pending': 0})):
+            item.start()
+            self.addCleanup(item.stop)
+
+    def prior_live(self, row):
+        observed = service.utc_now() - timedelta(seconds=1)
+        row['posting_verification'] = {
+            'schema_version': 1, 'identity': ['greenhouse', row['role_id'].split('-')[-1],
+                                                row['role_id'].split('-')[0].lstrip('0') or '0'],
+            'verdict': 'live', 'reason': 'prior_decisive_evidence',
+            'observed_at': observed.isoformat(),
+            'next_eligible_at': (observed - timedelta(seconds=1)).isoformat()}
+        return row
+
+    def run_failure(self, exc, rows=None, *, retry=False):
+        before = rows or [self.prior_live(queued(1))]
+        atomic_json(self.queue, before)
+        def fail(*_):
+            raise exc
+        reader = service.PublicBoardReader(fetcher=fail, retry_timeouts=retry)
+        report = service.verify(self.home, limit=max(1, len(before)), live=True, reader=reader)
+        return before, read_json(self.queue), report
+
+    def test_transport_classes_preserve_decisive_record_and_recovery_fields(self):
+        examples = [(TimeoutError('fixture'), 'TIMEOUT'),
+                    (URLError(socket.gaierror('fixture')), 'DNS_FAILURE'),
+                    (ConnectionResetError('fixture'), 'CONNECTION_RESET'),
+                    (HTTPError('https://boards-api.greenhouse.io/', 429, 'fixture', {}, None), 'HTTP_429'),
+                    (HTTPError('https://boards-api.greenhouse.io/', 503, 'fixture', {}, None), 'HTTP_5XX')]
+        for exc, expected in examples:
+            with self.subTest(expected=expected):
+                before, after, report = self.run_failure(exc)
+                current = after[0]
+                self.assertEqual(canonical(current['posting_verification']),
+                                 canonical(before[0]['posting_verification']))
+                for key in ('last_verify_source', 'recovery_track', 'ambiguity_streak',
+                            'quarantine_streak', 'status', 'fit_score'):
+                    self.assertEqual(current[key], before[0][key])
+                attempt = current['verification_attempt']
+                self.assertEqual((attempt['signal'], attempt['transport_class']), ('NONE', expected))
+                self.assertFalse(attempt['lead_attributed'])
+                self.assertFalse(attempt['quarantine_admission'])
+                self.assertEqual(attempt['recheck_route']['kind'], 'public_board')
+                self.assertFalse(service.posting_is_current(current))
+                self.assertEqual(report['committed_verdicts'], {'none': 1})
+                self.assertEqual(report['promoted_to_ready'], 0)
+
+    def test_81_and_169_failure_replay_preserves_every_prior_track(self):
+        for size in (81, 169):
+            with self.subTest(size=size):
+                before = [self.prior_live(queued(i)) for i in range(1, size+1)]
+                _, after, report = self.run_failure(TimeoutError('fixture'), before)
+                self.assertEqual(report['requests'], 1)
+                self.assertEqual(report['signals'], {'NONE': size})
+                self.assertEqual(len(report['transport_cohorts']), 1)
+                self.assertEqual(report['transport_cohorts'][0]['role_attempt_count'], size)
+                self.assertEqual(len({r['verification_attempt']['transport_cohort_id'] for r in after}), 1)
+                for old, current in zip(before, after):
+                    for key, value in old.items():
+                        self.assertEqual(canonical(current[key]), canonical(value))
+                    self.assertFalse(current['verification_attempt']['quarantine_admission'])
+
+    def test_one_escalated_timeout_retry_persists_both_dispatches(self):
+        timeouts = []
+        def fetch(url, timeout):
+            timeouts.append(timeout)
+            if len(timeouts) == 1:
+                raise TimeoutError('fixture')
+            return {'jobs': [{'id': 1, 'title': 'Fixture'}]}
+        atomic_json(self.queue, [queued(1)])
+        report = service.verify(self.home, live=True,
+                                reader=service.PublicBoardReader(fetcher=fetch, retry_timeouts=True))
+        self.assertEqual(timeouts, [10, 20])
+        attempt = read_json(self.queue)[0]['verification_attempt']
+        self.assertEqual(attempt['signal'], 'LIVE')
+        self.assertEqual([x['transport_class'] for x in attempt['evidence']['request_attempts']], ['TIMEOUT', 'OK'])
+        self.assertEqual(report['requests'], 2)
+
+    def test_second_timeout_and_request_budget_are_absolute_retry_bounds(self):
+        before, after, report = self.run_failure(TimeoutError('fixture'), retry=True)
+        self.assertEqual(report['requests'], 2)
+        self.assertEqual(len(after[0]['verification_attempt']['evidence']['request_attempts']), 2)
+        atomic_json(self.queue, before)
+        reader = service.PublicBoardReader(fetcher=lambda *_: (_ for _ in ()).throw(TimeoutError('fixture')),
+                                           retry_timeouts=True, max_requests=1)
+        report = service.verify(self.home, live=True, reader=reader)
+        self.assertEqual(report['requests'], 1)
+
+    def test_rate_limit_never_retries_or_dispatches_following_board(self):
+        called = []
+        def fetch(url, timeout):
+            called.append(url)
+            raise HTTPError(url, 429, 'fixture', {}, None)
+        atomic_json(self.queue, [queued(1, board='a'), queued(2, board='b')])
+        report = service.verify(self.home, live=True,
+                                reader=service.PublicBoardReader(fetcher=fetch, retry_timeouts=True))
+        self.assertEqual(len(called), 1)
+        self.assertEqual(report['deferred_without_attempt'], {'http_429': 1})
+        self.assertNotIn('verification_attempt', read_json(self.queue)[1])
+
+    def test_retry_cooldown_is_separate_from_preserved_live_evidence(self):
+        _, after, _ = self.run_failure(TimeoutError('fixture'))
+        current = after[0]
+        current.pop('verification_event_pending')
+        atomic_json(self.queue, [current])
+        self.assertFalse(service.posting_is_current(current))
+        supply = service.supply_report(self.home)
+        self.assertEqual(supply['mutually_exclusive_supply_states'], {'verification_cooldown': 1})
+        report = service.verify(self.home, reader=service.PublicBoardReader(fetcher=lambda *_: {'jobs': []}))
+        self.assertEqual(report['requests'], 0)
+        self.assertEqual(report['skipped'], {'cooldown': 1})
+
+    def test_complete_board_absence_is_lead_ambiguity_with_supported_recheck(self):
+        atomic_json(self.queue, [self.prior_live(queued(1))])
+        report = service.verify(self.home, live=True,
+                                reader=service.PublicBoardReader(fetcher=lambda *_: {'jobs': []}))
+        current = read_json(self.queue)[0]
+        self.assertEqual(current['verification_attempt']['signal'], 'AMBIGUOUS')
+        self.assertTrue(current['verification_attempt']['lead_attributed'])
+        self.assertEqual(current['posting_verification']['verdict'], 'ambiguous')
+        self.assertEqual(report['verdicts'], {'ambiguous': 1})
+        self.assertEqual(current['status'], 'PARKED-PENDING-VERIFICATION')
+
+    def test_board_404_or_410_cannot_become_posting_death(self):
+        for status in (404, 410):
+            with self.subTest(status=status):
+                _, after, report = self.run_failure(HTTPError('https://boards-api.greenhouse.io/', status,
+                                                              'fixture', {}, None))
+                self.assertEqual(after[0]['verification_attempt']['signal'], 'NONE')
+                self.assertEqual(report['verdicts'], {'none': 1})
+                self.assertEqual(after[0]['status'], 'PARKED-PENDING-VERIFICATION')
+
+    def test_held_duplicate_role_does_not_block_other_role_at_same_company(self):
+        first, second = queued(1), queued(2)
+        atomic_json(self.queue, [first, second])
+        atomic_json(self.home / 'data/application-ledger.json', [{**first, 'status': 'SUBMITTED'}])
+        report = service.verify(self.home, live=True,
+                                reader=service.PublicBoardReader(fetcher=lambda *_: {
+                                    'jobs': [{'id': 1, 'title': 'First'}, {'id': 2, 'title': 'Second'}]}))
+        self.assertEqual(report['selected'], 1)
+        self.assertEqual(read_json(self.queue)[0], first)
+        self.assertEqual(read_json(self.queue)[1]['verification_attempt']['signal'], 'LIVE')
+
+    def test_failed_retry_does_not_starve_never_attempted_tail_after_cooldown(self):
+        _, after, _ = self.run_failure(TimeoutError('fixture'))
+        current = after[0]
+        current.pop('verification_event_pending')
+        current['verification_attempt']['next_eligible_at'] = (service.utc_now()-timedelta(seconds=1)).isoformat()
+        atomic_json(self.queue, [current, queued(2, board='other')])
+        calls = []
+        def fetch(url, timeout):
+            calls.append(url)
+            return {'jobs': [{'id': 2, 'title': 'Tail'}]}
+        report = service.verify(self.home, limit=1, reader=service.PublicBoardReader(fetcher=fetch))
+        self.assertIn('/other/', calls[0])
+        self.assertEqual(report['candidate_diagnostics']['scannable'], 2)
+        self.assertEqual(report['deferred_by_limit'], 1)
+
+    def test_candidate_diagnostics_separate_fit_floor_without_changing_scan_policy(self):
+        atomic_json(self.queue, [queued(1, fit=75), queued(2, fit=74),
+                                 queued(3, fit=None), queued(4, fit=True)])
+        report = service.verify(self.home, reader=service.PublicBoardReader(fetcher=lambda *_: {'jobs': []}))
+        diagnostics = report['candidate_diagnostics']
+        self.assertEqual(diagnostics['scannable'], 4)
+        self.assertEqual(diagnostics['scannable_at_main_floor'], 1)
+        self.assertEqual(diagnostics['scannable_below_main_floor'], 1)
+        self.assertEqual(diagnostics['unknown_fit'], 2)
+        self.assertEqual(diagnostics['main_fit_floor'], 75)
+        self.assertEqual(report['observed'], 4)
+
+    def test_dry_run_and_supply_refuse_pending_recovery_without_writes(self):
+        atomic_json(self.queue, [queued(1)])
+        destination = self.home / 'data/queues/strategic-queue.json'
+        def stop(step, journal):
+            if step == 'write:0':
+                raise OSError('injected interruption')
+        with patch.object(queue_io, '_transaction_step', side_effect=stop):
+            with self.assertRaises(OSError):
+                queue_io.move_entry_atomic('001-fixture', str(self.queue), str(destination))
+        paths = [self.queue, destination, *Path(queue_io._transaction_dir()).glob('*.json')]
+        before = {str(path): path.read_bytes() for path in paths}
+        with self.assertRaises(queue_io.QueueRecoveryRequired):
+            service.verify(self.home, reader=service.PublicBoardReader(fetcher=lambda *_: {'jobs': []}))
+        with self.assertRaises(queue_io.QueueRecoveryRequired):
+            service.supply_report(self.home)
+        self.assertEqual({str(path): path.read_bytes() for path in paths}, before)
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -156,10 +156,14 @@ synthetic homes, and exercise:
   optional runtime capabilities are absent.
 
 The full-source `tools/run_tests.py` runner includes these eight tests in its
-separate `local_profile` suite. They are excluded only from guarded `core`, then
-run without the inherited Python audit hook so actual `-S` subprocesses can run.
-Other suites retain the hook. This separation is recorded in test reports and
-is not an operating-system sandbox. Run this suite alone with:
+separate `local_profile` suite. They are excluded only from `core`, then run
+without a runner-configured audit guard so actual `-S` subprocesses can run.
+The fresh checkout does not include `tools/test_guard/sitecustomize.py`; broader
+suites refuse that missing guard unless reviewed local execution is explicitly
+selected with `--allow-unguarded`. Such reports mark the hook `unavailable`.
+An existing guard file is reported as configuration, never proof of hook
+installation or enforcement. No mode is an operating-system sandbox. Run this
+suite alone without an unguarded override:
 
 ```bash
 python3 tools/run_tests.py --suite local_profile --report-dir /tmp/keel-profile-checks
@@ -169,3 +173,13 @@ The report directory must be new. The runner needs the free pytest development
 dependency; direct unittest checks and the extracted core remain standard
 library only. Private integration tests and host-specific browser/kernel checks
 retain their own prerequisites and must be reported separately.
+
+The candidate includes `.github/workflows/recovery-profile.yml`, pinned free
+development tools, all eleven test modules selected by that workflow, and their
+source dependencies. The workflow is configured to run queue, task-liveness,
+transport, READY, staged-admission, preparation-identity, diagnostic, and
+related regression tests with the extracted-profile suite on Python 3.11 and
+3.12, then build and verify the source package. Configuration is not evidence
+of a completed or passing CI run. [PIPELINE_RECOVERY.md](PIPELINE_RECOVERY.md)
+contains the exact local test command for the maintained set. Optional full
+checkout suites remain separate.

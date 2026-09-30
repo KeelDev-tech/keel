@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Run active subsystems separately, with temporary state and explicit results.
 
-All suites except the explicitly reviewed local_profile suite inherit the
-Python audit hook. local_profile verifies a clean extracted installation with
-Python -S and no inherited hook; its tests use only synthetic local workflows.
-Neither mode is an OS sandbox. Run untrusted changes inside your own disposable
-OS/container boundary. The orchestrating runner itself must start outside the
-audit hook; an active Python audit hook cannot be removed from a process.
+Suites other than local_profile require the separately supplied audit guard
+file, or the explicit --allow-unguarded option for reviewed local checks. A
+configured file is not proof that an audit hook was installed or enforced.
+local_profile tests the extracted source with Python -S and synthetic state.
+No mode is an OS sandbox. Run untrusted changes inside your own disposable
+OS/container boundary. The orchestrator must start outside any audit hook;
+an active hook cannot be removed from the current process.
 """
 import argparse
 import importlib.util
@@ -32,22 +33,33 @@ SUITES = {
 }
 
 
-def suite_environment(name, cwd, temp, out):
-    """Keep clean-install verification explicit and all other hooks intact."""
+def audit_guard_available():
+    """File presence only; this does not prove that a hook is operational."""
+    return (ROOT / 'tools/test_guard/sitecustomize.py').is_file()
+
+
+def suite_environment(name, cwd, temp, out, *, allow_unguarded=False):
+    """Describe the configured environment without claiming unseen isolation."""
     env = dict(os.environ)
     env.update(KEEL_HOME=temp, PYTHONDONTWRITEBYTECODE='1',
                PYTEST_DISABLE_PLUGIN_AUTOLOAD='1',
                HYPOTHESIS_STORAGE_DIRECTORY=temp + '/hypothesis')
     guard_path = ROOT / 'tools/test_guard'
-    guarded = name != 'local_profile'
+    guard_requested = name != 'local_profile'
+    guard_present = audit_guard_available()
+    guarded = guard_requested and guard_present
+    if guard_requested and not guard_present and not allow_unguarded:
+        raise RuntimeError('audit guard unavailable: tools/test_guard/sitecustomize.py; '
+                           'use --allow-unguarded only for reviewed local checks')
     inherited_search = env.get('PYTHONPATH', '').split(os.pathsep)
     if guarded:
         env.update(KEEL_AUDIT_TEST_ROOT=temp, KEEL_AUDIT_REPORT=str(out),
                    KEEL_AUDIT_CODE=str(ROOT))
         search = [guard_path, cwd, cwd / 'tests', ROOT, ROOT / 'engines']
     else:
-        # Only this named suite may launch reviewed -S children and remove
-        # source-tree import paths to test the actual extracted distribution.
+        # No nonexistent hook or stale guard configuration should appear in
+        # an explicitly unguarded child. local_profile also uses -S children
+        # without source-tree import paths to test the actual distribution.
         for key in ('KEEL_AUDIT_TEST_ROOT', 'KEEL_AUDIT_REPORT', 'KEEL_AUDIT_CODE'):
             env.pop(key, None)
         inherited_search = [entry for entry in inherited_search
@@ -56,8 +68,13 @@ def suite_environment(name, cwd, temp, out):
     env['PYTHONPATH'] = os.pathsep.join(map(str, search)) + os.pathsep + os.pathsep.join(inherited_search)
     isolation = {
         'workspace': 'temporary synthetic workspace',
-        'python_audit_hook': 'inherited' if guarded else 'not inherited',
-        'scope': ('guarded active subsystem checks' if guarded else
+        'python_audit_hook': ('configured_not_verified' if guarded else
+                              'unavailable' if guard_requested else 'not_configured'),
+        'audit_guard_file_present': guard_present,
+        'audit_hook_enforcement_verified': False,
+        'unguarded_explicitly_allowed': guard_requested and not guard_present and allow_unguarded,
+        'scope': ('audit guard configured; hook installation and enforcement not verified' if guarded else
+                  'explicitly unguarded reviewed local checks' if guard_requested else
                   'reviewed extracted-profile checks; Python -S children; no live network workflow'),
         'os_sandbox': False,
     }
@@ -69,21 +86,30 @@ def main(argv=None):
     parser.add_argument('--report-dir', required=True)
     parser.add_argument('--suite', action='append', choices=list(SUITES))
     parser.add_argument('--timeout', type=int, default=600)
+    parser.add_argument('--allow-unguarded', action='store_true',
+                        help='run reviewed local suites without the unavailable audit guard; '
+                             'reports do not claim hook enforcement or OS isolation')
     args = parser.parse_args(argv)
     if args.timeout <= 0:
         parser.error('timeout must be positive')
     if importlib.util.find_spec('pytest') is None:
         parser.error('install free requirements-dev.txt and requirements-marketing.txt first')
+    selected_suites = args.suite or list(SUITES)
+    if (any(name != 'local_profile' for name in selected_suites)
+            and not audit_guard_available() and not args.allow_unguarded):
+        parser.error('audit guard unavailable: tools/test_guard/sitecustomize.py; '
+                     'use --allow-unguarded only for reviewed local checks')
     report = Path(args.report_dir).absolute()
     report.mkdir(mode=0o700, parents=True, exist_ok=False)
     results = []
-    for name in args.suite or SUITES:
+    for name in selected_suites:
         relative, paths = SUITES[name]
         cwd = ROOT / relative
         out = report / name
         out.mkdir()
         with tempfile.TemporaryDirectory(prefix='keel-test-') as temp:
-            env, isolation = suite_environment(name, cwd, temp, out)
+            env, isolation = suite_environment(name, cwd, temp, out,
+                                               allow_unguarded=args.allow_unguarded)
             command = [sys.executable, '-B', '-m', 'pytest', '-p', 'no:cacheprovider',
                        '--import-mode=importlib', '-q', '-ra', '--tb=short',
                        '--continue-on-collection-errors', '--basetemp=' + temp + '/pytest',
@@ -112,7 +138,7 @@ def main(argv=None):
     summary = dict(schema_version=1, status='PASS' if complete else 'INCOMPLETE',
                    suites=results, production_state='not supplied',
                    scope='active subsystem suites; historical snapshots not executed',
-                   guard='per-suite isolation recorded: audit hook except reviewed local_profile; not an OS sandbox')
+                   guard='per-suite guard configuration recorded; audit-hook enforcement not verified; not an OS sandbox')
     (report/'summary.json').write_text(json.dumps(summary, indent=2)+'\n')
     return 0 if complete else 1
 

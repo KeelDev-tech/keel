@@ -1,109 +1,81 @@
 # Make it mine — the operator guide
 
-Keel is an open job-application pipeline you run on your own machine. It
-refuses to lie on your behalf: it only ever claims what you tell it is
-true, and anything it can't answer truthfully parks for your judgment.
-This guide takes you from a fresh clone to your first launch packet.
+Use one canonical workspace for your private data and keep it separate from
+fresh source checkouts. The source tree contains examples and engines; the
+workspace contains the facts you asserted, queues, materials, and observations.
 
-## 1. Run the setup wizard
+## Initialize without claiming example facts
+
+From the source directory, with Python 3.11+ on Linux or WSL:
 
 ```bash
-git clone <keel-repo-url> keel && cd keel
+export KEEL_HOME="$HOME/keel-workspace"
 ./setup.sh
 ```
 
-The wizard copies the example templates into `data/` — your private working
-copies (answer bank, applicant profile, policy, blocklist, queues) — and
-asks for your name, email, phone, location, LinkedIn, and timezone. Example
-files stay untouched; `data/` is gitignored and never committable.
+You can also pass the workspace explicitly: `./setup.sh /path/to/workspace`.
+The wrapper uses `keel.py init`. It creates only missing files and validates
+existing JSON instead of overwriting it. Applicant answers, personal policy
+commitments, experience, and consent start unknown. Setup does not connect an
+account or start a network scan.
 
-## 2. Tell the truth, completely
+## Record your own facts
 
-Everything the pipeline may claim about you lives in two files. Fill them
-with verified fact only — year-only dates unless you document exact ones:
-
-- **`data/applicant_profile.json`** — your real history, credentials, and
-  education. The resume tailor draws only from here.
-- **`data/answer_bank.json`** — your canonical form answers (work auth,
-  tenure figures, education, availability) plus banded-question rules and
-  hard gates. Every answer should carry a provenance receipt: who said it,
-  when, and how it was banked.
-
-If a role demands something your profile can't support, the tailor reports
-the gap — it never invents a bridge.
-
-## 3. Set your boundaries
-
-**`data/policy.json`** holds your travel/office/relocation caps and the
-attestation classes you refuse (no-AI/unaided-work pledges, essays,
-recording consent, facts only you could know). Two notes on wiring:
-
-- The open-repo prescreen parks travel/office/relocation commitments for
-  your explicit answer — it never invents a % cap or day count. Your
-  policy file keeps your answers consistent and truthful.
-- Standard legal attestations you genuinely agree to (arbitration,
-  background-check consent, at-will, truthfulness, data-privacy) are
-  pre-authorized only via `attestation_scope.preauthorized_attestation_keys`
-  in your answer bank. Nothing is pre-authorized out of the box.
-
-Your store of job-site accounts goes in `credentials/` (one file per
-account, `chmod 600` — see `docs/CREDENTIALS.md`).
-
-## 4. Configure lanes and blocklist
-
-- `keel.config.json` — your metro area, target lanes, timezone, daily cap.
-- `data/employer-blocklist.md` — employers you will never apply to.
-
-## 5. Discover and score
-
-Fill the placeholders in `engines/discovery_queries.md`, run your discovery
-sweeps, then score what you find:
+Record required identity values using provenance receipts:
 
 ```bash
-python3 engines/score_roles.py --in discovered.json --out data/scored.json \
-    --profile data/applicant_profile.json
+python3 keel.py --home "$KEEL_HOME" confirm-answer --key first_name --source "applicant assertion"
+python3 keel.py --home "$KEEL_HOME" confirm-answer --key last_name --source "applicant assertion"
+python3 keel.py --home "$KEEL_HOME" confirm-answer --key email --source "applicant assertion"
 ```
 
-(The rubric is `engines/fit-scoring-model.md`.)
+Omitting `--value` reads from stdin and avoids placing personal values in your
+shell history. This records what the applicant asserted; it does not prove the
+assertion's truth. Use `--scope ROLE_ID` for role-specific answers and `--expires`
+where the value can become stale. Read `confirm-answer --help` first.
 
-## 6. Verify, then build a launch packet
+Fill `data/applicant_profile.json` with your actual employment, credentials,
+education, and verified capabilities. Supply real materials under the
+workspace's `data/resumes/`. The profile and answer bank are different inputs:
+changing the profile does not create answer provenance receipts.
+
+## Set your boundaries
+
+`data/policy.json` holds office, travel, relocation, and attestation boundaries.
+Unset commitments stay unknown. Questions about essays, no-AI or unaided-work
+pledges, recording consent, and facts only you know remain for your explicit
+judgment. No attestation consent is pre-authorized by initialization.
+
+Keep any independent executor credentials outside source candidates. The public
+CLI does not provide a signed-in submission connector. Never put credentials,
+private applicant files, or personalized configuration in a release allowlist.
+
+## Inspect the conversion process
 
 ```bash
-KEEL_HOME=$PWD python3 engines/verify_retry.py   # re-check parked leads over HTTP
-KEEL_HOME=$PWD python3 engines/apply_loop.py     # build a launch packet
+./start.sh "$KEEL_HOME"
+python3 keel.py --home "$KEEL_HOME" pipeline-doctor
+python3 keel.py --home "$KEEL_HOME" dashboard
 ```
 
-`apply_loop` stops at the **launch packet** (`data/launch-packets/`) — it
-documents what to submit, not how. The packet's EXECUTOR CONTRACT describes
-the submission step your own layer performs. This is the open/private split
-(see `SPLIT.md`): detection and honest form values are public; submission
-technique stays private.
+`start.sh` runs the offline doctor, supply, and conversion reports. A new workspace returns 1
+until required assertions are recorded. Passing doctor checks means local
+inputs are readable and sufficient for that check; it does not establish that
+a real role is READY or authorize an application.
 
-Prescreen parks anything dubious — essays, attestations, unmappable
-questions — in `data/queues/needs_input-queue.json`. Answer it there and
-the lane resumes.
+Use [PIPELINE_RECOVERY.md](PIPELINE_RECOVERY.md) for bounded source registration,
+discovery, posting verification, readiness gates, and Muse integration limits.
+Do not edit a parked row's status to READY to manufacture supply. Do not assume
+an answer-bank edit automatically resolves a role's current form questions.
 
-## 7. Watch it work
+## Test a separate synthetic workspace
 
 ```bash
-KEEL_HOME=$PWD python3 engines/build_dashboard.py
-./start.sh
+KEEL_DEMO_PARENT="$(mktemp -d)"
+python3 -S keel.py --home "$KEEL_DEMO_PARENT/demo" demo
 ```
 
-Open `dashboard/dashboard.html`. Schedule the dashboard build and status
-ping (e.g. cron every 30 minutes) if your platform supports it.
-
-## What never leaves your machine
-
-`data/`, `credentials/`, and your personalized `keel.config.json` are
-ignored by git. `./package.sh` builds the distributable zip with a
-pre-flight scan that blocks the build if personal data snuck into the
-payload.
-
-## The contract, in writing
-
-- `docs/OPERATING-CONSTRAINTS.md` — the safety rails as numbered rules
-  (C-01…C-20): what may park, what may never be claimed, how counts are
-  validated. Extend them, never weaken them.
-- `SPLIT.md` — what is public in this repo and what stays private.
-- `DOCTRINE.md` — why this exists: automated applications that refuse to lie.
+The demo path must not exist. It uses only synthetic people, postings, answers,
+and transport fixtures. It exercises the shipped pipeline with zero external
+network requests and gives no submission authority. Keep its outputs separate
+from real applicant data.

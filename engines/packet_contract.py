@@ -34,7 +34,7 @@ def answer_receipt(value, source, *, role_id=None, now=None, expires_at=None):
             "scope": role_id or "general", "value_sha256": digest(value), "expires_at": expires_at}
 
 
-def confirmed_answers(bank, *, role_id, now=None):
+def confirmed_answers(bank, *, role_id, employer=None, role_context=None, now=None):
     now = now or utc_now()
     if not isinstance(bank, dict) or not isinstance(bank.get("answers"), dict):
         raise ValueError("answer bank must contain an answers object")
@@ -55,7 +55,19 @@ def confirmed_answers(bank, *, role_id, now=None):
         except (TypeError, ValueError, OverflowError):
             valid = False
         if valid:
-            approved[key] = value
+            # A value-bound receipt does not widen authority embedded in the
+            # value. Resolve both layers for the exact packet target. Scalar
+            # assertions get their authority from the checked receipt above.
+            import answer_resolver
+            context = {**(role_context or {}), 'role_id': role_id}
+            candidate = value if isinstance(value, dict) else {
+                'value': value, 'scope': 'global', 'provenance': receipt['source']}
+            resolution = answer_resolver.resolve(key, candidate, employer=employer,
+                                                 role_context=context, registry=set())
+            if resolution.status == answer_resolver.STATUS_RESOLVED:
+                approved[key] = resolution.value if isinstance(value, dict) else value
+            else:
+                problems.append(key + ': scoped resolver abstained')
         else:
             problems.append(key + ": missing, stale, out-of-scope or changed assertion")
     return approved, problems
@@ -81,7 +93,8 @@ def prepare(entry, bank, policy, workspace, materials, intel, *, now=None):
     if not isinstance(role_id, str) or not role_id.strip() or len(role_id) > 256:
         raise ValueError("role_id is required and limited to 256 characters")
     url = source_url(entry)
-    answers, problems = confirmed_answers(bank, role_id=role_id, now=now)
+    answers, problems = confirmed_answers(bank, role_id=role_id,
+                                         employer=entry.get('company'), role_context=entry, now=now)
     for key in ("first_name", "last_name", "email"):
         if key not in answers:
             problems.append(key + ": applicant assertion required")
@@ -140,7 +153,8 @@ def validate(packet, entry, bank, policy, workspace, materials, *, now=None):
         raise ValueError("packet target changed")
     if dependencies(entry, bank, policy, workspace, materials) != packet.get("dependencies"):
         raise ValueError("packet inputs changed; rebuild required")
-    confirmed, problems = confirmed_answers(bank, role_id=entry["role_id"], now=now)
+    confirmed, problems = confirmed_answers(bank, role_id=entry["role_id"],
+                                           employer=entry.get('company'), role_context=entry, now=now)
     if problems or confirmed != packet.get("applicant_assertions"):
         raise ValueError("applicant assertions changed or expired")
     docs = packet["dependencies"]["materials"]

@@ -9,17 +9,20 @@ import copy
 import hashlib
 import math
 import re
+import socket
 import tempfile
 import time
 import uuid
 from collections import Counter, defaultdict, OrderedDict
 from datetime import timedelta
+from dataclasses import dataclass
 from pathlib import Path
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 
-from safe_http import urlopen, validate_url, HostRateLimited
-from safe_io import atomic_json, read_json, rows, loads, digest, canonical, utc_now, fresh, aware_time, file_lock
+from safe_http import urlopen, validate_url, HostRateLimited, NetworkPolicyError
+from safe_io import (atomic_json, read_json, rows, loads, digest, canonical, utc_now,
+                     fresh, aware_time, file_lock, MAX_JSON_BYTES)
 from queue_io import queue_lock
 from posting_identity import TOKEN, identity, observe
 
@@ -33,6 +36,57 @@ MAX_CACHE_BYTES = 16 * 1024 * 1024
 MAX_CACHE_RECORDS = 20000
 MAX_CANDIDATE_BYTES = 32 * 1024 * 1024
 MAX_CANDIDATE_RECORDS = 40000
+POSTING_FRESH_SECONDS = 3600
+VERIFY_RETRY_SECONDS = 300
+
+
+@dataclass(frozen=True)
+class VerificationResult:
+    """Posting signal and transport outcome are independent authorities.
+
+    NONE never revises a posting verdict or recovery track. The evidence is
+    bounded diagnostic data, never exception text or applicant facts.
+    """
+    signal: str
+    transport_class: str
+    evidence: dict
+    retry_after: int
+
+
+def _transport_class(exc):
+    if isinstance(exc, HostRateLimited):
+        return 'PERSISTED_HTTP_429'
+    if isinstance(exc, HTTPError):
+        if exc.code == 429:
+            return 'HTTP_429'
+        if exc.code in (401, 403):
+            return 'ACCESS_WALL'
+        if exc.code >= 500:
+            return 'HTTP_5XX'
+        # A board endpoint 404/410 is not death evidence for one posting.
+        return 'HTTP_SOURCE_ERROR'
+    reason = getattr(exc, 'reason', None)
+    cause = reason if isinstance(reason, BaseException) else getattr(exc, '__cause__', None)
+    if isinstance(exc, socket.gaierror) or isinstance(cause, socket.gaierror):
+        return 'DNS_FAILURE'
+    if isinstance(exc, ConnectionResetError) or isinstance(cause, ConnectionResetError):
+        return 'CONNECTION_RESET'
+    if isinstance(exc, TimeoutError) or isinstance(cause, TimeoutError):
+        if str(exc) == 'request budget exhausted or run stopped':
+            return 'REQUEST_BUDGET'
+        return 'TIMEOUT'
+    if isinstance(exc, ValueError):
+        return 'SOURCE_CONTRACT'
+    if isinstance(exc, NetworkPolicyError):
+        return 'NETWORK_POLICY'
+    if isinstance(exc, URLError):
+        return 'NETWORK_ERROR'
+    return 'SOURCE_UNAVAILABLE'
+
+
+def _provider_host(ref):
+    return {'greenhouse': 'boards-api.greenhouse.io', 'ashby': 'api.ashbyhq.com',
+            'lever': 'api.lever.co', 'lever_eu': 'api.eu.lever.co'}[parse_source(ref)[0]]
 
 
 class SourceCapacityError(ValueError):
@@ -210,7 +264,7 @@ class PublicBoardReader:
     A 429 ends this reader's run; safe_http additionally persists host cooldown.
     ``requests`` bounds reader dispatches, not sockets or HTTP redirect hops.
     """
-    def __init__(self, timeout=120, fetcher=None, max_requests=50):
+    def __init__(self, timeout=120, fetcher=None, max_requests=50, retry_timeouts=False):
         self.deadline = _budget(timeout)
         self.fetcher = fetcher
         self.max_requests = _bounded(max_requests, 'max_requests', 1000)
@@ -224,33 +278,51 @@ class PublicBoardReader:
         self.peak_cache_bytes = 0
         self.peak_cache_records = 0
         self.errors = {}
+        self.retry_timeouts = retry_timeouts
+        self.request_attempts = []
 
     def _json(self, url):
-        if self.stopped or self.requests >= self.max_requests:
-            raise TimeoutError('request budget exhausted or run stopped')
-        remaining = self.deadline-time.monotonic()
-        if remaining <= 0:
-            raise TimeoutError('source run deadline exceeded')
-        self.requests += 1
-        try:
-            if self.fetcher is not None:
-                value = self.fetcher(url, min(20, remaining))
-            else:
-                with urlopen(url, timeout=min(20, remaining)) as response:
-                    value = loads(response.read())
-            # Include injected fixture/data validation in the same path.
-            if not isinstance(value, (dict, list)):
-                raise ValueError('expected object or array response')
-            _deadline(self)
-            return value
-        except HostRateLimited:
-            self.stopped = True
-            self.blocked_by_host_cooldown = True
-            raise
-        except HTTPError as exc:
-            if exc.code == 429:
-                self.stopped = True
-            raise
+        # One escalated-timeout retry is permitted, still inside the run and
+        # request budgets. Every dispatch uses safe_http's host policy; 429
+        # and persisted holds are never retried. Discovery retains its
+        # existing one-dispatch behavior unless explicitly enabled.
+        for attempt in range(2 if self.retry_timeouts else 1):
+            if self.stopped or self.requests >= self.max_requests:
+                raise TimeoutError('request budget exhausted or run stopped')
+            remaining = self.deadline-time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError('source run deadline exceeded')
+            self.requests += 1
+            timeout = min(10 if self.retry_timeouts and attempt == 0 else 20, remaining)
+            record = {'schema_version': 1, 'request_number': self.requests,
+                      'host_scope': urlsplit(url).hostname, 'source_url': url,
+                      'observed_at': utc_now().isoformat(), 'timeout_seconds': timeout,
+                      'retry_index': attempt, 'transport_class': 'OK'}
+            self.request_attempts.append(record)
+            try:
+                if self.fetcher is not None:
+                    value = self.fetcher(url, timeout)
+                else:
+                    with urlopen(url, timeout=timeout) as response:
+                        value = loads(response.read())
+                if not isinstance(value, (dict, list)):
+                    raise ValueError('expected object or array response')
+                _deadline(self)
+                return value
+            except Exception as exc:
+                record['transport_class'] = _transport_class(exc)
+                record['exception_type'] = type(exc).__name__
+                if isinstance(exc, HostRateLimited):
+                    self.stopped = True
+                    self.blocked_by_host_cooldown = True
+                elif isinstance(exc, HTTPError) and exc.code == 429:
+                    self.stopped = True
+                retry = (self.retry_timeouts and attempt == 0
+                         and record['transport_class'] == 'TIMEOUT'
+                         and not self.stopped and self.requests < self.max_requests
+                         and time.monotonic() < self.deadline)
+                if not retry:
+                    raise
 
     def read(self, ref):
         provider, board = parse_source(ref)
@@ -477,8 +549,45 @@ def _observation_matches(entry, key):
             and observation.get('identity') == list(key))
 
 
+def posting_is_current(entry, key=None, *, now=None):
+    """A preserved historical LIVE record is not current after a failed recheck.
+
+    Legacy posting_verification records remain readable. New typed attempts
+    must match the target and signal LIVE if at least as recent as the
+    decisive observation. Malformed latest-attempt state fails closed.
+    """
+    key = _key(entry) if key is None else key
+    now = now or utc_now()
+    observation = entry.get('posting_verification')
+    if (not _observation_matches(entry, key) or observation.get('verdict') != 'live'
+            or not fresh(observation.get('observed_at'), POSTING_FRESH_SECONDS, now=now)):
+        return False
+    attempt = entry.get('verification_attempt')
+    if attempt is None:
+        return True
+    if not isinstance(attempt, dict):
+        return False
+    if attempt.get('identity') != list(key):
+        return False
+    try:
+        at = aware_time(attempt.get('observed_at'))
+        previous = aware_time(observation.get('observed_at'))
+        if at > now or attempt.get('signal') not in {'LIVE', 'AMBIGUOUS', 'NONE'}:
+            return False
+        if at >= previous and attempt.get('signal') != 'LIVE':
+            return False
+    except (ValueError, TypeError, OverflowError):
+        return False
+    return True
+
+
 def _next_time(entry, key):
-    observation = entry.get('posting_verification') or {}
+    # Scheduling comes from the latest attempt, independently of the last
+    # usable posting observation. Transport failures can pace retries without
+    # destroying decisive evidence or changing a quarantine streak.
+    observation = entry.get('verification_attempt')
+    if observation is None:
+        observation = entry.get('posting_verification') or {}
     if not isinstance(observation, dict):
         return 'invalid'
     # A row may be retargeted after a prior observation. Its old posting's
@@ -501,10 +610,10 @@ def verify(workspace, *, limit=100, timeout=120, live=False, reader=None):
     _bounded(limit, 'limit', 1000)
     if (Path(workspace)/'DEMO_ONLY.json').exists() and reader is None:
         raise ValueError('synthetic workspace cannot perform live verification')
-    reader = reader or PublicBoardReader(timeout)
+    reader = reader or PublicBoardReader(timeout, retry_timeouts=True)
     run_id, now = uuid.uuid4().hex, utc_now()
     initial_flush = flush_outbox(workspace) if live else {'emitted': 0, 'pending': 0}
-    with queue_lock(timeout=_lock_budget(reader), owner='public-verify:snapshot'):
+    with queue_lock(timeout=_lock_budget(reader), owner='public-verify:snapshot', recover=live):
         _deadline(reader)
         documents, ledger = _documents(workspace)
         selected = copy.deepcopy(_all_rows(documents))
@@ -531,9 +640,18 @@ def verify(workspace, *, limit=100, timeout=120, live=False, reader=None):
         if posting_counts[key] != 1:
             skipped['duplicate_exact_posting'] += 1; continue
         # Oldest observation first, then stable ID: failures cool down instead of starving the tail.
-        stamp = (row.get('posting_verification') or {}).get('observed_at', '')
+        stamp = (row.get('verification_attempt') or row.get('posting_verification') or {}).get('observed_at', '')
         eligible.append((stamp, rid, path, row, key))
     eligible.sort(key=lambda x: (str(x[0]), x[1]))
+    scan_fit = Counter()
+    for _, _, _, row, _ in eligible:
+        fit = row.get('fit_score')
+        if isinstance(fit, bool) or not isinstance(fit, (int, float)) or not math.isfinite(fit):
+            scan_fit['unknown_fit'] += 1
+        elif fit >= 75:
+            scan_fit['scannable_at_main_floor'] += 1
+        else:
+            scan_fit['scannable_below_main_floor'] += 1
     overflow = max(0, len(eligible)-limit)
     chosen = eligible[:limit]
     # Fix the same oldest-first cohort before batching. Process each complete
@@ -552,6 +670,7 @@ def verify(workspace, *, limit=100, timeout=120, live=False, reader=None):
             deferred['request_budget'] += len(cohort)
             continue
         board_reads += 1
+        request_start = len(getattr(reader, 'request_attempts', []))
         try:
             postings = reader.read(ref)
             failure = None
@@ -562,28 +681,60 @@ def verify(workspace, *, limit=100, timeout=120, live=False, reader=None):
             continue
         except Exception as exc:
             postings = {}
-            failure = 'source_unavailable:'+type(exc).__name__
+            # No board transport failure can identify a lead as ambiguous or
+            # dead. In particular 404/410 on this endpoint is board evidence.
+            failure = exc
+            if isinstance(exc, HTTPError) and exc.code == 429:
+                reader.stopped = True
+        request_attempts = copy.deepcopy(getattr(reader, 'request_attempts', [])[request_start:])
         for index, (_, rid, path, snapshot, key) in enumerate(cohort):
             if index % 32 == 0:
                 _deadline(reader)
             job = postings.get(key)
-            verdict, reason = (('ambiguous', failure) if failure else
-                ('live', 'exact_published_posting') if job else
-                ('ambiguous', 'posting_absent_from_board_not_death_evidence'))
+            result = VerificationResult(
+                'NONE' if failure else 'LIVE' if job else 'AMBIGUOUS',
+                _transport_class(failure) if failure else 'OK',
+                {'kind': 'transport_failure' if failure else 'exact_published_posting' if job else
+                    'posting_absent_from_complete_board', 'host_scope': _provider_host(ref),
+                 'source_ref': ref, 'request_attempts': request_attempts},
+                POSTING_FRESH_SECONDS if job else VERIFY_RETRY_SECONDS)
+            verdict = {'LIVE': 'live', 'AMBIGUOUS': 'ambiguous', 'NONE': 'none'}[result.signal]
+            reason = ('source_unavailable:'+type(failure).__name__ if failure else
+                      'exact_published_posting' if job else
+                      'posting_absent_from_board_not_death_evidence')
             observed = utc_now()
-            delay = 3600 if verdict == 'live' else 300
             observation = {'schema_version': 1, 'observation_id': run_id+':'+hashlib.sha256(rid.encode()).hexdigest()[:24],
                            'observed_at': observed.isoformat(), 'verdict': verdict, 'reason': reason,
+                           'signal': result.signal, 'transport_class': result.transport_class,
+                           'evidence': result.evidence, 'retry_after': result.retry_after,
+                           'lead_attributed': result.signal != 'NONE',
                            'identity': list(key), 'source_record_sha256': job['record_sha256'] if job else None,
                            'source_url': job['source_url'] if job else None,
-                           'next_eligible_at': (observed+timedelta(seconds=delay)).isoformat(),
+                           'next_eligible_at': (observed+timedelta(seconds=result.retry_after)).isoformat(),
+                           'recheck_route': {'kind': 'public_board', 'source_ref': ref,
+                                             'identity': list(key), 'host_scope': _provider_host(ref)},
+                           'quarantine_admission': False,
                            'form_verified': False, 'acceptance_verified': False, 'execution_authorized': False}
             by_role[rid] = (path, snapshot, observation)
     observations = [by_role[item[1]] for item in chosen if item[1] in by_role]
-    if reader.stopped:
-        for _, _, observation in observations:
-            observation.update(verdict='ambiguous', reason='batch_withheld_after_http_429',
-                next_eligible_at=(aware_time(observation['observed_at'])+timedelta(seconds=300)).isoformat())
+    # A 429 stops all further dispatches. Prior successful reads still contain
+    # their actual posting evidence; an unrelated board's rate limit cannot
+    # retroactively turn those observations into lead ambiguity.
+    transport_cohorts = {}
+    for _, _, observation in observations:
+        if observation['signal'] != 'NONE':
+            continue
+        scope = observation['evidence']['host_scope']
+        transport = observation['transport_class']
+        cohort_id = 'transport-'+digest([run_id, scope, transport])[:24]
+        observation['transport_cohort_id'] = cohort_id
+        aggregate = transport_cohorts.setdefault(cohort_id, {
+            'schema_version': 1, 'cohort_id': cohort_id, 'host_scope': scope,
+            'transport_class': transport, 'role_attempt_count': 0, 'source_refs': []})
+        aggregate['role_attempt_count'] += 1
+        ref = observation['evidence']['source_ref']
+        if ref not in aggregate['source_refs']:
+            aggregate['source_refs'].append(ref)
     # Never commit observations after a cooperative run deadline expired.
     _deadline(reader)
     committed, conflicts, errors = [], [], []
@@ -613,7 +764,9 @@ def verify(workspace, *, limit=100, timeout=120, live=False, reader=None):
                         or rid in ledger_ids or key in ledger_keys):
                     conflicts.append(rid); continue
                 row = found[0]
-                row['posting_verification'] = observation
+                row['verification_attempt'] = observation
+                if observation['signal'] != 'NONE':
+                    row['posting_verification'] = copy.deepcopy(observation)
                 row['verification_event_pending'] = {'event_id': observation['observation_id'],
                                                      'event_type': 'verification_attempt', 'role_id': rid,
                                                      'source': 'public-board-verifier', 'details': observation}
@@ -621,6 +774,10 @@ def verify(workspace, *, limit=100, timeout=120, live=False, reader=None):
             for path, ids in grouped.items():
                 try:
                     _deadline(reader)
+                    # Rich attempt evidence must never create a queue that
+                    # the bounded JSON reader can no longer reopen.
+                    if len(canonical(current_documents[path])) > MAX_JSON_BYTES:
+                        raise OSError('verification queue exceeds JSON read budget')
                     atomic_json(path, current_documents[path])
                     committed.extend(ids)
                     # Observed verdicts include conflicts and failed writes.
@@ -635,12 +792,23 @@ def verify(workspace, *, limit=100, timeout=120, live=False, reader=None):
         flush = initial_flush
     report = {'schema_version': 1, 'run_id': run_id, 'observed_at': now.isoformat(), 'dry_run': not live,
               'selected': len(chosen), 'deferred_by_limit': overflow, 'skipped': dict(skipped),
+              'candidate_diagnostics': {'queue_rows': len(selected), 'scannable': len(eligible),
+                                        'selected': len(chosen), 'unscannable': sum(skipped.values()),
+                                        'scannable_at_main_floor': scan_fit['scannable_at_main_floor'],
+                                        'scannable_below_main_floor': scan_fit['scannable_below_main_floor'],
+                                        'unknown_fit': scan_fit['unknown_fit'], 'main_fit_floor': 75,
+                                        'promoted_supply_claimed': False},
               'observed': len(observations), 'deferred_without_attempt': dict(deferred),
               'selected_boards': len(boards), 'board_reads': board_reads,
               'verdicts': dict(Counter(o['verdict'] for _, _, o in observations)),
               'committed': len(committed), 'committed_verdicts': dict(committed_verdicts),
               'concurrent_conflicts': conflicts, 'write_errors': errors,
               'requests': reader.requests, 'telemetry': flush, 'rate_limit_hold': reader.stopped,
+              'signals': dict(Counter(o['signal'] for _, _, o in observations)),
+              'transport_classes': dict(Counter(o['transport_class'] for _, _, o in observations)),
+              'transport_cohorts': list(transport_cohorts.values()),
+              'transport_storm_threshold_policy': 'owner_decision_required; no quarantine or provider hold inferred',
+              'request_attempts': copy.deepcopy(getattr(reader, 'request_attempts', [])),
               'request_count_scope': 'bounded_reader_dispatches',
               'promoted_to_ready': 0, 'submission_authorized': False,
               'observation_scope': 'posting_presence_only; form, eligibility and human approval remain separate'}
@@ -709,7 +877,7 @@ def flush_outbox(workspace, logger=None):
 
 
 def supply_report(workspace):
-    with queue_lock(timeout=10, owner='supply:read'):
+    with queue_lock(timeout=10, owner='supply:read', recover=False):
         documents, ledger = _documents(workspace)
         all_rows = _all_rows(documents)
     indexed, identities, posting_counts = _identity_index(all_rows)
@@ -729,9 +897,7 @@ def supply_report(workspace):
             counts['missing_exact_posting_identity'] += 1
         elif posting_counts[key] != 1:
             counts['identity_conflict'] += 1
-        elif (_observation_matches(row, key)
-              and row['posting_verification'].get('verdict') == 'live'
-              and fresh(row['posting_verification'].get('observed_at'), 3600)):
+        elif posting_is_current(row, key, now=now):
             counts['posting_verified_form_and_approval_separate'] += 1
         elif (next_time := _next_time(row, key)) == 'invalid':
             counts['invalid_cooldown'] += 1
@@ -785,12 +951,13 @@ def prepare_role(workspace, role_id, resume, *, _offline_fixture=False):
         posting = _key(row)
         if posting is None or sum(_key(other) == posting for _, other in _all_rows(documents)) != 1:
             raise ValueError('posting identity missing or duplicated across queues')
-        if any(_key(other) == posting and str(other.get('status', '')).upper() in FINAL_OR_ACTIVE for other in ledger):
-            raise ValueError('posting has an active or terminal ledger outcome')
+        ledger_ids, ledger_keys = _terminal_ledger_index(ledger)
+        if role_id in ledger_ids or posting in ledger_keys:
+            raise ValueError('role or exact posting has an active or terminal ledger outcome')
         if _held(row):
             raise ValueError('role has an active, terminal or explicit hold state')
         observation = row.get('posting_verification') or {}
-        if observation.get('verdict') != 'live' or not fresh(observation.get('observed_at'), 3600):
+        if not posting_is_current(row, posting):
             raise ValueError('fresh exact posting verification required; run verify --live')
         if observation.get('identity') != list(_key(row) or []):
             raise ValueError('posting identity changed since verification')
@@ -823,9 +990,15 @@ def prepare_role(workspace, role_id, resume, *, _offline_fixture=False):
         atomic_json(Path(packet_path), packet)
         with queue_lock(timeout=10, owner='prepare-role:validate'):
             documents, ledger = _documents(workspace)
-            matches = [row for _, row in _all_rows(documents) if row.get('role_id') == role_id]
-            if len(matches) != 1 or matches[0] != selected or any(row.get('role_id') == role_id and str(row.get('status', '')).upper() in FINAL_OR_ACTIVE for row in ledger):
+            current_rows = _all_rows(documents)
+            matches = [row for _, row in current_rows if row.get('role_id') == role_id]
+            ledger_ids, ledger_keys = _terminal_ledger_index(ledger)
+            if (len(matches) != 1 or matches[0] != selected
+                    or sum(_key(row) == posting for _, row in current_rows) != 1
+                    or role_id in ledger_ids or posting in ledger_keys):
                 raise ValueError('role or ledger changed during preparation')
+            if not posting_is_current(matches[0], posting):
+                raise ValueError('posting verification expired during preparation')
             packet = read_json(packet_path)
             packet_contract.validate(packet, matches[0], apply_loop.load_answer_bank(), apply_loop.load_policy(),
                                      str(workspace), apply_loop._materials_for(matches[0], 'standard'))

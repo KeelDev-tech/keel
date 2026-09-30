@@ -29,7 +29,8 @@
         "productivity-advice",
         "qresolve",
         "qresolve-recover",
-        "qresolve-approve"
+        "qresolve-approve",
+        "pipeline-doctor"
       ],
       "responsibility": "Applicant truth, scope and release decisions; resolve conflicts using evidence."
     },
@@ -47,7 +48,8 @@
         "receipt-review",
         "productivity-trial",
         "host-preflight",
-        "productivity-advice"
+        "productivity-advice",
+        "pipeline-doctor"
       ],
       "responsibility": "Source identity, freshness, deduplication and permitted public reads; no claims of submission."
     },
@@ -64,7 +66,8 @@
         "productivity-compare",
         "receipt-review",
         "host-preflight",
-        "productivity-advice"
+        "productivity-advice",
+        "pipeline-doctor"
       ],
       "responsibility": "Materials and question coverage; no answer invention or legal commitments."
     },
@@ -80,7 +83,8 @@
         "productivity-compare",
         "receipt-review",
         "host-preflight",
-        "productivity-advice"
+        "productivity-advice",
+        "pipeline-doctor"
       ],
       "responsibility": "Distinguish claims, correlation and verification; require a trusted receipt adapter for verified outcomes."
     },
@@ -95,7 +99,8 @@
         "productivity-compare",
         "receipt-review",
         "host-preflight",
-        "productivity-advice"
+        "productivity-advice",
+        "pipeline-doctor"
       ],
       "responsibility": "Adversarial cases, reproducibility, concurrency, recovery and source-bound test evidence."
     },
@@ -110,7 +115,8 @@
         "productivity-compare",
         "receipt-review",
         "host-preflight",
-        "productivity-advice"
+        "productivity-advice",
+        "pipeline-doctor"
       ],
       "responsibility": "Review network, file, credential and authority boundaries; test bypass attempts."
     },
@@ -125,7 +131,8 @@
         "productivity-compare",
         "receipt-review",
         "host-preflight",
-        "productivity-advice"
+        "productivity-advice",
+        "pipeline-doctor"
       ],
       "responsibility": "Clear next actions, honest empty/error states, keyboard and small-screen use."
     },
@@ -141,7 +148,8 @@
         "productivity-compare",
         "receipt-review",
         "host-preflight",
-        "productivity-advice"
+        "productivity-advice",
+        "pipeline-doctor"
       ],
       "responsibility": "State invariants, recoverability, bounded work and truthful observability."
     }

@@ -114,85 +114,105 @@ is reported instead of invented, an unverifiable posting parks, and a
 submission counts only on explicit confirmation. Run it yourself:
 `python3 demo/honesty_gates_demo.py`. See also [demo/](demo/).*
 
-## Quick start (~5 minutes)
+## Quick start
 
-From the [v0.2.0 release](https://github.com/KeelDev-tech/keel/releases/tag/v0.2.0) zip — or a clone
-(`git clone https://github.com/KeelDev-tech/keel && cd keel`):
+This repository is the portable preparation and public-board verification
+layer. It does not contain the running Muse workspace, its private queue state,
+or a submission executor. A clean local run validates this copy; it does not
+prove that the production supply bottleneck has been repaired. Use the
+[recovery guide](docs/PIPELINE_RECOVERY.md) to distinguish those states.
 
-```bash
-./setup.sh          # "Make it mine" — personalizes your working copy
-                    # (non-interactive shells skip the prompts; edit data/
-                    #  with YOUR truth afterward)
-# edit data/applicant_profile.json and data/answer_bank.json with YOUR truth
-./start.sh          # status overview
-```
+Requirements: **Python 3.11+ on Linux or WSL**, Bash for the convenience scripts,
+and the Python standard library for the local core. Linux/Python 3.12 is the
+previously qualified profile. macOS remains unqualified; native Windows lacks
+required POSIX file operations. Browser qualification and PDF generation have
+separate optional dependencies; no paid service is needed for the core.
 
-Then (run from the workspace root):
-
-```bash
-KEEL_HOME=$PWD python3 engines/score_roles.py --in sample_data/discovered_roles.example.json --out data/scored.json
-python3 -m unittest discover -s tests                 # run the test suite
-```
-
-To watch the full loop end-to-end on demo data, seed one scored lead into
-the queue and build its launch packet. (The sample roles score SKIP under
-the template rubric — its lane weights are yours to fill — so the demo
-forces the top-scoring one to READY/APPLY with a placeholder resume, purely
-to show the packet mechanics. `apply_loop` makes read-only HTTP
-liveness/form-intel probes as documented.)
+From a clone (`git clone https://github.com/KeelDev-tech/keel && cd keel`) or a
+freshly extracted source candidate:
 
 ```bash
-KEEL_HOME=$PWD python3 - <<'EOF'
-import json, os
-home = os.environ["KEEL_HOME"]
-scored = json.load(open(f"{home}/data/scored.json"))
-rows = scored if isinstance(scored, list) else scored.get("entries", [])
-lead = max(rows, key=lambda r: r.get("fit_score", 0))
-lead["status"] = "READY"          # demo override: scoring said SKIP
-lead["action_band"] = "APPLY"     # demo override
-os.makedirs(f"{home}/data/resumes", exist_ok=True)
-open(f"{home}/data/resumes/demo-resume.pdf", "w").write("demo placeholder")
-lead["materials"] = {"resume": "data/resumes/demo-resume.pdf"}
-json.dump({"entries": [lead]},
-          open(f"{home}/data/queues/standard-queue.json", "w"), indent=2)
-print("seeded", lead["role_id"])
-EOF
-KEEL_HOME=$PWD python3 engines/apply_loop.py          # build one launch packet
-KEEL_HOME=$PWD python3 engines/build_dashboard.py    # render the dashboard
+python3 --version
+export KEEL_HOME="$HOME/keel-workspace"
+./setup.sh                  # create missing files; preserve existing data
+./start.sh                  # offline doctor, supply, and conversion reports
 ```
 
-`data/launch-packets/<role_id>.json` is the finished product: verified form
-values, banded rules, hard gates, and the EXECUTOR CONTRACT your own
-submission layer (browser automation, ATS APIs, or manual review) runs
-behind. The dashboard renders at `dashboard/dashboard.html`.
+On a new workspace, `start.sh` returns exit code **1** because applicant
+assertions are unknown. This is the expected fail-closed result. Example
+identity, qualifications, policy commitments, and consent are not banked as
+truth. Record your own values (omit `--value` to read from stdin):
 
-Requirements: Python 3.10+ — stdlib only, no dependencies to install.
-CI runs the same suite on 3.10 / 3.11 / 3.12
-([ci.yml](.github/workflows/ci.yml)).
+```bash
+python3 keel.py --home "$KEEL_HOME" confirm-answer --key first_name --source "applicant assertion"
+python3 keel.py --home "$KEEL_HOME" confirm-answer --key last_name --source "applicant assertion"
+python3 keel.py --home "$KEEL_HOME" confirm-answer --key email --source "applicant assertion"
+python3 keel.py --home "$KEEL_HOME" doctor --capabilities
+```
+
+Fill the workspace's `data/applicant_profile.json` and `data/policy.json` with
+your actual history and boundaries, and place real materials in `data/resumes/`.
+A successful doctor means local preparation inputs pass its checks; it is not
+proof of a live posting, complete form, READY admission, or permission to submit.
+
+For an offline walkthrough, use a new directory separate from your real data:
+
+```bash
+KEEL_DEMO_PARENT="$(mktemp -d)"
+python3 -S keel.py --home "$KEEL_DEMO_PARENT/demo" demo
+```
+
+The demo ingests three synthetic postings, checks exact posting presence in one
+board read, deduplicates replay, and builds a review packet with
+`execution_authorized: false`. It makes zero external network requests. The
+demo directory must not already exist; synthetic data cannot be used for live
+verification. It never forces a scored SKIP lead into READY.
+
+For a real source, register the exact employer board token before discovery.
+Inspect command arguments with `python3 keel.py source-add --help`, then read
+[docs/PIPELINE_RECOVERY.md](docs/PIPELINE_RECOVERY.md) before running bounded
+network checks. Verification observes posting presence; readiness and human
+questions have their own gates.
+
+To produce a clean, reproducible source candidate:
+
+```bash
+python3 tools/package.py --out /tmp/keel-source-candidate.zip
+python3 tools/package.py --verify /tmp/keel-source-candidate.zip
+python3 -m unittest discover -s tests -p test_release_profile.py
+```
+
+The output path must not exist. The explicit `release-files.json` allowlist
+excludes live applicant data, historical backups, generated audit outputs,
+credentials, and old distribution ZIPs. The extracted candidate includes
+[the recovery guide](docs/PIPELINE_RECOVERY.md) and
+[the profile's capability limits](docs/RELEASE_PROFILE.md). Per-file hashes
+check integrity; they do not authenticate the sender or establish deployment.
+
+The runtime is standard library only. Broader development suites require the
+free tools in `requirements-dev.txt`; CI currently runs on Python 3.11 and 3.12.
+The [recovery workflow](.github/workflows/recovery-profile.yml) checks the new
+queue, verification, readiness, task-liveness, and staged-admission regressions,
+then verifies the extracted profile and source package. A workflow file is
+validation configuration, not evidence of a completed CI run.
 
 ## Troubleshooting
 
-Fresh-clone failure modes, from experience:
-
-- **`./setup.sh` or `./start.sh` fails on a fresh clone.** Run from the
-  repo root (`cd keel` first) with Python 3.10+ on `PATH`
-  (`python3 --version`). The scripts assume the working-tree layout and
-  won't work from inside `engines/`.
-- **The smoke suite fails.** Run `python3 -m unittest discover -s tests`
-  from the repo root — the same command CI runs on 3.10 / 3.11 / 3.12.
-  One red test names its module and line; read the engine's docstring
-  contract before changing production code, since a new test can encode
-  a superseded contract while the engine is right.
-- **A module crashes on import with `ModuleNotFoundError`.** Tracked code
-  must run from a clean clone with stdlib only (no pip installs). Engines
-  must never `sys.path.insert` an absolute private-machine path at import
-  time, and must degrade gracefully when a git-ignored helper is absent
-  (e.g. `build_dashboard.py` once broke on clean clones because
-  `engines/safe_io.py` was missing).
-- **The dashboard shows "Unknown" counts.** `build_dashboard.py` renders
-  "Unknown" — never a healthy zero — when a source file is missing or
-  malformed. Check `data/application-ledger.json`, `data/queues/`, and
-  the warning banner at the top of the page.
+- **`./start.sh` returns 1 after initialization.** Inspect the doctor output.
+  Fresh workspaces need explicit applicant assertions; missing values are not
+  replaced with examples. A malformed or missing required file stays visible.
+- **A command is inspecting the wrong workspace.** Pass `--home` to `keel.py`,
+  or an explicit workspace argument to `setup.sh`/`start.sh`. `KEEL_HOME` is
+  honored by both wrappers. Keep one canonical workspace and record its path.
+- **A module crashes on import.** Verify the source candidate and run the
+  extracted-profile check above. The local profile must work under `python3 -S`
+  without private-machine imports or installed packages.
+- **The dashboard shows "Unknown" counts.** Inspect the warning banner and
+  required source files. Unknown or malformed input is not healthy zero supply.
+- **Verification succeeds but READY stays empty.** Posting presence is one
+  requirement. Inspect fit, identity, materials, form extraction, actual human
+  questions, transport holds, and current readiness gates using the recovery
+  guide. Do not rewrite status labels to bypass those requirements.
 
 ## The honest-automation contract
 

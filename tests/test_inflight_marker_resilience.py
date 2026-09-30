@@ -86,10 +86,19 @@ def claim_iso(tmp_path, monkeypatch):
     store_dir = tmp_path / "intents"
     store_dir.mkdir()
     submit_intent.set_store_dir(str(store_dir))
+    monkeypatch.setattr(im, "HOME", str(tmp_path))
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / "employer-blocklist.md").write_text("# Blocked employers\n")
+    ledger = data / "application-ledger.json"
+    ledger.write_text("[]")
+    monkeypatch.setattr(launch_lock, "LEDGER_PATH", str(ledger))
     qdir = tmp_path / "queues"
     qdir.mkdir()
     qfile = qdir / "standard-queue.json"
-    qfile.write_text(json.dumps([{"role_id": "R-1", "status": "READY"}]))
+    qfile.write_text(json.dumps([{"role_id": "R-1", "status": "READY",
+                                 "company": "Fixture Company", "title": "Fixture Role",
+                                 "fit_score": 80, "action_band": "APPLY"}]))
     im.set_queue_paths({"standard": str(qfile)})
     yield tmp_path
     im.set_queue_paths(None)
@@ -119,3 +128,130 @@ def test_claim_success_keeps_placeholder_and_marks(claim_iso):
     qfile = claim_iso / "queues" / "standard-queue.json"
     entry = json.loads(qfile.read_text())[0]
     assert entry["status"] == "IN-FLIGHT"
+
+
+def test_claim_preserves_leads_envelope_metadata(claim_iso):
+    qfile = claim_iso / "queues" / "standard-queue.json"
+    entry = json.loads(qfile.read_text())[0]
+    qfile.write_text(json.dumps({"leads": [entry], "revision": 7}))
+    result = im.mark_inflight("R-1", owner="test")
+    assert result["ok"]
+    saved = json.loads(qfile.read_text())
+    assert saved["revision"] == 7
+    assert saved["leads"][0]["status"] == "IN-FLIGHT"
+
+
+@pytest.mark.parametrize("home", ["needs_input", "rejected"])
+def test_fresh_ready_in_non_admission_queue_is_refused(claim_iso, home):
+    qfile = claim_iso / "queues" / "standard-queue.json"
+    im.set_queue_paths({home: str(qfile)})
+    before = qfile.read_bytes()
+    result = im.mark_inflight("R-1", owner="test")
+    assert result["ok"] is False
+    assert result["reason_codes"] == ["non_admission_queue"]
+    assert qfile.read_bytes() == before
+    assert launch_lock.check("R-1") is None
+
+
+def test_rejected_duplicate_blocks_fresh_claim(claim_iso):
+    qfile = claim_iso / "queues" / "standard-queue.json"
+    rejected = claim_iso / "queues" / "rejected-queue.json"
+    rejected.write_text('[{"role_id":"R-1","status":"REJECTED"}]')
+    im.set_queue_paths({"standard": str(qfile), "rejected": str(rejected)})
+    before = qfile.read_bytes(), rejected.read_bytes()
+    result = im.mark_inflight("R-1", owner="test")
+    assert result["ok"] is False
+    assert "multiple queues" in result["reason"]
+    assert (qfile.read_bytes(), rejected.read_bytes()) == before
+    assert launch_lock.check("R-1") is None
+    assert "rejected" in im.QUEUES
+
+
+@pytest.mark.parametrize("missing_or_corrupt", ["missing", "{bad-json", '{"entries":[],"leads":[]}'])
+def test_unknown_other_queue_blocks_fresh_claim(claim_iso, missing_or_corrupt):
+    qfile = claim_iso / "queues" / "standard-queue.json"
+    rejected = claim_iso / "queues" / "rejected-queue.json"
+    if missing_or_corrupt != "missing":
+        rejected.write_text(missing_or_corrupt)
+    im.set_queue_paths({"standard": str(qfile), "rejected": str(rejected)})
+    before = qfile.read_bytes()
+    result = im.mark_inflight("R-1", owner="test")
+    assert result["ok"] is False
+    assert qfile.read_bytes() == before
+    assert launch_lock.check("R-1") is None
+
+
+@pytest.mark.parametrize("status", sorted(im.ready_gate.LEDGER_HOLD_STATES))
+def test_ledger_holds_refuse_without_company_title_arguments(claim_iso, status):
+    ledger = claim_iso / "data" / "application-ledger.json"
+    ledger.write_text(json.dumps([{"role_id": "R-1", "status": status}]))
+    qfile = claim_iso / "queues" / "standard-queue.json"
+    before = qfile.read_bytes()
+    result = im.mark_inflight("R-1", owner="test")
+    assert result["ok"] is False
+    assert result["reason_codes"] == ["ledger_hold"]
+    assert qfile.read_bytes() == before
+    assert launch_lock.check("R-1") is None
+
+
+@pytest.mark.parametrize("kind", ["posting", "employer_role"])
+def test_ledger_twin_identity_blocks_fresh_claim(claim_iso, kind):
+    qfile = claim_iso / "queues" / "standard-queue.json"
+    entry = json.loads(qfile.read_text())[0]
+    entry["ats_url"] = "https://jobs.lever.co/fixture/01234567-89ab-cdef-0123-456789abcdef"
+    qfile.write_text(json.dumps([entry]))
+    twin = {"role_id": "different-role", "status": "UNKNOWN_OUTCOME"}
+    if kind == "posting":
+        twin["ats_url"] = entry["ats_url"]
+    else:
+        twin.update(company=entry["company"], title=entry["title"])
+    (claim_iso / "data/application-ledger.json").write_text(json.dumps([twin]))
+    before = qfile.read_bytes()
+    result = im.mark_inflight("R-1")
+    assert result["ok"] is False
+    assert result["reason_codes"] == ["ledger_hold"]
+    assert qfile.read_bytes() == before
+    assert launch_lock.check("R-1") is None
+
+
+@pytest.mark.parametrize("bad", [None, "broken json", '{}', '["not a row"]'])
+def test_unreadable_or_missing_ledger_is_an_unknown_hold(claim_iso, bad):
+    ledger = claim_iso / "data/application-ledger.json"
+    if bad is None:
+        ledger.unlink()
+    else:
+        ledger.write_text(bad)
+    qfile = claim_iso / "queues" / "standard-queue.json"
+    before = qfile.read_bytes()
+    result = im.mark_inflight("R-1")
+    assert result["ok"] is False
+    assert result["reason_codes"] == ["ledger_unconfirmed"]
+    assert qfile.read_bytes() == before
+    assert launch_lock.check("R-1") is None
+
+
+@pytest.mark.parametrize("updates,code", [
+    ({"fit_score": 60}, "below_fit_floor"),
+    ({"d1_office_exclusion": True}, "explicit_hold:d1_office_exclusion"),
+    ({"unresolved": ["applicant essay"]}, "unanswered_questions:unresolved"),
+    ({"action_band": "PARKED"}, "not_apply_band"),
+])
+def test_direct_claim_cannot_bypass_static_ready_gate(claim_iso, updates, code):
+    qfile = claim_iso / "queues" / "standard-queue.json"
+    rows = json.loads(qfile.read_text())
+    rows[0].update(updates)
+    qfile.write_text(json.dumps(rows))
+    before = qfile.read_bytes()
+    result = im.mark_inflight("R-1")
+    assert result["ok"] is False
+    assert code in result["reason_codes"]
+    assert qfile.read_bytes() == before
+    assert launch_lock.check("R-1") is None
+
+
+def test_blocklist_is_mandatory_at_fresh_claim_boundary(claim_iso):
+    (claim_iso / "data/employer-blocklist.md").write_text("# Blocked employers\n- Fixture Company\n")
+    result = im.mark_inflight("R-1")
+    assert result["ok"] is False
+    assert "blocklisted_employer" in result["reason_codes"]
+    assert launch_lock.check("R-1") is None

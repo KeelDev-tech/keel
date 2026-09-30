@@ -741,65 +741,66 @@ def park_lead(role_id, reasons, queue_dir=None, backup=True,
     strat_path = os.path.join(qdir, "strategic-queue.json")
     ni_path = os.path.join(qdir, "needs_input-queue.json")
 
-    std_leads = _load_queue(std_path)
-    strat_leads = _load_queue(strat_path)
-    ni_leads = _load_queue(ni_path)
-
-    owner = None
-    owner_leads = None
-    for name, leads in (("standard-queue.json", std_leads),
-                        ("strategic-queue.json", strat_leads)):
-        hit = [l for l in leads if l.get("role_id") == role_id]
-        if hit:
-            if owner is not None:
-                # Cross-queue duplicate role_id: fail closed — never move a
-                # lead while its identity is ambiguous.
-                return {"ok": False,
-                        "error": f"{role_id} found in both "
-                                 f"{owner} and {name}; refusing to move"}
-            owner, owner_leads, lead = name, leads, hit[0]
-    if owner is None:
-        return {"ok": False,
-                "error": f"{role_id} not found in standard- or "
-                         f"strategic-queue.json"}
+    import queue_io
 
     ts = datetime.now(PDT).strftime("%Y%m%d-%H%M%S")
     ts_short = datetime.now(PDT).strftime("%Y-%m-%d %H:%M PDT")
-
-    if backup:
-        bdir = os.path.join(qdir, f"_backup-{ts}-prescreen")
-        os.makedirs(bdir, exist_ok=True)
-        owner_path = std_path if owner == "standard-queue.json" else strat_path
-        for src in (owner_path, ni_path):
-            if os.path.exists(src):
-                shutil.copy(src, os.path.join(bdir, os.path.basename(src)))
-
+    reasons = list(reasons)
     reason_text = "; ".join(reasons)
-    # Overwrite -- never append to -- stale text like "posting confirmed live...
-    # promoted READY", which would make verify_retry resurrect this lead.
-    lead["status"] = "PARKED-NEEDS-INPUT"
-    lead["status_reason"] = (
-        f"prescreen.py {ts_short}: parked, needs applicant input. {reason_text}"
-    )
-    lead["unresolved"] = list(reasons)
-    lead["gate_note"] = reason_text
-    lead["queue_notes"] = (
-        (lead.get("queue_notes") or "")
-        + (f" | prescreen {ts}: parked awaiting applicant input"
-           if lead.get("queue_notes") else
-           f"prescreen {ts}: parked awaiting applicant input")
-    )
-    lead["status_updated"] = ts_short
-    if never_auto_submit_keys:
-        cleaned = sorted({k for k in never_auto_submit_keys if k})
-        if cleaned:
-            lead["never_auto_submit_attestation"] = cleaned
 
-    owner_leads = [l for l in owner_leads if l.get("role_id") != role_id]
-    ni_leads.append(lead)
-    owner_path = std_path if owner == "standard-queue.json" else strat_path
-    _save_queue(owner_path, owner_leads)
-    _save_queue(ni_path, ni_leads)
+    def mutate(lead):
+        # Replace stale promotion text so verification cannot resurrect a
+        # lead while an applicant-owned question remains unresolved.
+        lead["status"] = "PARKED-NEEDS-INPUT"
+        lead["status_reason"] = (
+            f"prescreen.py {ts_short}: parked, needs applicant input. {reason_text}")
+        lead["unresolved"] = reasons
+        lead["gate_note"] = reason_text
+        previous = queue_io.notes_text(lead)
+        lead["queue_notes"] = ((previous + " | ") if previous else "") + (
+            f"prescreen {ts}: parked awaiting applicant input")
+        lead["status_updated"] = ts_short
+        if never_auto_submit_keys:
+            cleaned = sorted({key for key in never_auto_submit_keys if key})
+            if cleaned:
+                lead["never_auto_submit_attestation"] = cleaned
+        return lead
+
+    with queue_io.queue_lock(owner=f"prescreen:park:{role_id}"):
+        snapshots = {path: queue_io.read_snapshot(path)
+                     for path in (std_path, strat_path, ni_path)}
+        owner_path = None
+        for path in (std_path, strat_path):
+            payload = snapshots[path]
+            rows = queue_io.queue_entries([] if payload is None else payload)
+            matches = [row for row in rows if row.get("role_id") == role_id]
+            if len(matches) > 1 or (matches and owner_path is not None):
+                return {"ok": False,
+                        "error": f"{role_id} found in duplicate queue homes; refusing to move"}
+            if matches:
+                owner_path = path
+        if owner_path is None:
+            return {"ok": False,
+                    "error": f"{role_id} not found in standard- or strategic-queue.json"}
+        owner = os.path.basename(owner_path)
+        # Validate the complete mutation before creating backup files.
+        rows = queue_io.queue_entries(snapshots[owner_path])
+        candidate = next(row for row in rows if row.get("role_id") == role_id)
+        import copy
+        queue_io.json_safe_copy(mutate(copy.deepcopy(candidate)))
+        if backup:
+            bdir = os.path.join(qdir, f"_backup-{ts}-prescreen")
+            os.makedirs(bdir, exist_ok=True)
+            for src in (owner_path, ni_path):
+                if os.path.exists(src):
+                    shutil.copy(src, os.path.join(bdir, os.path.basename(src)))
+        try:
+            moved = queue_io.move_entry_atomic(
+                role_id, owner_path, ni_path, mutate=mutate,
+                op_id=f"prescreen:{role_id}:{ts}", expected=snapshots)
+        except queue_io.QueueTransactionConflict as exc:
+            return {"ok": False, "error": str(exc)}
+        lead = moved["record"]
 
     # J-20260918-2130-gate-2313 (port of J-20260915-2140-gate-316): synthetic
     # test traffic never emits production gate events (see

@@ -44,10 +44,19 @@ critical section:
   - verify_retry apply phase (scan runs lock-free since 2026-09-16)
   - any ad-hoc lane script (use patch_entry() below or the __main__ CLI)
 
+Cross-file transactions (2026-09-29): commit_snapshot() pre-serializes every
+image, compares complete source snapshots, and durably journals PREPARED
+before replacing queue files. A new lock holder completes pending journals
+before exposing queue state. This gives recoverable transactions to cooperating
+lock users; separate file renames remain observable to lock-free readers.
+Read-only clients use queue_lock(recover=False) and refuse pending recovery.
+
 A writer that bypasses this helper can still clobber; see AGENTS.md lesson.
 """
 
 import contextlib
+import copy
+import hashlib
 import fcntl
 import json
 import os
@@ -55,7 +64,8 @@ import sys
 import tempfile
 import threading
 import time
-from datetime import datetime
+import uuid
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 _PDT = ZoneInfo("America/Los_Angeles")
@@ -204,7 +214,7 @@ _state = threading.local()
 
 
 @contextlib.contextmanager
-def queue_lock(timeout=None, owner=None):
+def queue_lock(timeout=None, owner=None, recover=True):
     """Exclusive, reentrant-in-process lock for queue file writes.
 
     timeout: waiter bound in seconds (default 120). On expiry raises
@@ -212,11 +222,16 @@ def queue_lock(timeout=None, owner=None):
         an unbounded hang. The reentrant fast path never blocks.
     owner: short diagnostic label for the holder (e.g. "verify_retry:apply",
         "apply_loop:claim"). Recorded in the lock meta + waits log.
+    recover: default True completes durable prepared transactions. False
+        refuses pending journals and skips metadata/log writes for read-only
+        clients (the lock file may still be created if missing).
     """
     if timeout is None:
         timeout = _LOCK_TIMEOUT_S
     depth = getattr(_state, "depth", 0)
     if depth:
+        if not recover:
+            _refuse_pending_transactions()
         _state.depth = depth + 1
         try:
             yield
@@ -233,7 +248,7 @@ def queue_lock(timeout=None, owner=None):
                 break
             except (BlockingIOError, OSError):
                 meta = _read_meta()
-                if _meta_is_stale(meta):
+                if recover and _meta_is_stale(meta):
                     # Dead holder: the kernel already released its flock;
                     # clear the ghost meta and retry immediately.
                     _clear_meta()
@@ -245,14 +260,23 @@ def queue_lock(timeout=None, owner=None):
                                            time.monotonic() - start, timeout)
                 time.sleep(_LOCK_POLL_S)
         wait_ms = (time.monotonic() - start) * 1000.0
-        _write_meta(owner)
-        _log_wait(wait_ms, owner, timeout)
+        if recover:
+            _write_meta(owner)
+            _log_wait(wait_ms, owner, timeout)
         _state.depth = 1
         try:
+            # A prepared cross-file transaction must complete before a
+            # cooperating reader or writer observes the queues.
+            if recover:
+                _state.recovered = _recover_transactions_locked()
+            else:
+                _refuse_pending_transactions()
+                _state.recovered = []
             yield
         finally:
             _state.depth = 0
-            _clear_meta()
+            if recover:
+                _clear_meta()
             try:
                 fcntl.flock(f, fcntl.LOCK_UN)
             except OSError:
@@ -342,7 +366,7 @@ def atomic_write_json(path, items):
     (~1.3% of the async-verify 60-leads/2.7min budget), so it is enabled
     globally rather than gated.
     """
-    payload = json.dumps(items, indent=1).encode("utf-8")
+    payload = _strict_json_bytes(items)
     parent = os.path.dirname(os.path.abspath(path))
     os.makedirs(parent, exist_ok=True)
     fd, tmp = tempfile.mkstemp(prefix=".queue-", dir=parent)
@@ -366,15 +390,353 @@ def patch_entry(path, role_id, fields):
     """
     found = False
     with queue_lock(owner=f"patch_entry:{role_id}"):
-        items = load_json(path)
+        payload = read_snapshot(path)
+        items = queue_entries([] if payload is None else payload)
         for e in items:
             if e.get("role_id") == role_id:
                 e.update(fields)
                 found = True
                 break
         if found:
-            atomic_write_json(path, items)
+            atomic_write_json(path, _replace_entries(payload, items))
     return found
+
+
+def notes_text(entry):
+    """queue_notes as display text — normalizes str-vs-list shape."""
+    n = (entry or {}).get("queue_notes")
+    if isinstance(n, list):
+        return " | ".join(str(x) for x in n if x)
+    return str(n or "")
+
+
+class QueueRecoveryRequired(RuntimeError):
+    """A read-only snapshot was refused because a transaction needs recovery."""
+
+
+class QueueTransactionConflict(RuntimeError):
+    """A snapshot or recovery image conflicts with current durable content."""
+
+
+def _strict_json_bytes(value):
+    """Encode before any filesystem change; never stringify unknown types."""
+    def validate(item):
+        if isinstance(item, dict):
+            if any(not isinstance(key, str) for key in item):
+                raise TypeError("JSON object keys must be strings")
+            for child in item.values():
+                validate(child)
+        elif isinstance(item, (list, tuple)):
+            for child in item:
+                validate(child)
+    validate(value)
+    return json.dumps(value, indent=1, allow_nan=False).encode("utf-8")
+
+
+def json_safe_copy(value):
+    """Detached strict-JSON value; date/datetime become ISO 8601 strings.
+
+    Sets and arbitrary objects are refused: their string representation is
+    not evidence, and choosing an ordering would invent queue semantics.
+    """
+    def convert(item):
+        if isinstance(item, (date, datetime)):
+            return item.isoformat()
+        if isinstance(item, dict):
+            return {key: convert(child) for key, child in item.items()}
+        if isinstance(item, (list, tuple)):
+            return [convert(child) for child in item]
+        return item
+    return strict_loads(_strict_json_bytes(convert(value)))
+
+
+def read_snapshot(path):
+    """Read the complete JSON envelope. Missing files return None.
+
+    Hold queue_lock() across all reads when a consistent multi-file view
+    is required. Individual atomic renames do not make lock-free readers
+    atomic across files; a process can die between the two renames.
+    """
+    try:
+        with open(path, "rb") as stream:
+            return strict_loads(stream.read())
+    except FileNotFoundError:
+        return None
+
+
+def queue_entries(payload):
+    """Get queue records without dropping metadata or guessing bad shapes."""
+    if isinstance(payload, list):
+        entries = payload
+    elif isinstance(payload, dict):
+        keys = [key for key in ("entries", "items", "leads") if key in payload]
+        if len(keys) != 1 or not isinstance(payload[keys[0]], list):
+            raise ValueError("queue envelope must have exactly one record list")
+        entries = payload[keys[0]]
+    else:
+        raise ValueError("queue must be a list or an envelope with records")
+    if any(not isinstance(entry, dict) for entry in entries):
+        raise ValueError("queue records must be JSON objects")
+    return entries
+
+
+def _replace_entries(payload, entries):
+    if isinstance(payload, list):
+        return entries
+    result = copy.deepcopy(payload)
+    for key in ("entries", "items", "leads"):
+        if key in result:
+            result[key] = entries
+            return result
+    raise ValueError("queue envelope has no record list")
+
+
+def _snapshot_digest(value):
+    # Type-sensitive canonical comparison: 1, 1.0 and True are not equal.
+    encoded = json.dumps(value, sort_keys=True, allow_nan=False,
+                         separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _transaction_dir():
+    return os.path.abspath(_LOCK_PATH) + ".transactions"
+
+
+def _refuse_pending_transactions():
+    directory = _transaction_dir()
+    if os.path.isdir(directory) and any(name.endswith(".json")
+                                       for name in os.listdir(directory)):
+        raise QueueRecoveryRequired("queue transaction recovery required before a consistent read")
+
+
+def read_snapshot_checked(path):
+    """Read without recovery or writes; refuse unresolved transactions.
+
+    For coherent reads across multiple files, hold queue_lock(recover=False)
+    while reading every snapshot. This helper alone is a single-file read.
+    """
+    _refuse_pending_transactions()
+    value = read_snapshot(path)
+    _refuse_pending_transactions()
+    return value
+
+
+def _transaction_step(step, journal):
+    """Fault-injection seam: production intentionally performs no action."""
+
+
+def _unlink_durable(path):
+    os.unlink(path)
+    _dir_fsync(os.path.dirname(path))
+
+
+def _validate_journal(journal):
+    if (not isinstance(journal, dict) or type(journal.get("version")) is not int
+            or journal["version"] != 1
+            or journal.get("state") not in ("PREPARED", "COMMITTED")
+            or not isinstance(journal.get("op_id"), str) or not journal["op_id"]
+            or journal.get("lock_path") != os.path.abspath(_LOCK_PATH)
+            or not isinstance(journal.get("changes"), list)
+            or not journal["changes"]):
+        raise QueueTransactionConflict("invalid queue transaction journal")
+    seen = set()
+    for row in journal["changes"]:
+        if not isinstance(row, dict):
+            raise QueueTransactionConflict("invalid queue transaction row")
+        path = row.get("path")
+        if (not isinstance(path, str) or not os.path.isabs(path)
+                or path != os.path.realpath(path) or path in seen
+                or not isinstance(row.get("before_exists"), bool)):
+            raise QueueTransactionConflict("invalid queue transaction path")
+        seen.add(path)
+        if not row["before_exists"] and row.get("before") is not None:
+            raise QueueTransactionConflict("absent queue has a nonempty before image")
+        for image in ("before", "after"):
+            if image not in row or row.get(image + "_digest") != _snapshot_digest(row[image]):
+                raise QueueTransactionConflict("corrupt queue transaction image")
+
+
+def _recover_transactions_locked():
+    """Roll prepared transactions forward before releasing the queue lock.
+
+    Never overwrite an unrecognized image. A bypass writer or a damaged
+    journal requires explicit adjudication rather than a guessed repair.
+    """
+    directory = _transaction_dir()
+    if not os.path.isdir(directory):
+        return []
+    recovered = []
+    for name in sorted(os.listdir(directory)):
+        if not name.endswith(".json"):
+            continue
+        path = os.path.join(directory, name)
+        if os.path.islink(path):
+            raise QueueTransactionConflict("queue journal must not be a symlink")
+        journal = read_snapshot(path)
+        _validate_journal(journal)
+        # Check every image before changing any file during recovery.
+        pending = []
+        for row in journal["changes"]:
+            exists = os.path.exists(row["path"])
+            current = read_snapshot(row["path"])
+            digest = _snapshot_digest(current)
+            is_after = exists and digest == row["after_digest"]
+            is_before = (exists == row["before_exists"]
+                         and digest == row["before_digest"])
+            if journal["state"] == "COMMITTED" and not is_after:
+                raise QueueTransactionConflict(
+                    "committed queue transaction changed before cleanup: " + row["path"])
+            if not is_after and not is_before:
+                raise QueueTransactionConflict(
+                    "queue recovery conflicts with current content: " + row["path"])
+            if not is_after:
+                pending.append(row)
+        for row in pending:
+            atomic_write_json(row["path"], row["after"])
+        for row in journal["changes"]:
+            if (not os.path.exists(row["path"])
+                    or _snapshot_digest(read_snapshot(row["path"])) != row["after_digest"]):
+                raise QueueTransactionConflict("queue recovery read-back failed")
+        if journal["state"] == "PREPARED":
+            journal["state"] = "COMMITTED"
+            atomic_write_json(path, journal)
+        _unlink_durable(path)
+        recovered.append(journal["op_id"])
+    return recovered
+
+
+def recover_transactions():
+    """Recover all prepared moves under the same lock used by queue writers."""
+    with queue_lock(owner="queue_io:recover"):
+        return list(getattr(_state, "recovered", [])) + _recover_transactions_locked()
+
+
+def commit_snapshot(changes, expected, op_id=None):
+    """Durable, recoverable multi-file compare-and-set commit.
+
+    All changed payloads are serialized before even acquiring the lock.
+    Every expected snapshot (including read-only dependencies) is checked
+    as a complete envelope under the lock, before PREPARED is durable.
+    After PREPARED, any crash/failure is rolled forward on the next lock
+    acquisition. Success requires read-back of every after-image.
+
+    This is transactional for cooperating lock users. Lock-free readers
+    may see intermediate images and must not drive ownership decisions.
+    """
+    def normalize(mapping):
+        result = {}
+        for original, content in mapping.items():
+            original_path = os.path.abspath(os.fspath(original))
+            path = os.path.realpath(original_path)
+            if path in result:
+                raise ValueError("duplicate normalized queue path")
+            if os.path.islink(original_path):
+                raise ValueError("transaction queue paths must not be symlinks")
+            result[path] = strict_loads(_strict_json_bytes(content))
+        return result
+    prepared = normalize(changes)
+    snapshots = normalize(expected)
+    for path in prepared:
+        if path not in snapshots:
+            raise QueueTransactionConflict(
+                f"queue snapshot missing for {path}: every changed path must have an expected snapshot")
+    if not prepared:
+        return None
+    if op_id is None:
+        op_id = "queue-" + uuid.uuid4().hex
+    if not isinstance(op_id, str) or not op_id:
+        raise ValueError("queue transaction op_id must be a nonempty string")
+    with queue_lock(owner="queue_io:" + str(op_id)):
+        # A previous failed transaction may have been prepared in this
+        # same reentrant outer lock. Recover it before accepting new work.
+        _recover_transactions_locked()
+        current = {}
+        for path, snapshot in snapshots.items():
+            value = read_snapshot(path)
+            if _snapshot_digest(value) != _snapshot_digest(snapshot):
+                raise QueueTransactionConflict(
+                    f"stale queue snapshot for {path}: refusing all changes")
+            current[path] = value
+        rows = [{"path": path,
+                 "before_exists": os.path.exists(path),
+                 "before": current[path], "after": content,
+                 "before_digest": _snapshot_digest(current[path]),
+                 "after_digest": _snapshot_digest(content)}
+                for path, content in prepared.items()]
+        journal = {"version": 1, "state": "PREPARED", "op_id": op_id,
+                   "lock_path": os.path.abspath(_LOCK_PATH), "changes": rows}
+        # Pre-serialize the whole journal too, before any directory/write.
+        _strict_json_bytes(journal)
+        directory = _transaction_dir()
+        if not os.path.exists(directory):
+            os.makedirs(directory, mode=0o700)
+            _dir_fsync(os.path.dirname(directory))
+        journal_path = os.path.join(directory, uuid.uuid4().hex + ".json")
+        atomic_write_json(journal_path, journal)
+        _transaction_step("prepared", journal)
+        for index, row in enumerate(rows):
+            atomic_write_json(row["path"], row["after"])
+            _transaction_step("write:" + str(index), journal)
+        for row in rows:
+            if (not os.path.exists(row["path"])
+                    or _snapshot_digest(read_snapshot(row["path"])) != row["after_digest"]):
+                raise QueueTransactionConflict("queue transaction read-back failed")
+        _transaction_step("verified", journal)
+        journal["state"] = "COMMITTED"
+        atomic_write_json(journal_path, journal)
+        _transaction_step("committed", journal)
+        _unlink_durable(journal_path)
+        _transaction_step("cleaned", journal)
+    return {"op_id": op_id, "status": "COMMITTED", "paths": list(prepared)}
+
+
+def move_entry_atomic(role_id, source_path, destination_path, mutate=None,
+                      op_id=None, expected=None):
+    """Move exactly one row, preserving both queues' complete envelopes.
+
+    Mutation and strict serialization happen before acquiring the lock;
+    full source/destination snapshots then act as the CAS. `expected` may
+    include extra queues consulted when determining the sole owner.
+    """
+    if os.path.islink(source_path) or os.path.islink(destination_path):
+        raise ValueError("transaction queue paths must not be symlinks")
+    source_path = os.path.realpath(os.fspath(source_path))
+    destination_path = os.path.realpath(os.fspath(destination_path))
+    if source_path == destination_path:
+        raise ValueError("source and destination must differ")
+    source = read_snapshot(source_path)
+    destination = read_snapshot(destination_path)
+    source_rows = queue_entries(source)
+    destination_rows = queue_entries([] if destination is None else destination)
+    matches = [row for row in source_rows if row.get("role_id") == role_id]
+    if len(matches) != 1:
+        raise QueueTransactionConflict("source must contain exactly one role: " + str(role_id))
+    if any(row.get("role_id") == role_id for row in destination_rows):
+        raise QueueTransactionConflict("role already exists in destination: " + str(role_id))
+    candidate = copy.deepcopy(matches[0])
+    if mutate is not None:
+        changed = mutate(candidate)
+        if changed is not None:
+            candidate = changed
+    candidate = json_safe_copy(candidate)
+    if not isinstance(candidate, dict) or candidate.get("role_id") != role_id:
+        raise ValueError("move mutation must preserve role identity")
+    snapshots = {os.path.realpath(os.fspath(path)): value
+                 for path, value in (expected or {}).items()}
+    # Caller-supplied snapshots must match the snapshots we used, not be
+    # silently replaced (that would defeat an owner-discovery CAS).
+    for path, value in ((source_path, source), (destination_path, destination)):
+        supplied = snapshots.get(path, value)
+        if _snapshot_digest(supplied) != _snapshot_digest(value):
+            raise QueueTransactionConflict("move snapshot changed before preparation: " + path)
+        snapshots[path] = value
+    changes = {source_path: _replace_entries(source, [row for row in source_rows
+                                                     if row.get("role_id") != role_id]),
+               destination_path: _replace_entries([] if destination is None else destination,
+                                                   destination_rows + [candidate])}
+    result = commit_snapshot(changes, snapshots, op_id=op_id)
+    result["record"] = candidate
+    return result
 
 
 if __name__ == "__main__":
@@ -388,45 +750,3 @@ if __name__ == "__main__":
         sys.exit(0 if ok else 1)
     print(__doc__)
     sys.exit(2)
-def notes_text(entry):
-    """queue_notes as display text — normalizes str-vs-list shape."""
-    n = (entry or {}).get("queue_notes")
-    if isinstance(n, list):
-        return " | ".join(str(x) for x in n if x)
-    return str(n or "")
-
-
-def commit_snapshot(changes, expected):
-    """Atomic compare-and-refuse multi-file commit.
-
-    changes: {path: new_content} — the writes to apply.
-    expected: {path: expected_current_content} — a snapshot taken before
-      the caller computed `changes`.
-
-    Every path in `changes` is re-read under queue_lock() and compared
-    to its expected snapshot BEFORE any write happens. Every changed
-    path MUST have an entry in `expected` — a change without a prior
-    snapshot is a programming error and fails closed. If any path's
-    current content differs (stale snapshot — someone else wrote first),
-    RuntimeError is raised and NOTHING is written. Only when every path
-    matches does the commit proceed, writing all files via
-    atomic_write_json. No partial commits, ever.
-    """
-    with queue_lock(owner="queue_io:commit_snapshot"):
-        current = {}
-        for path in changes:
-            if path not in expected:
-                raise RuntimeError(
-                    f"queue snapshot missing for {path}: every changed "
-                    "path must have an expected snapshot; refusing all changes")
-            try:
-                with open(path, "rb") as f:
-                    current[path] = strict_loads(f.read())
-            except FileNotFoundError:
-                current[path] = None
-            if current[path] != expected[path]:
-                raise RuntimeError(
-                    f"stale queue snapshot for {path}: expected snapshot "
-                    "does not match current content; refusing all changes")
-        for path, content in changes.items():
-            atomic_write_json(path, content)

@@ -194,8 +194,9 @@ def main(argv=None):
                                help='include offline runtime and integration inventory')
     sub.add_parser('dashboard', help='build an offline snapshot')
     prepare = sub.add_parser('prepare', help='prepare review packets with bounded public HTTPS reads')
-    prepare.add_argument('--all', action='store_true')
-    prepare.add_argument('--refresh', action='store_true')
+    prepare.add_argument('--all', action='store_true',
+                         help='legacy alias; the bounded buffer capacity still applies')
+    prepare.add_argument('--refresh', action='store_true', help='refill the screened packet buffer')
     confirm = sub.add_parser('confirm-answer', help='record an answer explicitly asserted by the applicant')
     confirm.add_argument('--key', required=True)
     confirm.add_argument('--value', help='omit to read a value from stdin without command-history exposure')
@@ -206,6 +207,7 @@ def main(argv=None):
     validate.add_argument('packet')
     sub.add_parser('roles', help='show review roles and their supported CLI actions')
     sub.add_parser('supply', help='disjoint supply states and exact question groups; no inferred answers')
+    sub.add_parser('pipeline-doctor', help='offline queue conservation and READY admission losses; no operational writes')
     host_preflight = sub.add_parser('host-preflight',
         help='offline, non-migrating checks before a bounded public trial')
     productivity_status = sub.add_parser('productivity-status',
@@ -392,6 +394,9 @@ def main(argv=None):
                 result = service.flush_outbox(args.home)
             else:
                 result = service.supply_report(args.home)
+        elif args.command == 'pipeline-doctor':
+            import pipeline_doctor
+            result = pipeline_doctor.report(args.home)
         elif args.command == 'init':
             result = initialize(args.home)
         elif args.command == 'confirm-answer':
@@ -403,8 +408,12 @@ def main(argv=None):
             from build_dashboard import build
             result = {'dashboard': str(build(args.home))}
         elif args.command == 'prepare':
-            from apply_loop import main as prepare_main
-            return prepare_main((['--all'] if args.all else []) + (['--refresh'] if args.refresh else []))
+            # Public preparation stops at a screened buffer. It cannot create
+            # unowned IN-FLIGHT rows by calling the historical claim loop.
+            import apply_loop
+            count = apply_loop.refresh_buffer()
+            result = {'fresh_buffer_packets': count, 'execution_authorized': False,
+                      'queue_claimed': False, 'scope': 'screened_packet_buffer'}
         elif args.command == 'validate-packet':
             import apply_loop
             import packet_contract
