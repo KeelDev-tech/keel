@@ -133,3 +133,58 @@ def test_pipeline_default_placeholder_is_unknown_not_low_fit():
     out = pipeline.keel_run_pipeline("operations")
     assert out["summary"]["apply_band"] == 0
     assert all(row["action_band"] == "HOLD" and row["score_coverage_percent"] == 0 for row in out["stages"])
+
+
+def _complete_packet_evidence():
+    url = "https://example.invalid/jobs/synthetic"
+    return {"ats_url": url, "form_intel_complete": True,
+            "form_intel": {"source_url": url, "extraction_complete": True,
+                           "rendered_option_fetch_needed": [], "questions": []},
+            "posting_text": "Remote operations role.", "posting_text_complete": True,
+            "posting_text_source": "synthetic-fixture", "posting_text_url": url}
+
+
+def test_prescreen_structured_evidence_reaches_complete_diagnostic():
+    out = prescreen_tool.keel_prescreen_packet("", "Synthetic Corp", _complete_packet_evidence())
+    assert out["verdict"] == "CLEAN"
+    assert out["answer_bank"] == "example-fixture"
+    assert out["execution_authorized"] is False
+
+
+def test_prescreen_structured_evidence_parks_mismatched_posting():
+    evidence = _complete_packet_evidence()
+    evidence["posting_text_url"] = "https://example.invalid/jobs/another"
+    out = prescreen_tool.keel_prescreen_packet("", packet_evidence=evidence)
+    assert out["verdict"] == "PARK"
+    assert any("Posting-text evidence" in reason for reason in out["reasons"])
+
+
+def test_prescreen_structured_evidence_parks_missing_dropdown_choices():
+    evidence = _complete_packet_evidence()
+    evidence["form_intel"]["questions"] = [
+        {"label": "Work authorization", "type": "dropdown", "required": True, "options": []}]
+    assert prescreen_tool.keel_prescreen_packet("", packet_evidence=evidence)["verdict"] == "PARK"
+
+
+def test_prescreen_does_not_infer_completeness():
+    evidence = _complete_packet_evidence()
+    del evidence["form_intel_complete"]
+    assert prescreen_tool.keel_prescreen_packet("", packet_evidence=evidence)["verdict"] == "PARK"
+
+
+def test_prescreen_evidence_cannot_inject_writeback_identity(monkeypatch):
+    evidence = _complete_packet_evidence()
+    evidence.update(role_id="REAL-ROLE", file="/tmp/packet.json", company="Injected")
+    observed = {}
+    def screen(packet, bank, employer_patterns):
+        observed.update(packet)
+        return {"verdict": "CLEAN", "reasons": []}
+    monkeypatch.setattr(keel_bridge.prescreen_mod, "screen_packet", screen)
+    prescreen_tool.keel_prescreen_packet("brief", "Synthetic Corp", evidence)
+    assert "role_id" not in observed and "file" not in observed
+    assert observed["company"] == "Synthetic Corp"
+
+
+def test_prescreen_malformed_evidence_stays_parked():
+    out = prescreen_tool.keel_prescreen_packet("", packet_evidence=[])
+    assert out["verdict"] == "PARK" and out["execution_authorized"] is False

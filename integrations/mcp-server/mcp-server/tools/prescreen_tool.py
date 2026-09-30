@@ -13,7 +13,8 @@ from __future__ import annotations
 import keel_bridge
 
 
-def keel_prescreen_packet(packet_brief: str, company: str = "") -> dict:
+def keel_prescreen_packet(packet_brief: str, company: str = "",
+                          packet_evidence: dict | None = None) -> dict:
     """Screen an application packet's form intel for human-gated blockers.
 
     Args:
@@ -25,14 +26,29 @@ def keel_prescreen_packet(packet_brief: str, company: str = "") -> dict:
             carries no intel. This brief-only diagnostic cannot establish full
             form/posting coverage and returns PARK for missing source evidence.
         company: employer name, used for employer-specific blocker patterns.
+        packet_evidence: optional structured coverage fields: ats_url, form_intel,
+            form_intel_complete, posting_text, posting_text_complete,
+            posting_text_source, posting_text_url. Completeness must be explicit;
+            the production gate checks shapes, bounds and exact URL binding.
+            Caller-supplied evidence is not authenticated by this diagnostic.
     Returns {"verdict": "CLEAN"|"PARK", "reasons": [...]}. PARK means a human
     must review a genuine blocker; missing evidence instead requires verification
     recovery. This diagnostic never authorizes preparation or submission.
     """
     bank = keel_bridge.load_fixture("answer_bank.example.json")
     packet = {"brief": packet_brief or "", "company": company or ""}
+    if packet_evidence is not None:
+        if not isinstance(packet_evidence, dict):
+            return {"verdict": "PARK", "reasons": ["Malformed packet evidence; verification required."],
+                    "answer_bank": "example-fixture", "execution_authorized": False}
+        # Do not accept file paths, role IDs, derived answers or caller overrides
+        # of the fixture identity. Those can activate production write-back hooks.
+        fields = ("ats_url", "form_intel", "form_intel_complete", "posting_text",
+                  "posting_text_complete", "posting_text_source", "posting_text_url")
+        packet.update({key: packet_evidence[key] for key in fields if key in packet_evidence})
     # Explicit empty patterns: the production employer-pattern file lives in
     # the operator's private pipeline tree and is never loaded here.
     result = keel_bridge.prescreen_mod.screen_packet(packet, bank, employer_patterns={})
     result["answer_bank"] = "example-fixture"
+    result["execution_authorized"] = False
     return result
