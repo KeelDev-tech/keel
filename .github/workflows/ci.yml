@@ -26,6 +26,8 @@ jobs:
         run: pip install reportlab==4.4.9
       - name: Run offline MCP adapter safety and tool regressions
         run: python3 -m pytest -q --import-mode=importlib integrations/mcp-server/tests
+      - name: Test operational recovery including every publication cut point
+        run: python3 -m pytest -q tests/test_operational_recovery.py
       - name: Run fit-floor default regressions
         run: >-
           python3 -m pytest -q --import-mode=importlib

@@ -1,6 +1,7 @@
 """Real SQLite/files, coherent barriers, preservation and failed restores."""
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
+import json
 import os
 from pathlib import Path
 import sqlite3
@@ -390,3 +391,68 @@ def test_process_exit_mid_restore_leaves_offline_hold_and_no_completion_claim(tm
     result = r.restore(tmp_path / 'backup', tmp_path / 'retry-new-destination',
                        authoritative_checkpoint=point, expected_manifest_sha256=saved['manifest_sha256'])
     assert result['configured_state_complete'] is True and result['controller_started'] is False
+
+
+@pytest.mark.skipif(not hasattr(os, 'fork'), reason='POSIX process-exit recovery rehearsal')
+def test_every_publication_prefix_stays_offline_and_fresh_retry_matches_checkpoint(tmp_path):
+    # Multiple stores plus byte-pinned canonical files; boundaries are generated
+    # from the actual backup inventory, so newly added fixture files join coverage.
+    config, control = fixture(tmp_path)
+    home = tmp_path / 'canonical'
+    home.mkdir(mode=0o700)
+    bodies = {'attempts.json': b'{"status":"UNKNOWN"}',
+              'policy.json': b'{"approval_revoked":true}'}
+    for name, body in bodies.items():
+        path = home / name
+        path.write_bytes(body)
+        path.chmod(0o600)
+    add(config, 'canonical', 'canonical_files', home,
+        files={name: hashlib.sha256(body).hexdigest() for name, body in bodies.items()})
+    config['canonical_store_ids'].append('canonical')
+    _, _, point, saved = save(tmp_path, config, control)
+    names = sorted(saved['manifest']['files'])
+    assert len(names) >= 4
+    for cut in range(len(names) + 1):
+        destination = tmp_path / f'interrupted-{cut}'
+        pid = os.fork()
+        if pid == 0:
+            original = r._publish
+            def exit_at_cut(root, files):
+                assert sorted(files) == names
+                original(root, {name: files[name] for name in names[:cut]})
+                os._exit(73)
+            r._publish = exit_at_cut
+            try:
+                r.restore(tmp_path / 'backup', destination, authoritative_checkpoint=point,
+                          expected_manifest_sha256=saved['manifest_sha256'])
+            finally:
+                os._exit(74)
+        _, status = os.waitpid(pid, 0)
+        assert os.waitstatus_to_exitcode(status) == 73, f'cut {cut}'
+        hold = json.loads((destination / 'OFFLINE_RESTORE.json').read_text())
+        assert hold['activation'] == 'OFFLINE_REVALIDATION_REQUIRED'
+        assert hold['execution_authorized'] is False
+        assert hold['expected_checkpoint_sha256'] == point['checkpoint_sha256']
+        assert not (destination / 'RESTORE_VERIFIED.json').exists()
+        for index, name in enumerate(names):
+            path = destination / name
+            assert path.exists() == (index < cut), (cut, name)
+            if index < cut:
+                assert hashlib.sha256(path.read_bytes()).hexdigest() == saved['manifest']['files'][name]
+        # Never repair over the partial tree or turn it into a completed restore.
+        with pytest.raises(FileExistsError):
+            r.restore(tmp_path / 'backup', destination, authoritative_checkpoint=point,
+                      expected_manifest_sha256=saved['manifest_sha256'])
+        assert not (destination / 'RESTORE_VERIFIED.json').exists()
+        fresh = tmp_path / f'fresh-{cut}'
+        result = r.restore(tmp_path / 'backup', fresh, authoritative_checkpoint=point,
+                           expected_manifest_sha256=saved['manifest_sha256'])
+        assert result['configured_state_complete'] is True
+        assert result['controller_started'] is result['execution_authorized'] is False
+        assert result['activation'] == 'OFFLINE_REVALIDATION_REQUIRED'
+        assert (fresh / 'OFFLINE_RESTORE.json').is_file()
+        assert json.loads((fresh / 'RESTORE_VERIFIED.json').read_text()) == result
+        restored_control = StopLedger(fresh / 'control', 'workspace')
+        assert r.checkpoint(result['inventory'], control=restored_control) == point
+        for name in names:
+            assert (fresh / name).read_bytes() == (tmp_path / 'backup' / name).read_bytes()

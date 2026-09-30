@@ -159,3 +159,13 @@ eleven measured checks. No actual browser, Muse account, model or employer is
 called. Focused tests additionally exercise opaque SQLite/blob/special filename
 round trips, migration metadata drift, writer exclusion, changed inputs, missing
 files, symlinks, hardlinks, stale authority, tampering and interrupted restore.
+
+The publication-prefix regression derives all runtime file boundaries from a
+three-store synthetic backup (control, sources, and byte-pinned canonical files).
+It exits a forked process before the first file, after every published file, and
+after the complete file set but before verification. Every destination must keep
+the offline marker and lack a verification receipt; retry into that destination
+is refused. A fresh destination must reproduce the checkpoint and file bytes
+while retaining the offline hold and no execution authority. Root CI runs this
+regression on Linux. This is process-exit coverage at file-publication boundaries,
+not power-loss qualification or coverage of every write/fsync boundary.
