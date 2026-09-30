@@ -48,6 +48,13 @@ Full text lives in `recount.py`'s docstring. The short version:
 # Recount only (rewrites docs/geo/stats.json):
 python3 geo-pipeline/recount.py
 
+# Refresh current-count publications from the recounted stats snapshot:
+python3 geo-pipeline/refresh_site.py
+# Also refresh the README header, site FAQ/proof prose and honesty-report
+# evidence table/date from stats.json; commit them with stats.json and site/.
+# Evidence grades (quoted + pointer + URL-only + unevidenced) must sum to total.
+# Preserve dated historical snapshots and the at-launch canon of 55.
+
 # Public probes only:
 python3 geo-pipeline/probe.py
 
