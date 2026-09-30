@@ -9,6 +9,7 @@ mutation, and real-429 observation (hard stop) vs empty-fetch tolerance.
 import copy
 import json
 import os
+from pathlib import Path
 import sys
 import tempfile
 import threading
@@ -126,6 +127,40 @@ def _read(p):
 
 
 # --- selection ------------------------------------------------------------
+
+@pytest.mark.parametrize("floor", [75, 83])
+def test_cli_default_tracks_canonical_intake_floor(env, monkeypatch, capsys, floor):
+    import queue_intake
+    monkeypatch.setattr(queue_intake, "FIT_BAR", floor)
+    monkeypatch.setattr(sys, "argv", ["rescreen_standard.py"])
+    observed = {}
+
+    def fake_scan(std, min_fit, role_ids, *args):
+        observed["min_fit"] = min_fit
+        return {}, {key: 0 for key in ("selected", "title_park", "eligibility_park",
+                                      "form_park", "clean", "empty_fetch", "observed_429s")}
+
+    monkeypatch.setattr(rs, "scan", fake_scan)
+    before = {key: Path(env[key]).read_bytes() for key in ("std", "ni", "events")}
+    rs.main()
+    assert observed["min_fit"] == queue_intake.FIT_BAR
+    assert {key: Path(env[key]).read_bytes() for key in before} == before
+    assert "dry-run: zero queue writes" in capsys.readouterr().out
+
+
+def test_cli_min_fit_override_is_preserved(env, monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["rescreen_standard.py", "--min-fit", "60"])
+    observed = {}
+
+    def fake_scan(std, min_fit, role_ids, *args):
+        observed["min_fit"] = min_fit
+        return {}, {key: 0 for key in ("selected", "title_park", "eligibility_park",
+                                      "form_park", "clean", "empty_fetch", "observed_429s")}
+
+    monkeypatch.setattr(rs, "scan", fake_scan)
+    rs.main()
+    assert observed["min_fit"] == 60
+
 
 def test_select_filters_status_fit_and_role_ids(env):
     std = _read(env["std"])

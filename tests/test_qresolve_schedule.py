@@ -12,6 +12,7 @@ import unittest
 from unittest import mock
 
 from engines import qresolve_schedule as schedule
+from engines.queue_intake import FIT_BAR
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -120,7 +121,7 @@ class DurableScheduleTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.home = Path(self.temp.name)
         self.rows = [{'role_id': 'fixture-' + str(index), 'company': 'Example Employer',
-                      'title': 'Example Role', 'fit_score': 95 - (index % 30),
+                      'title': 'Example Role', 'fit_score': 100 - (index % (101 - FIT_BAR)),
                       'status': 'NEEDS-INPUT',
                       'unresolved': ['Preferred shift for assignment ' + chr(97 + index // 26) + chr(97 + index % 26) + '?'],
                       'queue_notes': [], 'last_verify_attempt': '2026-01-01'}

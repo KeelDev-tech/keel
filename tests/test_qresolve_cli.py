@@ -9,6 +9,8 @@ import sys
 import tempfile
 import unittest
 
+from engines.queue_intake import FIT_BAR
+
 ROOT = Path(__file__).resolve().parents[1]
 OFFLINE = '''
 import runpy, sys
@@ -37,7 +39,7 @@ class QuestionResolverCLITests(unittest.TestCase):
             'question': question, 'provenance': "the applicant's own words " + date.today().isoformat()}
             for key, (question, answer) in self.questions.items()}}
         self.rows = [{'role_id': 'fixture-' + key, 'company': 'Example Employer',
-                      'title': 'Example Role', 'fit_score': 70,
+                      'title': 'Example Role', 'fit_score': FIT_BAR,
                       'status': 'NEEDS-INPUT', 'unresolved': [question],
                       'status_reason': 'input required', 'queue_notes': [],
                       'last_verify_attempt': '2026-01-01'}

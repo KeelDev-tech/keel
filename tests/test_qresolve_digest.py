@@ -12,13 +12,14 @@ from unittest import mock
 
 from engines import input_tray_digest as digest
 from engines import queue_io
+from engines import queue_intake
 
 
 REPO = Path(__file__).resolve().parents[1]
 STAMP = "2026-09-27T12:00:00+00:00"
 
 
-def lead(role_id="fixture-1", *, fit=60, question="What is your preferred work location?"):
+def lead(role_id="fixture-1", *, fit=queue_intake.FIT_BAR, question="What is your preferred work location?"):
     return {"role_id": role_id, "fit_score": fit, "status": "PARKED-NEEDS-INPUT",
             "employer": "ExampleCo", "title": "Operations", "unresolved": [question]}
 
@@ -42,10 +43,10 @@ class DigestIntegrationTests(unittest.TestCase):
         previous = queue_io.get_lock_path()
         queue_io.set_lock_path(str(self.hdir / "queue.lock"))
         self.addCleanup(queue_io.set_lock_path, previous)
-        self.env = mock.patch.dict(os.environ, {"KEEL_HOME": str(self.home),
-                                               "KEEL_TRAY_MIN_FIT": "60"})
+        self.env = mock.patch.dict(os.environ, {"KEEL_HOME": str(self.home)})
         self.env.start()
         self.addCleanup(self.env.stop)
+        os.environ.pop("KEEL_TRAY_MIN_FIT", None)
         Path(digest.BANK).write_text('{"answers": {}}')
         self.write_leads([lead()])
 
@@ -125,19 +126,67 @@ class DigestIntegrationTests(unittest.TestCase):
         self.assertNotIn(str(self.home), result.stderr)
         self.assertFalse(self.hdir.exists())
 
-    def test_minimum_fit_defaults_to_sixty_and_can_be_overridden(self):
-        self.write_leads([lead("below", fit=59), lead("at", fit=60),
-                          lead("above", fit=75), lead("invalid", fit="nan")])
-        self.assertEqual(next(iter(digest.collect_cards().values()))["unblock_leads"], 2)
-        self.assertEqual(next(iter(digest.collect_cards(min_fit=75).values()))["unblock_leads"], 1)
-        with mock.patch.dict(os.environ, {"KEEL_TRAY_MIN_FIT": "75"}):
+    def test_minimum_fit_defaults_to_canonical_intake_floor(self):
+        floor = queue_intake.FIT_BAR
+        self.assertEqual(digest._min_fit(), floor)
+        self.write_leads([lead("below", fit=floor - 1), lead("at", fit=floor),
+                          lead("above", fit=floor + 1), lead("invalid", fit="nan")])
+        card = next(iter(digest.collect_cards().values()))
+        self.assertEqual({row["role_id"] for row in card["leads"]}, {"at", "above"})
+        result = self.cli()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["fresh_cards"], 1)
+        self.write_leads([lead("below", fit=floor - 1)])
+        self.assertEqual(digest.collect_cards(), {})
+        self.assertEqual(self.cli().stdout.strip(), "TRAY-QUIET")
+
+    def test_default_tracks_a_changed_canonical_floor(self):
+        # A numeric replacement such as 75 would still drift on a later policy edit.
+        with mock.patch.object(queue_intake, "FIT_BAR", 83):
+            self.assertEqual(digest._min_fit(), queue_intake.FIT_BAR)
+            self.write_leads([lead("below", fit=82), lead("at", fit=83)])
+            card = next(iter(digest.collect_cards().values()))
+            self.assertEqual([row["role_id"] for row in card["leads"]], ["at"])
+
+    def test_explicit_minimum_fit_overrides_environment_and_canonical_default(self):
+        self.write_leads([lead("below", fit=59), lead("at", fit=60)])
+        with mock.patch.dict(os.environ, {"KEEL_TRAY_MIN_FIT": "60"}):
+            self.assertEqual(digest._min_fit(), 60)
             self.assertEqual(next(iter(digest.collect_cards().values()))["unblock_leads"], 1)
-        for value in (float("nan"), float("inf"), -1, 101, "bad", True):
+            self.assertEqual(digest.collect_cards(min_fit=queue_intake.FIT_BAR), {})
+            self.assertEqual(self.cli().returncode, 0)
+            self.assertEqual(self.cli("--min-fit", str(queue_intake.FIT_BAR)).stdout.strip(), "TRAY-QUIET")
+            for value in (0, 100, 60.5):
+                with self.subTest(value=value):
+                    self.assertEqual(digest._min_fit(value), value)
+        with mock.patch.dict(os.environ, {"KEEL_TRAY_MIN_FIT": "bad"}):
+            self.assertEqual(digest._min_fit(60), 60)
+            self.assertEqual(self.cli("--min-fit", "60").returncode, 0)
+
+    def test_invalid_minimum_fit_is_rejected_without_writes(self):
+        for value in (float("nan"), float("inf"), -1, 101, "bad", "", True):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 digest.collect_cards(min_fit=value)
+        for value in ("nan", "inf", "-1", "101", "bad", ""):
+            with self.subTest(value=value), mock.patch.dict(os.environ, {"KEEL_TRAY_MIN_FIT": value}):
+                with self.assertRaises(ValueError):
+                    digest.collect_cards()
+                before = self.snapshot()
+                self.assertEqual(self.cli().returncode, 2)
+                self.assertEqual(self.snapshot(), before)
         before = self.snapshot()
         self.assertEqual(self.cli("--min-fit", "nan").returncode, 2)
         self.assertEqual(self.snapshot(), before)
+
+    def test_package_and_direct_script_help_describe_canonical_default(self):
+        for command in ([sys.executable, "-B", "-m", "engines.input_tray_digest"],
+                        [sys.executable, "-B", str(REPO / "engines/input_tray_digest.py")]):
+            with self.subTest(command=command):
+                result = subprocess.run([*command, "--help"], cwd=REPO, text=True,
+                                        capture_output=True, timeout=15, check=False)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("queue_intake.FIT_BAR", result.stdout)
+                self.assertIn(str(queue_intake.FIT_BAR), result.stdout)
 
     def test_full_question_survives_display_truncation(self):
         question = ("Which work location do you prefer? " + "Supporting context " * 20

@@ -1,5 +1,10 @@
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Derive the tray and standard re-screen fit defaults from the canonical
+  intake `FIT_BAR` (currently 75). Preserve explicit tray environment/API/CLI
+  overrides and the re-screen CLI override. Add regression coverage for floor
+  drift, default filtering, override precedence and invalid values; document
+  the remaining fixed policy consumers separately.
 - Journal cross-file queue changes before replacement, compare full snapshots,
   and recover interrupted moves before cooperating readers use the queues.
 - Preserve posting evidence through transport failures, pace bounded retries,
@@ -40,7 +45,8 @@ inside the sanctioned tray actuator's queue lock. Reuse preserves provenance;
 durable intents and verified completion receipts keep interrupted writes held.
 
 Unified digest/applier workspace paths, retained full prompts, made the tray
-fit threshold configurable (default 60), and made bare digest runs read-only.
+fit threshold configurable (default 60 at that release; now derived from the
+canonical intake floor), and made bare digest runs read-only.
 Structural cards cannot carry drafts or be cleared through the manual answer
 path. Packaged the tray dependency closure and added synthetic classification,
 provenance, crash-hold and fresh-process integration tests. Private backlog and
