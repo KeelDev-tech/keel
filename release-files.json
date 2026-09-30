@@ -355,6 +355,7 @@
   "tests/test_run_tests_profiles.py",
   "tests/test_source_scheduler.py",
   "tests/test_staged_admission_recovery.py",
+  "tests/test_storage_preflight.py",
   "tests/test_supply_acceptance.py",
   "tests/test_supply_measurements.py",
   "tests/test_sustained_cli.py",

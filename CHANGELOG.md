@@ -15,6 +15,12 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Run operational control/runtime and machine-contract function tests explicitly
+  in CI. Add a read-only advanced storage ancestor diagnostic to `keel_next
+  doctor` and blocked CLI output, retaining the production ownership guard and
+  failure exit. Document the pinned development bootstrap separately from
+  applicant workspace initialization.
+
 - Accept structured URL-bound form/posting evidence in the MCP prescreen
   diagnostic, preserving brief-only PARK behavior and example-bank isolation.
   Report no execution authority even when the diagnostic is CLEAN.

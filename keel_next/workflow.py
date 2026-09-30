@@ -3,13 +3,56 @@ from datetime import datetime, timedelta, timezone
 import importlib.util
 import json
 import os
+import stat
 from pathlib import Path
+
+
+def storage_ancestor_report(home):
+    """Read-only diagnostic; does not open state or grant storage authority.
+
+    Inspect the existing ancestor chain for a prospective observations database.
+    Missing directories are not created. The production guard is still the
+    source of the verdict and must run again when storage is actually opened.
+    """
+    from keel_observability.store import _ancestors, ObservationError
+
+    target = Path(os.path.abspath(home)) / 'observations.sqlite3'
+    report = {'status': 'UNAVAILABLE', 'reason': None, 'ancestors': [],
+              'current_uid': os.getuid() if hasattr(os, 'getuid') else None,
+              'storage_opened': False, 'execution_authorized': False}
+    existing = None
+    try:
+        for parent in target.parents:
+            try:
+                info = parent.lstat()
+            except FileNotFoundError:
+                continue
+            if existing is None:
+                existing = parent
+            report['ancestors'].append({
+                'path': str(parent), 'uid': info.st_uid,
+                'mode': oct(stat.S_IMODE(info.st_mode)),
+                'owner_allowed': not hasattr(os, 'getuid') or info.st_uid in (0, os.getuid()),
+            })
+        if existing is None:
+            report['reason'] = 'no_existing_ancestor'
+            return report
+        # A nonexistent child lets the unchanged guard check the existing
+        # directory itself as well as every ancestor, without filesystem writes.
+        _ancestors(existing / 'observations.sqlite3')
+        report['status'] = 'ANCESTORS_ACCEPTED'
+    except ObservationError as exc:
+        report.update(status='BLOCKED', reason=str(exc))
+    except OSError as exc:
+        report['reason'] = type(exc).__name__
+    return report
 
 
 def doctor(home):
     from tools.release_profile import capability_report
     from security.execution.resource_limits import doctor as resource_doctor
     return {'schema':'keel.next.capabilities.v1', 'local':capability_report(home),
+            'advanced_storage_ancestors':storage_ancestor_report(home),
             'worker_enforcement':resource_doctor(),
             'python_playwright_installed':importlib.util.find_spec('playwright') is not None,
             'rendered_browser_qualified':False,'provider_authentication_connected':False,
