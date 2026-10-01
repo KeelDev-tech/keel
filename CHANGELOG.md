@@ -15,6 +15,8 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Reflow dashboard score cards on narrow screens and wrap long values without
+  clipping or changing displayed counts.
 - Add keyboard skip targets to dashboard/review content and accessible names and
   column headers to the dashboard submission-claims table.
 
