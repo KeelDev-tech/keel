@@ -37,6 +37,46 @@ class VerificationTransportContractTests(unittest.TestCase):
             item.start()
             self.addCleanup(item.stop)
 
+    def test_first_failed_attempt_honors_its_own_cooldown(self):
+        for with_old_target in (False, True):
+            with self.subTest(with_old_target=with_old_target):
+                row = queued(1)
+                if with_old_target:
+                    row = self.prior_live(row)
+                    row['posting_verification']['identity'] = ['greenhouse', 'old', '1']
+                _, after, _ = self.run_failure(TimeoutError('fixture'), [row])
+                after[0].pop('verification_event_pending')
+                atomic_json(self.queue, after)
+                before = self.queue.read_bytes()
+                report = service.verify(self.home, live=True,
+                    reader=service.PublicBoardReader(fetcher=lambda *_: self.fail('cooldown dispatched')))
+                self.assertEqual(report['requests'], 0)
+                self.assertEqual(report['skipped'], {'cooldown': 1})
+                self.assertFalse(report['submission_authorized'])
+                self.assertEqual(self.queue.read_bytes(), before)
+                after[0]['verification_attempt']['next_eligible_at'] = (
+                    service.utc_now()-timedelta(seconds=1)).isoformat()
+                atomic_json(self.queue, after)
+                expired = service.verify(self.home,
+                    reader=service.PublicBoardReader(fetcher=lambda *_: {'jobs': []}))
+                self.assertEqual(expired['requests'], 1)
+
+    def test_old_target_attempt_cannot_borrow_current_decisive_identity(self):
+        row = self.prior_live(queued(1))
+        row['verification_attempt'] = {
+            'identity': ['greenhouse', 'old', '1'],
+            'next_eligible_at': (service.utc_now()+timedelta(days=1)).isoformat()}
+        self.assertIsNone(service._next_time(row, service._key(row)))
+
+    def test_legacy_and_malformed_retry_timestamps_remain_conservative(self):
+        row = queued(1)
+        future = (service.utc_now()+timedelta(days=1)).isoformat()
+        row['verification_attempt'] = {'next_eligible_at': future}
+        self.assertEqual(service._next_time(row, service._key(row)), service.aware_time(future))
+        row['verification_attempt'] = {'identity': list(service._key(row)),
+                                       'next_eligible_at': 'invalid'}
+        self.assertEqual(service._next_time(row, service._key(row)), 'invalid')
+
     def prior_live(self, row):
         observed = service.utc_now() - timedelta(seconds=1)
         row['posting_verification'] = {
