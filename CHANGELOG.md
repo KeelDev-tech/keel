@@ -15,6 +15,10 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Isolate retained-history replay correctness accounting from host scheduling
+  delays; label synthetic controller time separately from observed elapsed time
+  and retain production budget-overrun refusal with regression coverage.
+
 - Qualify reported corroboration as declared publisher diversity, expose shared
   reference/hash signals, and state that source independence is not established.
 
