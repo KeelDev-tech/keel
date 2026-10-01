@@ -15,6 +15,9 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Cover the existing workbench CSP on HTML, JSON and application error responses
+  with socket-free handler tests selected in CI; no server policy changes.
+
 - Add offline YAML regression tests for the CI and Recovery workflows' current
   read-only permissions, literal hosted runner and absence of secret references.
   Pin PyYAML for validation only; workflow settings and CodeQL are unchanged.
