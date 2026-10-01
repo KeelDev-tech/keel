@@ -138,6 +138,45 @@ class TestSourceAvailability(unittest.TestCase):
         self.assertNotIn('No submissions yet.', panel)
         self.assertIn('Submission claims exist, but no dates are available.', panel)
 
+    def test_mixed_dated_and_undated_claims_retain_notice(self):
+        self.write('data/application-ledger.json', [
+            {'status': 'SUBMITTED', 'company': 'Dated synthetic',
+             'submitted_at': '2026-01-01T00:00:00Z'},
+            {'status': 'SUBMITTED', 'company': 'Undated synthetic'},
+        ])
+        data = bd.collect(self.home)
+        panel = self.panel(bd.render(data), 'Recent submission claims')
+        self.assertEqual(len(data['submitted']), 2)
+        self.assertIn('Dated synthetic', panel)
+        self.assertIn('1 submission claim has no date and is not shown above.', panel)
+        self.assertNotIn('No submissions yet.', panel)
+
+    def test_undated_count_is_independent_of_recent_row_limit(self):
+        self.write('data/application-ledger.json', [
+            {'status': 'SUBMITTED', 'company': 'Dated synthetic ' + str(i),
+             'submitted_at': '', 'date_submitted': f'2026-01-{i+1:02d}T00:00:00Z'}
+            for i in range(9)
+        ] + [
+            {'status': 'SUBMITTED', 'submitted_at': '', 'date_submitted': None},
+            {'status': 'SUBMITTED', 'submitted_at': None},
+        ])
+        data = bd.collect(self.home)
+        self.assertEqual(len(data['recent']), 8)
+        self.assertEqual(len(data['submitted']), 11)
+        panel = self.panel(bd.render(data), 'Recent submission claims')
+        self.assertEqual(panel.count('Dated synthetic'), 8)
+        self.assertIn('2 submission claims have no date and are not shown above.', panel)
+
+    def test_dated_claims_and_other_statuses_do_not_trigger_undated_notice(self):
+        self.write('data/application-ledger.json', [
+            {'status': 'SUBMITTED', 'submitted_at': '2026-01-01T00:00:00Z'},
+            {'status': 'SUBMITTED', 'date_submitted': '2026-01-02T00:00:00Z'},
+            {'status': 'INTERVIEW_INVITED'},
+        ])
+        panel = self.panel(bd.render(bd.collect(self.home)), 'Recent submission claims')
+        self.assertNotIn('no date', panel)
+        self.assertNotIn('not shown above', panel)
+
     def test_known_records_remain_visible_and_escaped(self):
         label = '<img src=x onerror=alert(1)>'
         self.write('data/application-ledger.json', [
