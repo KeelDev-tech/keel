@@ -27,6 +27,9 @@
 - Keep an undated submission-claim count visible alongside dated dashboard rows,
   including when the recent list is capped at eight records.
 
+- Separate untrusted MCP triage role fields from fixed prompt guidance using
+  JSON serialization; preserve string output and analysis-only tool behavior.
+
 - Order eligible verification work by normalized observation instants so timezone
   offsets and equivalent timestamp spellings preserve oldest-first scheduling.
 
