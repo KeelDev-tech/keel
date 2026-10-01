@@ -147,6 +147,7 @@ def collect(home=HOME):
     parked_items, warning = load_json(home / "data" / "parked.json")
     if warning:
         data["warnings"].append(warning)
+    data["parked_known"] = parked_items is not None
     data["parked"] = parked_items if parked_items is not None else []
 
     # Gate-blocked breakdown: telemetry events with a gate field.
@@ -217,18 +218,26 @@ def render(data):
         f"<div class='dim'>{esc(c.get('contact') or '')} — {esc(c.get('detail') or '')}</div>"
         f"<div class='action'>⚠ {esc(c.get('action') or 'Needs your input')}</div></div>"
         for c in interviews
-    ) or "<p class='dim'>No active interview threads.</p>"
+    ) or ("<p class='dim'>No active interview threads.</p>" if data["ledger_known"]
+          else "<p class='dim'>Unknown — application ledger is unavailable.</p>")
 
+    if not data["ledger_known"]:
+        recent_empty = "Unknown — application ledger is unavailable."
+    elif submitted:
+        recent_empty = "Submission claims exist, but no dates are available."
+    else:
+        recent_empty = "No submissions yet."
     recent_rows = "\n".join(
         f"<tr><td>{fmt_ts(e.get('submitted_at') or e.get('date_submitted'))}</td>"
         f"<td><strong>{esc(e.get('company'))}</strong><br><span class='dim'>{esc(e.get('title') or e.get('role_id') or '')}</span></td></tr>"
         for e in data["recent"]
-    ) or "<tr><td colspan='2' class='dim'>No submissions yet.</td></tr>"
+    ) or f"<tr><td colspan='2' class='dim'>{recent_empty}</td></tr>"
 
     queue_rows = "\n".join(
         f"<div class='qrow'><span>{esc(k)}</span><strong>{fmt_count(v)}</strong></div>"
         for k, v in sorted(queues.items())
-    ) or "<p class='dim'>No queues yet.</p>"
+    ) or ("<p class='dim'>No queues yet.</p>" if data["queues_known"]
+          else "<p class='dim'>Unknown — queue records are unavailable.</p>")
 
     backlog_rows = "\n".join(
         f"<div class='brow'><span class='rank'>{i+1}</span>"
@@ -239,7 +248,8 @@ def render(data):
     parked_html = "\n".join(
         f"<div class='prow'><strong>{esc(p.get('title'))}</strong><br><span class='dim'>{esc(p.get('detail'))}</span></div>"
         for p in data["parked"]
-    ) or "<p class='dim'>Nothing parked.</p>"
+    ) or ("<p class='dim'>Nothing parked.</p>" if data["parked_known"]
+          else "<p class='dim'>Unknown — parked records are unavailable.</p>")
 
     gate_blocks = data.get("gate_blocks")
     if gate_blocks is None:

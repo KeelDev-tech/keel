@@ -15,6 +15,10 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Keep dashboard activity panels unknown when their source records are missing,
+  unreadable or corrupt. Retain empty-state messages for known empty records,
+  and distinguish undated submission claims from no recorded claims.
+
 - Run operational control/runtime and machine-contract function tests explicitly
   in CI. Add a read-only advanced storage ancestor diagnostic to `keel_next
   doctor` and blocked CLI output, retaining the production ownership guard and
