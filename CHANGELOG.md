@@ -15,6 +15,9 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Qualify reported corroboration as declared publisher diversity, expose shared
+  reference/hash signals, and state that source independence is not established.
+
 - Reflow dashboard score cards on narrow screens and wrap long values without
   clipping or changing displayed counts.
 - Add keyboard skip targets to dashboard/review content and accessible names and
