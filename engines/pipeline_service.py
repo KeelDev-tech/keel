@@ -602,7 +602,7 @@ def _next_time(entry, key):
         return None
     try:
         return aware_time(stamp)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, OverflowError):
         # Invalid scheduling state is visible, not silently actionable.
         return 'invalid'
 
