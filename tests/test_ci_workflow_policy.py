@@ -45,6 +45,34 @@ def strings(value):
             yield from strings(child)
 
 
+def expression_code(text):
+    """Yield expression text outside single quotes in one forward scan."""
+    position = 0
+    while True:
+        start = text.find('${{', position)
+        if start < 0:
+            return
+        position = start + 3
+        quoted, code = False, []
+        while position < len(text):
+            char = text[position]
+            if char == "'":
+                if quoted and text[position:position + 2] == "''":
+                    position += 2
+                    continue
+                quoted = not quoted
+                code.append(' ')
+            elif not quoted and text[position:position + 2] == '}}':
+                position += 2
+                yield ''.join(code)
+                break
+            elif not quoted:
+                code.append(char)
+            position += 1
+        else:
+            raise AssertionError('unterminated workflow expression')
+
+
 def check_policy(document):
     assert type(document) is dict, 'workflow must be a mapping'
     assert 'permissions' in document and readonly(document['permissions']), 'explicit read-only workflow permissions required'
@@ -58,9 +86,7 @@ def check_policy(document):
         assert job.get('runs-on') == 'ubuntu-latest', 'current hosted runner required'
         assert not job.get('secrets'), 'job secret forwarding forbidden'
     for text in strings(document):
-        for expression in re.findall(r"\$\{\{((?:'(?:[^']|'')*'|[^'}]|}(?!}))*?)\}\}", text, flags=re.S):
-            # GitHub expressions use single-quoted strings with doubled quotes.
-            code = re.sub(r"'(?:[^']|'')*'", '', expression)
+        for code in expression_code(text):
             assert not re.search(r'\bsecrets\b', code, flags=re.I), 'secret context reference forbidden'
 
 
@@ -124,6 +150,16 @@ jobs:
     def test_duplicate_keys_and_yaml_merges_are_rejected(self):
         for text in ('permissions: {}\npermissions: write-all', 'base: &base {contents: read}\npermissions: {<<: *base}'):
             with self.assertRaises(ValueError): yaml.load(text, Loader=WorkflowLoader)
+
+    def test_long_quoted_expression_is_bounded_and_keeps_following_reference(self):
+        doc = self.fixture()
+        literal = "'" + "''" * 10000 + "}}secrets.IGNORED'"
+        doc['env'] = {'VALUE': '${{ ' + literal + ' }}'}
+        check_policy(doc)
+        doc['env']['VALUE'] = '${{ contains(' + literal + ', secrets.TOKEN) }}'
+        with self.assertRaises(AssertionError): check_policy(doc)
+        doc['env']['VALUE'] = "${{ 'unterminated"
+        with self.assertRaises(AssertionError): check_policy(doc)
 
     def test_only_test_workflows_are_in_scope(self):
         self.assertEqual(WORKFLOWS, ('ci.yml', 'recovery-profile.yml'))
