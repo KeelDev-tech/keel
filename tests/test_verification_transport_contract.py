@@ -203,6 +203,66 @@ class VerificationTransportContractTests(unittest.TestCase):
         self.assertEqual(diagnostics['main_fit_floor'], 75)
         self.assertEqual(report['observed'], 4)
 
+    def selected_board(self, observations, *, limit=1):
+        entries = []
+        for index, (board, observation) in enumerate(observations, 1):
+            row = queued(index, board=board)
+            if observation is not None:
+                row['posting_verification'] = observation
+            entries.append(row)
+        atomic_json(self.queue, entries)
+        calls = []
+        def fetch(url, timeout):
+            calls.append(url.split('/boards/')[1].split('/')[0])
+            return {'jobs': []}
+        report = service.verify(self.home, limit=limit,
+                                reader=service.PublicBoardReader(fetcher=fetch))
+        self.assertTrue(report['dry_run'])
+        self.assertFalse(report['submission_authorized'])
+        self.assertEqual(read_json(self.queue), entries)
+        return calls, report
+
+    def test_oldest_first_compares_instants_across_offsets(self):
+        calls, report = self.selected_board([
+            ('newer', {'observed_at': '2026-01-01T09:00:00+00:00'}),
+            ('older', {'observed_at': '2026-01-01T10:00:00+02:00'}),
+        ])
+        self.assertEqual(calls, ['older'])
+        self.assertEqual(report['deferred_by_limit'], 1)
+        self.assertEqual(report['requests'], 1)
+
+    def test_equivalent_instants_keep_stable_role_id_tie(self):
+        for stamp in ('2026-01-01T10:00:00+02:00', '2026-01-01T08:00:00Z',
+                      '2026-01-01T08:00:00.000000+00:00'):
+            with self.subTest(stamp=stamp):
+                calls, _ = self.selected_board([
+                    ('first', {'observed_at': stamp}),
+                    ('second', {'observed_at': '2026-01-01T08:00:00+00:00'}),
+                ])
+                self.assertEqual(calls, ['first'])
+
+    def test_never_attempted_and_missing_observation_keep_priority(self):
+        for observation in (None, {}):
+            with self.subTest(observation=observation):
+                calls, _ = self.selected_board([
+                    ('dated', {'observed_at': '2026-01-01T08:00:00+00:00'}),
+                    ('unobserved', observation),
+                ])
+                self.assertEqual(calls, ['unobserved'])
+
+    def test_malformed_observation_fallback_preserves_cooldown_exclusions(self):
+        for stamp in (None, 42, 'not-a-date', '2026-01-01T08:00:00',
+                      '0001-01-01T00:00:00+01:00'):
+            with self.subTest(stamp=stamp):
+                calls, report = self.selected_board([
+                    ('eligible', {'observed_at': stamp}),
+                    ('invalid', {'observed_at': stamp, 'next_eligible_at': 'invalid'}),
+                    ('cooldown', {'observed_at': stamp, 'next_eligible_at':
+                                  (service.utc_now()+timedelta(days=1)).isoformat()}),
+                ], limit=3)
+                self.assertEqual(calls, ['eligible'])
+                self.assertEqual(report['skipped'], {'invalid_cooldown_state': 1, 'cooldown': 1})
+
     def test_dry_run_and_supply_refuse_pending_recovery_without_writes(self):
         atomic_json(self.queue, [queued(1)])
         destination = self.home / 'data/queues/strategic-queue.json'
