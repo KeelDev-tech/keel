@@ -15,6 +15,10 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Add offline YAML regression tests for the CI and Recovery workflows' current
+  read-only permissions, literal hosted runner and absence of secret references.
+  Pin PyYAML for validation only; workflow settings and CodeQL are unchanged.
+
 - Audit exact subject fingerprints across supplied development, demonstration
   and held-out datasets without changing frozen plans or claiming semantic
   independence; reject invalid identities instead of omitting cases.
