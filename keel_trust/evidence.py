@@ -71,7 +71,8 @@ def evaluate(document, *, now):
             # Describe declarations, including unavailable evidence; these are not
             # independent votes. Version 1 has no upstream lineage contract.
             corroboration_assessments[row["claim_id"]] = {
-                "qualification": "DECLARED_PUBLISHER_DIVERSITY_ONLY",
+                "qualification": ("DECLARED_PUBLISHER_DIVERSITY_ONLY" if len(publishers) >= 2
+                                  else "INSUFFICIENT_DECLARED_PUBLISHER_DIVERSITY"),
                 "bound_source_count": len(bindings), "declared_publisher_count": len(publishers),
                 "upstream_lineage": "NOT_RECORDED", "source_independence": "NOT_ESTABLISHED",
                 "shared_source_reference": len(source_refs) < len(bindings),

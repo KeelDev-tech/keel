@@ -59,7 +59,8 @@ and freshness (0–90 seconds) are distinct from source/claim expiry.
   declared publishers and cannot rely solely on EXTERNAL_UNTRUSTED sources.
   This version-1 criterion does **not** establish source independence. A claim
   with this basis includes `corroboration_assessment`: declared publisher/source
-  counts, shared source-reference/content-hash signals, and explicit
+  counts, an insufficient-diversity qualification when fewer than two publishers
+  are declared, shared source-reference/content-hash signals, and explicit
   `upstream_lineage=NOT_RECORDED` / `source_independence=NOT_ESTABLISHED`.
   Signals summarize all bound source declarations, including unavailable sources;
   they are not counts of usable or independent evidence. Different references,

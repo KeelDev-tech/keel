@@ -82,7 +82,10 @@ def markdown(report):
     for claim in report["evidence"]["claims"]:
         if claim["basis"] == "CORROBORATED":
             assessment = claim.get("corroboration_assessment")
-            lines.append(f"- {safe(claim['claim_id'])}: corroboration reports declared publisher diversity only; "
+            diversity = ("declared publisher diversity only" if assessment and assessment["declared_publisher_count"] >= 2
+                         else "insufficient declared publisher diversity" if assessment
+                         else "publisher diversity is unknown in this older report")
+            lines.append(f"- {safe(claim['claim_id'])}: {diversity}; "
                          "upstream lineage is not recorded and source independence is not established.")
             if assessment:
                 lines.append(f"  Shared source reference: {assessment['shared_source_reference']}; "

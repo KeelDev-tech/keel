@@ -199,6 +199,8 @@ def test_integrated_report_exposes_corroboration_limits_without_changing_version
     rendered = markdown(report)
     assert 'source independence is not established' in rendered
     assert 'Shared source reference: False; shared content hash: False' in rendered
+    assert 'insufficient declared publisher diversity' in rendered
+    assert report['evidence']['claims'][0]['corroboration_assessment']['qualification'] == 'INSUFFICIENT_DECLARED_PUBLISHER_DIVERSITY'
     assert doc == before and not any(report['effects'].values()) and not report['execution_authorized']
 
 
@@ -218,3 +220,30 @@ def test_markdown_can_qualify_older_reports_without_assessment_field():
     report = build(doc, now=NOW)
     del report['evidence']['claims'][0]['corroboration_assessment']
     assert 'source independence is not established' in markdown(report)
+
+
+@pytest.mark.parametrize('publisher_count', [1, 2])
+def test_qualification_and_brief_do_not_overstate_declared_publisher_diversity(publisher_count):
+    doc = make_document()
+    export = doc['evidence_export']
+    claim = export['claims'][0]
+    claim['basis'] = 'CORROBORATED'
+    second = deepcopy(export['sources'][0])
+    second['source_id'] = 'second'
+    if publisher_count == 2:
+        second['publisher_id'] = 'second-publisher'
+    export['sources'].append(second)
+    claim['evidence'].append({k: second[k] for k in ('source_id', 'revision', 'content_hash')})
+    report = build(doc, now=NOW)
+    result = report['evidence']['claims'][0]
+    expected = ('INSUFFICIENT_DECLARED_PUBLISHER_DIVERSITY' if publisher_count == 1
+                else 'DECLARED_PUBLISHER_DIVERSITY_ONLY')
+    assert result['corroboration_assessment']['qualification'] == expected
+    assert ('CORROBORATION_INSUFFICIENT' in result['reasons']) is (publisher_count == 1)
+    rendered = markdown(report)
+    if publisher_count == 1:
+        assert 'insufficient declared publisher diversity' in rendered
+        assert 'declared publisher diversity only' not in rendered
+    else:
+        assert 'declared publisher diversity only' in rendered
+    assert not result['truth_independently_verified'] and not report['execution_authorized']
