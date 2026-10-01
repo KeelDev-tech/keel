@@ -158,6 +158,7 @@
   "keel_eval/__main__.py",
   "keel_eval/evaluation.py",
   "keel_eval/frontier.py",
+  "keel_eval/partitions.py",
   "keel_eval/reliability.py",
   "keel_eval/trace_conformance.py",
   "keel_evolve/__init__.py",

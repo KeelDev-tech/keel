@@ -125,3 +125,28 @@ def test_cli_is_read_only_offline_and_returns_nonzero_for_overlap(tmp_path, caps
     paths['held_out'].write_text(json.dumps(invalid))
     assert main(args) == 2
     assert not capsys.readouterr().out
+
+
+def test_source_package_runs_partition_audit_without_installed_packages(tmp_path):
+    import os
+    import subprocess
+    import sys
+    import zipfile
+    from tools import package
+
+    archive = tmp_path / 'source.zip'
+    package.build(archive)
+    code = tmp_path / 'source'
+    with zipfile.ZipFile(archive) as bundle:
+        bundle.extractall(code)
+    paths = {}
+    for name in ('development', 'held_out'):
+        paths[name] = tmp_path / (name + '.json')
+        paths[name].write_text(json.dumps(dataset(name)))
+    env = dict(os.environ)
+    env.pop('PYTHONPATH', None)
+    result = subprocess.run([sys.executable, '-S', '-m', 'keel_eval', 'partition-audit',
+        '--development', str(paths['development']), '--held-out', str(paths['held_out'])],
+        cwd=code, env=env, capture_output=True, text=True, timeout=20)
+    assert result.returncode == 3, result.stdout + result.stderr
+    assert json.loads(result.stdout)['overlapping_subject_count'] == 1
