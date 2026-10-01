@@ -4,6 +4,8 @@ import os
 import sys
 import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(BASE, "..", "engines"))
@@ -57,6 +59,100 @@ class TestGatePanel(unittest.TestCase):
         data = bd.collect(home=home)
         self.assertIsNone(data["gate_blocks"])
         self.assertTrue(any('malformed' in warning for warning in data['warnings']))
+
+
+
+class TestSourceAvailability(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.home = Path(self.temp.name)
+
+    def write(self, relative, value):
+        path = self.home / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(value))
+
+    def panel(self, document, heading):
+        return document.split('<h2>' + heading + '</h2>', 1)[1].split('<h2>', 1)[0]
+
+    def test_missing_sources_never_render_as_empty_activity(self):
+        document = bd.render(bd.collect(self.home))
+        for heading, absent in [
+            ('Interview pipeline — needs you', 'No active interview threads.'),
+            ('Recent submission claims', 'No submissions yet.'),
+            ('Queues', 'No queues yet.'),
+            ('Parked / blocked', 'Nothing parked.'),
+        ]:
+            with self.subTest(panel=heading):
+                panel = self.panel(document, heading)
+                self.assertIn('Unknown', panel)
+                self.assertNotIn(absent, panel)
+        self.assertEqual(list(self.home.iterdir()), [])
+
+    def test_corrupt_sources_never_render_as_empty_activity(self):
+        for relative in ('data/application-ledger.json', 'data/parked.json'):
+            self.write(relative, [])
+            (self.home / relative).write_text('{broken')
+        document = bd.render(bd.collect(self.home))
+        for heading in ('Interview pipeline — needs you', 'Recent submission claims', 'Parked / blocked'):
+            with self.subTest(panel=heading):
+                self.assertIn('Unknown', self.panel(document, heading))
+        self.assertIn('Data needs attention', document)
+
+    def test_unreadable_parked_source_stays_unknown(self):
+        self.write('data/parked.json', [])
+        original = bd.read_json
+        def read(path):
+            if Path(path).name == 'parked.json':
+                raise PermissionError('synthetic read denial')
+            return original(path)
+        with patch.object(bd, 'read_json', side_effect=read):
+            data = bd.collect(self.home)
+        self.assertFalse(data['parked_known'])
+        self.assertIn('Unknown', self.panel(bd.render(data), 'Parked / blocked'))
+
+    def test_successfully_read_empty_sources_retain_empty_messages(self):
+        self.write('data/application-ledger.json', [])
+        self.write('data/parked.json', [])
+        for queue in ('standard', 'strategic', 'needs_input'):
+            self.write('data/queues/' + queue + '-queue.json', [])
+        data = bd.collect(self.home)
+        document = bd.render(data)
+        self.assertTrue(data['parked_known'])
+        for heading, text in [
+            ('Interview pipeline — needs you', 'No active interview threads.'),
+            ('Recent submission claims', 'No submissions yet.'),
+            ('Parked / blocked', 'Nothing parked.'),
+        ]:
+            panel = self.panel(document, heading)
+            self.assertIn(text, panel)
+            self.assertNotIn('Unknown', panel)
+        self.assertEqual(data['queue_total'], 0)
+
+    def test_undated_submission_claims_are_not_reported_as_absent(self):
+        self.write('data/application-ledger.json', [{'status': 'SUBMITTED', 'company': 'Synthetic'}])
+        data = bd.collect(self.home)
+        self.assertEqual(len(data['submitted']), 1)
+        panel = self.panel(bd.render(data), 'Recent submission claims')
+        self.assertNotIn('No submissions yet.', panel)
+        self.assertIn('Submission claims exist, but no dates are available.', panel)
+
+    def test_known_records_remain_visible_and_escaped(self):
+        label = '<img src=x onerror=alert(1)>'
+        self.write('data/application-ledger.json', [
+            {'status': 'SUBMITTED', 'company': label, 'submitted_at': '2026-01-01T00:00:00Z'},
+            {'status': 'INTERVIEW_INVITED', 'company': label},
+        ])
+        self.write('data/parked.json', [{'title': label, 'detail': 'Synthetic hold'}])
+        document = bd.render(bd.collect(self.home))
+        for heading in ('Interview pipeline — needs you', 'Recent submission claims', 'Parked / blocked'):
+            panel = self.panel(document, heading)
+            self.assertIn('&lt;img', panel)
+            self.assertNotIn('<img', panel)
+            self.assertNotIn('Unknown', panel)
+        self.assertIn('Provider verification is not connected', document)
+        self.assertIn('does not submit an application or authorize an executor', document)
 
 
 if __name__ == "__main__":
