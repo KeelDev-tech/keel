@@ -595,7 +595,7 @@ def _next_time(entry, key):
     # retry timestamp cannot defer verification of a different exact posting.
     # Legacy scheduling records without an identity retain their cooldown;
     # they do not establish current posting presence.
-    if 'identity' in observation and not _observation_matches(entry, key):
+    if 'identity' in observation and (key is None or observation['identity'] != list(key)):
         return None
     stamp = observation.get('next_eligible_at')
     if not stamp:
