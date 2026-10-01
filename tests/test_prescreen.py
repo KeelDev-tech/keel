@@ -19,6 +19,7 @@ import re
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 ENGINES = os.path.join(BASE, "..", "engines")
@@ -343,6 +344,42 @@ class TestSyntheticTelemetryIsolation(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class PrescreenTelemetryMinimizationTests(unittest.TestCase):
+    def test_gate_telemetry_omits_prose_but_queue_retains_review_facts(self):
+        import log_event
+        import queue_io
+        sentinel = 'SYNTHETIC-PRIVATE-NOTE person@example.com personal answer placeholder'
+        for category, expected in [('essay', 'essay'), ('travel', 'travel'),
+                                   ('attestation', 'attest'), ('recording consent', 'recording_consent'),
+                                   ('applicant input', 'needs_input')]:
+            with self.subTest(category=category), tempfile.TemporaryDirectory() as qdir:
+                reasons = [category + ': ' + sentinel, 'Additional applicant review: ' + sentinel]
+                lead = {'role_id': 'ROLE-PRIVACY-001', 'company': 'Synthetic', 'status': 'READY'}
+                for name, rows in [('standard', [lead]), ('strategic', []), ('needs_input', [])]:
+                    with open(os.path.join(qdir, name + '-queue.json'), 'w') as stream:
+                        json.dump(rows, stream)
+                events = []
+                def capture(*args, **kwargs):
+                    event, _ = log_event._prepare_event(*args, **kwargs)
+                    events.append(event)
+                    return event
+                with patch.object(queue_io, '_LOCK_PATH', os.path.join(qdir, 'queue.lock')), \
+                        patch.object(prescreen.log_event, 'log', side_effect=capture):
+                    result = prescreen.park_lead(lead['role_id'], reasons, queue_dir=qdir, backup=False)
+                self.assertTrue(result['ok'])
+                with open(os.path.join(qdir, 'needs_input-queue.json')) as stream:
+                    parked = json.load(stream)[0]
+                self.assertEqual(parked['status'], 'PARKED-NEEDS-INPUT')
+                self.assertEqual(parked['unresolved'], reasons)
+                self.assertEqual(parked['gate_note'], '; '.join(reasons))
+                self.assertIn('; '.join(reasons), parked['status_reason'])
+                self.assertEqual(len(events), 1)
+                self.assertEqual(events[0]['event_type'], 'gate_blocked')
+                self.assertEqual(events[0]['source'], 'prescreen')
+                self.assertEqual(events[0]['details'], {'gate': expected, 'reason_count': 2})
+                self.assertNotIn(sentinel, json.dumps(events))
 
 
 class LongOptionCoverageTests(unittest.TestCase):

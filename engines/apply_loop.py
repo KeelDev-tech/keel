@@ -1348,8 +1348,8 @@ def build_packet(entry, origin="standard", dest_dir=None, task_id=""):
         intel_path = os.path.join(HOME, "data", "form-intel", f"{role_id}.intel.json")
         atomic_json(intel_path, intel)
         ats = intel.get("ats")
-    except Exception as ex:
-        print(f"  intel failed for {role_id} ({ex}); continuing without it")
+    except Exception:
+        print(f"  intel failed for {role_id}: form_intel_unavailable; continuing without it")
         intel, ats = None, "unknown"
     bank = load_answer_bank()
     brief = build_generic_brief(entry, intel, bank)

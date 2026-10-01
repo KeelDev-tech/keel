@@ -15,6 +15,10 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Keep prescreen reason prose in queue review artifacts rather than gate telemetry;
+  retain gate categories and reason counts, and omit raw probe exceptions from
+  packet-builder diagnostics. Evidence holds and applicant approvals are unchanged.
+
 - Keep an undated submission-claim count visible alongside dated dashboard rows,
   including when the recent list is capped at eight records.
 
