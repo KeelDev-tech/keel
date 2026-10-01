@@ -15,6 +15,10 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Audit exact subject fingerprints across supplied development, demonstration
+  and held-out datasets without changing frozen plans or claiming semantic
+  independence; reject invalid identities instead of omitting cases.
+
 - Keep queue-lock retries paced and deadline-bounded when stale diagnostic
   metadata cannot be removed; retain kernel lock authority and transaction
   recovery, and cap sleeps to the remaining waiter budget.
