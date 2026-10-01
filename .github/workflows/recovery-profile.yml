@@ -27,6 +27,7 @@ jobs:
           KEEL_HOME: ${{ runner.temp }}/keel-recovery-tests
         run: >-
           python -m pytest -q --import-mode=importlib
+          tests/test_queue_lock_contention.py
           tests/test_queue_transactions.py
           tests/test_task_liveness_repair.py
           tests/test_verification_transport_contract.py

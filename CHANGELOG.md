@@ -18,6 +18,18 @@
 - Cover the existing workbench CSP on HTML, JSON and application error responses
   with socket-free handler tests selected in CI; no server policy changes.
 
+- Add offline YAML regression tests for the CI and Recovery workflows' current
+  read-only permissions, literal hosted runner and absence of secret references.
+  Pin PyYAML for validation only; workflow settings and CodeQL are unchanged.
+
+- Audit exact subject fingerprints across supplied development, demonstration
+  and held-out datasets without changing frozen plans or claiming semantic
+  independence; reject invalid identities instead of omitting cases.
+
+- Keep queue-lock retries paced and deadline-bounded when stale diagnostic
+  metadata cannot be removed; retain kernel lock authority and transaction
+  recovery, and cap sleeps to the remaining waiter budget.
+
 - Exclude CLOSED and CLOSED-EXPIRED queue/ledger states from automatic posting
   verification and supply selection, including terminal holds added during a
   read; retain existing active-state eligibility and approval requirements.

@@ -79,6 +79,15 @@ jobs:
         run: >-
           python3 -m pytest -q --import-mode=importlib
           tests/test_workbench_http_headers.py tests/test_workbench_integrations.py
+      - name: Test exact evaluation partition audit and frozen evaluation contracts
+        env:
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+        run: >-
+          python3 -m pytest -q --import-mode=importlib
+          tests/test_eval_partitions.py
+          tests/test_grounding_eval.py
+          tests/test_reliability_lab.py
+          tests/test_frontier_evaluation.py
       - name: Run stdlib test suite
         run: python3 -m unittest discover -s tests
       - name: Run offline Hypothesis prescreen properties
