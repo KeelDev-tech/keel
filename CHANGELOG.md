@@ -15,6 +15,9 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Cover the existing workbench CSP on HTML, JSON and application error responses
+  with socket-free handler tests selected in CI; no server policy changes.
+
 - Exclude CLOSED and CLOSED-EXPIRED queue/ledger states from automatic posting
   verification and supply selection, including terminal holds added during a
   read; retain existing active-state eligibility and approval requirements.

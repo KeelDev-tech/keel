@@ -73,6 +73,12 @@ jobs:
         env:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
         run: python3 -m pytest -q --import-mode=importlib tests/test_trust_evidence.py
+      - name: Test offline workbench HTTP response contracts
+        env:
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+        run: >-
+          python3 -m pytest -q --import-mode=importlib
+          tests/test_workbench_http_headers.py tests/test_workbench_integrations.py
       - name: Run stdlib test suite
         run: python3 -m unittest discover -s tests
       - name: Run offline Hypothesis prescreen properties
