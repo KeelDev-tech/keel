@@ -52,6 +52,19 @@ jobs:
           tests/test_legacy_rescreen_standard.py::test_cli_min_fit_override_is_preserved
       - name: Verify offline completion cost accounting
         run: python3 -m unittest tests.test_completion_cost
+      # unittest discovery does not execute these pytest function tests.
+      - name: Test outcome safety and truthful analytics
+        env:
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+          KEEL_HOME: ${{ runner.temp }}/keel-outcome-tests
+        run: >-
+          python3 -m pytest -q --import-mode=importlib
+          tests/test_outcome_analytics_rates.py
+          tests/test_outcome_attribution_regressions.py
+          tests/test_outcome_integrity_submission_regressions.py
+          tests/test_outcome_linkage.py
+          tests/test_outcome_snapshot.py
+          tests/test_record_outcome_timestamps.py
       - name: Run stdlib test suite
         run: python3 -m unittest discover -s tests
       - name: Run offline Hypothesis prescreen properties

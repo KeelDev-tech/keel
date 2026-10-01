@@ -41,6 +41,9 @@
   diagnostic, preserving brief-only PARK behavior and example-bank isolation.
   Report no execution authority even when the diagnostic is CLEAN.
 
+- Run the existing outcome-safety and truthful-analytics function regressions
+  explicitly in CI, covering receipt correlation, chronology and rate denominators.
+
 - Derive the tray and standard re-screen fit defaults from the canonical
   intake `FIT_BAR` (currently 75). Preserve explicit tray environment/API/CLI
   overrides and the re-screen CLI override. Add regression coverage for floor
