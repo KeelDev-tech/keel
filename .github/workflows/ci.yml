@@ -33,6 +33,10 @@ jobs:
           tests/test_storage_preflight.py
       - name: Test operational recovery including every publication cut point
         run: python3 -m pytest -q tests/test_operational_recovery.py
+      - name: Test exact packet review and decisions
+        env:
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+        run: PYTHONPATH=tests:. python3 -m pytest -q --import-mode=importlib tests/test_muse_review.py tests/test_muse_dashboard.py tests/test_sources_decisions.py
       - name: Test seeded tailoring audit and grader failure detection
         run: python3 -m pytest -q tests/test_tailoring_audit.py tests/test_grounding_claims_answers.py tests/test_grounding_packet.py
       - name: Run offline seeded tailoring audit
@@ -65,10 +69,6 @@ jobs:
           tests/test_outcome_linkage.py
           tests/test_outcome_snapshot.py
           tests/test_record_outcome_timestamps.py
-      - name: Test exact packet review and decisions
-        env:
-          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
-        run: PYTHONPATH=tests:. python3 -m pytest -q --import-mode=importlib tests/test_muse_review.py tests/test_muse_dashboard.py tests/test_sources_decisions.py
       - name: Run stdlib test suite
         run: python3 -m unittest discover -s tests
       - name: Run offline Hypothesis prescreen properties
