@@ -146,3 +146,75 @@ def test_report_retains_owner_and_never_answers_consent():
     consent=next(r for r in report['operator_brief']['selected'] if r['classification']=='CONSENT_QUARANTINED')
     assert consent['operator_reply_required'] and consent['resolved'] is False
     assert report['operator_brief']['answers_generated']==0 and 'reply required' in markdown(report)
+
+
+@pytest.mark.parametrize('shared_ref,shared_hash', [(True, True), (True, False), (False, True), (False, False)])
+def test_declared_publishers_do_not_establish_source_independence(shared_ref, shared_hash):
+    doc = evidence()
+    source = deepcopy(doc['sources'][0])
+    source.update(source_id='second', publisher_id='other-publisher', origin='INDEPENDENT',
+                  verification_ref='fixture://asserted-verification')
+    if not shared_ref:
+        source['source_ref'] = 'fixture://second-reference'
+    if not shared_hash:
+        source['content_hash'] = digest('different words may still copy an unknown upstream source')
+    doc['sources'].append(source)
+    doc['claims'][0]['basis'] = 'CORROBORATED'
+    doc['claims'][0]['evidence'].append({k: source[k] for k in ('source_id', 'revision', 'content_hash')})
+    before = deepcopy(doc)
+    report = evaluate(doc, now=NOW)
+    claim = report['claims'][0]
+    assert claim['corroboration_assessment'] == {
+        'qualification': 'DECLARED_PUBLISHER_DIVERSITY_ONLY',
+        'bound_source_count': 2, 'declared_publisher_count': 2,
+        'upstream_lineage': 'NOT_RECORDED', 'source_independence': 'NOT_ESTABLISHED',
+        'shared_source_reference': shared_ref, 'shared_content_hash': shared_hash,
+    }
+    assert claim['status'] == 'VALID_FOR_REVIEW'  # Existing version-1 review contract.
+    assert not claim['truth_independently_verified'] and not report['execution_authorized']
+    assert all(not row['release_authorized'] for row in report['artifacts'])
+    assert doc == before and report['snapshot_sha256'] == digest(before)
+
+
+def test_corroboration_qualification_preserves_conflicts_and_invalidation():
+    doc = evidence()
+    doc['claims'][0]['basis'] = 'CORROBORATED'
+    other = deepcopy(doc['claims'][0])
+    other.update(claim_id='contradiction', value_hash='b' * 64)
+    doc['claims'].append(other)
+    report = evaluate(doc, now=NOW)
+    for claim in report['claims']:
+        assert {'CORROBORATION_INSUFFICIENT', 'CONTRADICTORY_CLAIMS'} <= set(claim['reasons'])
+        assert claim['corroboration_assessment']['source_independence'] == 'NOT_ESTABLISHED'
+        assert claim['status'] == 'BLOCKED' and claim['conflicts_with']
+    assert set(report['invalidated_artifact_ids']) == {'resume', 'packet', 'interview'}
+
+
+def test_integrated_report_exposes_corroboration_limits_without_changing_version_one_input():
+    doc = make_document()
+    doc['evidence_export']['claims'][0]['basis'] = 'CORROBORATED'
+    before = deepcopy(doc)
+    report = build(doc, now=NOW)
+    assert report['evidence']['claims'][0]['corroboration_assessment']['upstream_lineage'] == 'NOT_RECORDED'
+    rendered = markdown(report)
+    assert 'source independence is not established' in rendered
+    assert 'Shared source reference: False; shared content hash: False' in rendered
+    assert doc == before and not any(report['effects'].values()) and not report['execution_authorized']
+
+
+def test_unavailable_evidence_counts_are_declarations_not_usable_votes():
+    doc = evidence()
+    doc['claims'][0]['basis'] = 'CORROBORATED'
+    doc['sources'][0]['status'] = 'REVOKED'
+    claim = evaluate(doc, now=NOW)['claims'][0]
+    assert 'EVIDENCE_UNAVAILABLE' in claim['reasons'] and claim['status'] == 'BLOCKED'
+    assert claim['corroboration_assessment']['bound_source_count'] == 1
+    assert claim['corroboration_assessment']['source_independence'] == 'NOT_ESTABLISHED'
+
+
+def test_markdown_can_qualify_older_reports_without_assessment_field():
+    doc = make_document()
+    doc['evidence_export']['claims'][0]['basis'] = 'CORROBORATED'
+    report = build(doc, now=NOW)
+    del report['evidence']['claims'][0]['corroboration_assessment']
+    assert 'source independence is not established' in markdown(report)

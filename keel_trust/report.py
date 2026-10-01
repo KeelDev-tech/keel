@@ -79,6 +79,14 @@ def markdown(report):
               for row in brief["selected"]] or ["No current, budgeted decisions selected."]
     lines += ["", "## Evidence requiring review", ""]
     lines += [f"- {safe(row['role_id'])}: {safe(', '.join(row['reasons']))}." for row in report["material_holds"]] or ["No invalid material bindings in this export."]
+    for claim in report["evidence"]["claims"]:
+        if claim["basis"] == "CORROBORATED":
+            assessment = claim.get("corroboration_assessment")
+            lines.append(f"- {safe(claim['claim_id'])}: corroboration reports declared publisher diversity only; "
+                         "upstream lineage is not recorded and source independence is not established.")
+            if assessment:
+                lines.append(f"  Shared source reference: {assessment['shared_source_reference']}; "
+                             f"shared content hash: {assessment['shared_content_hash']}.")
     lines += ["", "## Operational checks", ""]
     lines += [f"- {safe(row['action'])}: {safe(row['reason'])}." for row in flow["actions"]]
     lines += ["", "The twin uses supplied snapshots. It has no live connection or demonstrated forecast calibration.",

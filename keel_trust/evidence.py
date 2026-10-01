@@ -32,6 +32,7 @@ def evaluate(document, *, now):
         source_rows.append({"source_id": row["source_id"], "origin": row["origin"], "reasons": reasons,
                             "usable_as_evidence": not reasons, "can_issue_instructions": False})
     claims, grouped, conflicts = {}, defaultdict(list), defaultdict(set)
+    corroboration_assessments = {}
     for row in document["claims"]:
         keys(row, {"claim_id", "workspace_id", "subject_id", "predicate", "value_hash", "revision", "kind", "basis",
                    "review_state", "approval_ref", "allowed_scopes", "allowed_wording", "evidence", "expires_at", "conflicts_with"})
@@ -46,6 +47,7 @@ def evaluate(document, *, now):
         strings(row["conflicts_with"], "conflicts")
         if row["approval_ref"] is not None: text(row["approval_ref"])
         reasons, origins, publishers, verified = [], set(), set(), False
+        source_refs, content_hashes = set(), set()
         if not current: reasons.append("EXPORT_NOT_CURRENT")
         if timestamp(row["expires_at"]) <= now: reasons.append("CLAIM_EXPIRED")
         if row["review_state"] != "APPROVED" or row["approval_ref"] is None: reasons.append("CLAIM_NOT_APPROVED")
@@ -60,10 +62,21 @@ def evaluate(document, *, now):
             if source["revision"] != binding["revision"] or source["content_hash"] != binding["content_hash"]:
                 reasons.append("EVIDENCE_CHANGED")
             origins.add(source["origin"]); publishers.add(source["publisher_id"])
+            source_refs.add(source["source_ref"]); content_hashes.add(source["content_hash"])
             verified |= source["verification_ref"] is not None and source["origin"] != "EXTERNAL_UNTRUSTED"
         if row["basis"] == "SELF_ATTESTED" and "APPLICANT_RECORD" not in origins: reasons.append("BASIS_UNSUPPORTED")
         if row["basis"] == "EMPLOYER_STATED" and "EMPLOYER" not in origins: reasons.append("BASIS_UNSUPPORTED")
         if row["basis"] == "CORROBORATED" and (len(publishers) < 2 or origins == {"EXTERNAL_UNTRUSTED"}): reasons.append("CORROBORATION_INSUFFICIENT")
+        if row["basis"] == "CORROBORATED":
+            # Describe declarations, including unavailable evidence; these are not
+            # independent votes. Version 1 has no upstream lineage contract.
+            corroboration_assessments[row["claim_id"]] = {
+                "qualification": "DECLARED_PUBLISHER_DIVERSITY_ONLY",
+                "bound_source_count": len(bindings), "declared_publisher_count": len(publishers),
+                "upstream_lineage": "NOT_RECORDED", "source_independence": "NOT_ESTABLISHED",
+                "shared_source_reference": len(source_refs) < len(bindings),
+                "shared_content_hash": len(content_hashes) < len(bindings),
+            }
         if row["basis"] == "ADAPTER_VERIFIED" and not verified: reasons.append("VERIFICATION_REFERENCE_MISSING")
         claims[row["claim_id"]] = (row, reasons)
         # A pending conflicting value also blocks reuse until reconciled; a revoked historical value does not.
@@ -82,6 +95,8 @@ def evaluate(document, *, now):
         claim_rows.append({"claim_id": cid, "revision": row["revision"], "basis": row["basis"],
                            "status": "VALID_FOR_REVIEW" if not reasons else "BLOCKED", "reasons": sorted(set(reasons)),
                            "conflicts_with": sorted(conflicts[cid]), "truth_independently_verified": False})
+        if cid in corroboration_assessments:
+            claim_rows[-1]["corroboration_assessment"] = corroboration_assessments[cid]
     artifacts = {row["artifact_id"]: row for row in document["artifacts"]}
     findings, dependents, degree = {}, defaultdict(list), {}
     for aid, row in artifacts.items():
