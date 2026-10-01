@@ -57,6 +57,17 @@ and freshness (0–90 seconds) are distinct from source/claim expiry.
   conflicts. Bases are SELF_ATTESTED, EMPLOYER_STATED, CORROBORATED and
   ADAPTER_VERIFIED. No numeric confidence is invented. Corroboration needs distinct
   declared publishers and cannot rely solely on EXTERNAL_UNTRUSTED sources.
+  This version-1 criterion does **not** establish source independence. A claim
+  with this basis includes `corroboration_assessment`: declared publisher/source
+  counts, an insufficient-diversity qualification when fewer than two publishers
+  are declared, shared source-reference/content-hash signals, and explicit
+  `upstream_lineage=NOT_RECORDED` / `source_independence=NOT_ESTABLISHED`.
+  Signals summarize all bound source declarations, including unavailable sources;
+  they are not counts of usable or independent evidence. Different references,
+  hashes, origins or verification references do not prove independent reporting.
+  Shared values are review signals, not proof of copying or common ownership.
+  Existing version-1 inputs and review eligibility are unchanged; no lineage is
+  invented and no approval, authenticity or execution authority is granted.
 - Claim kinds are FACT, EXPERIENCE and ROLE_REQUIREMENT. Consent is excluded.
   The host must classify honestly and retain separate consent/attestation gates;
   opaque hashes cannot expose a misleading declaration or mislabeled consent.
