@@ -17,6 +17,8 @@
 
 - Reflow dashboard score cards on narrow screens and wrap long values without
   clipping or changing displayed counts.
+- Add keyboard skip targets to dashboard/review content and accessible names and
+  column headers to the dashboard submission-claims table.
 
 - Keep prescreen reason prose in queue review artifacts rather than gate telemetry;
   retain gate categories and reason counts, and omit raw probe exceptions from
