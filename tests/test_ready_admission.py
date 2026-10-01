@@ -344,6 +344,24 @@ def test_direct_legacy_preparation_never_marks_queue_inflight(tmp_path, monkeypa
         apply_loop.mark_inflight(entry["role_id"], "standard")
 
 
+@pytest.mark.parametrize('error_type', [ValueError, RuntimeError])
+def test_probe_error_output_omits_private_text_and_preserves_evidence_hold(tmp_path, monkeypatch, capsys, error_type):
+    sentinel = 'SYNTHETIC-PRIVATE-PROBE person@example.com personal answer placeholder'
+    entry = lead(posting_text='Synthetic complete posting.', posting_text_url=lead()['ats_url'])
+    def fail_probe(url):
+        raise error_type(sentinel)
+    monkeypatch.setattr(apply_loop.form_intel, 'probe_url', fail_probe)
+    monkeypatch.setattr(apply_loop, 'load_answer_bank', bank)
+    destination = tmp_path / 'data/launch-packets'
+    with pytest.raises(apply_loop.PacketEvidenceUnavailable):
+        apply_loop.build_packet(entry, dest_dir=str(destination))
+    captured = capsys.readouterr()
+    assert sentinel not in captured.out + captured.err
+    assert 'form_intel_unavailable' in captured.out
+    assert not (destination / 'fixture-role.json').exists()
+    assert not (tmp_path / 'data/form-intel/fixture-role.intel.json').exists()
+
+
 def test_packet_builder_keeps_runtime_artifacts_inside_workspace(tmp_path, monkeypatch):
     entry = lead()
     entry["posting_text"] = "Synthetic posting text for a standard role."

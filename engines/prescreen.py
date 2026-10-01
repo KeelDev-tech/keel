@@ -938,7 +938,9 @@ def park_lead(role_id, reasons, queue_dir=None, backup=True,
                 role_id=role_id,
                 company=lead.get("company", ""),
                 source="prescreen",
-                details={"gate": _primary_gate(reasons), "reasons": reasons},
+                # Applicant-owned prose stays in the queue review artifacts.
+                # Telemetry consumers need the gate category, not the answers.
+                details={"gate": _primary_gate(reasons), "reason_count": len(reasons)},
             )
         except Exception as e:
             print(f"  prescreen: telemetry log failed (non-fatal): {e}", file=sys.stderr)
