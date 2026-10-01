@@ -249,16 +249,15 @@ def queue_lock(timeout=None, owner=None, recover=True):
             except (BlockingIOError, OSError):
                 meta = _read_meta()
                 if recover and _meta_is_stale(meta):
-                    # Dead holder: the kernel already released its flock;
-                    # clear the ghost meta and retry immediately.
+                    # Metadata is advisory. Cleanup failure must not bypass
+                    # the deadline or turn real contention into a busy loop.
                     _clear_meta()
-                    continue
-                if time.monotonic() - start >= timeout:
+                waited = time.monotonic() - start
+                if waited >= timeout:
                     hp = (meta or {}).get("pid")
                     ho = (meta or {}).get("owner")
-                    raise QueueLockTimeout(hp, ho,
-                                           time.monotonic() - start, timeout)
-                time.sleep(_LOCK_POLL_S)
+                    raise QueueLockTimeout(hp, ho, waited, timeout)
+                time.sleep(min(_LOCK_POLL_S, timeout - waited))
         wait_ms = (time.monotonic() - start) * 1000.0
         if recover:
             _write_meta(owner)
