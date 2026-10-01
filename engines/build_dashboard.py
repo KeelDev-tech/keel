@@ -233,6 +233,14 @@ def render(data):
         for e in data["recent"]
     ) or f"<tr><td colspan='2' class='dim'>{recent_empty}</td></tr>"
 
+    undated_count = sum(not (e.get('submitted_at') or e.get('date_submitted'))
+                        for e in submitted)
+    if data['recent'] and undated_count:
+        notice = ("1 submission claim has no date and is not shown above."
+                  if undated_count == 1 else
+                  f"{undated_count} submission claims have no date and are not shown above.")
+        recent_rows += f"<tr><td colspan='2' class='dim'>{notice}</td></tr>"
+
     queue_rows = "\n".join(
         f"<div class='qrow'><span>{esc(k)}</span><strong>{fmt_count(v)}</strong></div>"
         for k, v in sorted(queues.items())
