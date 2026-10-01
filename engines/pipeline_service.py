@@ -28,7 +28,10 @@ from posting_identity import TOKEN, identity, observe
 from fit_policy import main_floor
 
 QUEUES = ('standard', 'strategic', 'needs_input', 'rejected')
-FINAL_OR_ACTIVE = {'SUBMITTED', 'SUBMISSION_CLAIMED', 'IN-FLIGHT', 'APPLYING', 'UNKNOWN_OUTCOME', 'REJECTED', 'DEAD', 'CANCELLED'}
+# Include the closed lifecycle states recognized by queue_intake and the
+# strategic reconciler. A posting read must not implicitly reopen them.
+FINAL_OR_ACTIVE = {'SUBMITTED', 'SUBMISSION_CLAIMED', 'IN-FLIGHT', 'APPLYING', 'UNKNOWN_OUTCOME',
+                   'REJECTED', 'DEAD', 'CANCELLED', 'CLOSED', 'CLOSED-EXPIRED'}
 MAX_BOARDS = 100
 MAX_JOBS = 20000
 PAGE_SIZE = 100

@@ -37,6 +37,75 @@ class VerificationTransportContractTests(unittest.TestCase):
             item.start()
             self.addCleanup(item.stop)
 
+    def queue_and_ledger_bytes(self):
+        paths = [self.home / f'data/queues/{name}-queue.json' for name in service.QUEUES]
+        paths.append(self.home / 'data/application-ledger.json')
+        return {path: path.read_bytes() for path in paths}
+
+    def test_closed_queue_states_never_dispatch_or_change_queue_and_ledger(self):
+        for status in ('CLOSED', 'CLOSED-EXPIRED', 'closed', 'Closed-Expired', 'DEAD'):
+            for live in (False, True):
+                with self.subTest(status=status, live=live):
+                    atomic_json(self.queue, [{**queued(1), 'status': status}])
+                    before = self.queue_and_ledger_bytes()
+                    report = service.verify(self.home, live=live,
+                        reader=service.PublicBoardReader(fetcher=lambda *_: self.fail('terminal dispatch')))
+                    self.assertEqual(report['requests'], 0)
+                    self.assertEqual(report['skipped'], {'held_or_active_or_terminal': 1})
+                    self.assertFalse(report['submission_authorized'])
+                    self.assertEqual(before, self.queue_and_ledger_bytes())
+                    self.assertEqual(service.supply_report(self.home)['mutually_exclusive_supply_states'],
+                                     {'held_active_or_terminal': 1})
+
+    def test_closed_ledger_holds_active_queue_by_role_or_exact_posting(self):
+        for status in ('CLOSED', 'CLOSED-EXPIRED', 'closed', 'Closed-Expired'):
+            for binding in ('role', 'posting'):
+                with self.subTest(status=status, binding=binding):
+                    active = queued(1)
+                    terminal = {**active, 'status': status}
+                    if binding == 'role':
+                        terminal['application_url'] = queued(2)['application_url']
+                    else:
+                        terminal['role_id'] = 'historical-role'
+                    atomic_json(self.queue, [active])
+                    atomic_json(self.home / 'data/application-ledger.json', [terminal])
+                    before = self.queue_and_ledger_bytes()
+                    report = service.verify(self.home, live=True,
+                        reader=service.PublicBoardReader(fetcher=lambda *_: self.fail('terminal ledger dispatch')))
+                    self.assertEqual(report['requests'], 0)
+                    self.assertEqual(report['skipped'], {'held_or_active_or_terminal': 1})
+                    self.assertEqual(before, self.queue_and_ledger_bytes())
+
+    def test_existing_active_states_remain_scannable_without_reopening_closed_rows(self):
+        for status in ('PARKED-PENDING-VERIFICATION', 'REPOST-WATCH'):
+            with self.subTest(status=status):
+                atomic_json(self.queue, [{**queued(1), 'status': status}])
+                before = self.queue.read_bytes()
+                calls = []
+                report = service.verify(self.home, reader=service.PublicBoardReader(
+                    fetcher=lambda *_: calls.append(1) or {'jobs': []}))
+                self.assertEqual(report['requests'], 1)
+                self.assertEqual(calls, [1])
+                self.assertEqual(self.queue.read_bytes(), before)
+
+    def test_terminal_ledger_added_during_read_prevents_verification_commit(self):
+        for status in ('CLOSED', 'CLOSED-EXPIRED'):
+            with self.subTest(status=status):
+                active = queued(1)
+                atomic_json(self.queue, [active])
+                ledger = self.home / 'data/application-ledger.json'
+                atomic_json(ledger, [])
+                before = self.queue.read_bytes()
+                def fetch(*_):
+                    atomic_json(ledger, [{**active, 'status': status}])
+                    return {'jobs': []}
+                report = service.verify(self.home, live=True,
+                    reader=service.PublicBoardReader(fetcher=fetch))
+                self.assertEqual(report['requests'], 1)
+                self.assertEqual(report['committed_verdicts'], {})
+                self.assertEqual(self.queue.read_bytes(), before)
+                self.assertEqual(read_json(ledger), [{**active, 'status': status}])
+
     def test_first_failed_attempt_honors_its_own_cooldown(self):
         for with_old_target in (False, True):
             with self.subTest(with_old_target=with_old_target):

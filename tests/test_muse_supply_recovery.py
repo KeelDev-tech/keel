@@ -84,7 +84,9 @@ def test_host_holds_exclude_candidates(home, change):
 
 @pytest.mark.parametrize('fields', [{'fit_score':74}, {'unresolved':['work authorization']},
                                    {'d1_office_exclusion':True}, {'browser_task_id':'busy'},
-                                   {'attempt_id':'owned'}, {'status':'SUBMITTED'}, {'action_band':'HOLD'}])
+                                   {'attempt_id':'owned'}, {'status':'SUBMITTED'}, {'action_band':'HOLD'},
+                                   {'status':'CLOSED'}, {'status':'CLOSED-EXPIRED'},
+                                   {'status':'closed'}, {'status':'Closed-Expired'}])
 def test_protected_records_are_not_selected(home, fields):
     put(home, [row(**fields)])
     result = recovery.plan(home)
