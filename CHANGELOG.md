@@ -15,6 +15,9 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Keep an undated submission-claim count visible alongside dated dashboard rows,
+  including when the recent list is capped at eight records.
+
 - Keep dashboard activity panels unknown when their source records are missing,
   unreadable or corrupt. Retain empty-state messages for known empty records,
   and distinguish undated submission claims from no recorded claims.
