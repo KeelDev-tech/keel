@@ -15,6 +15,10 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Add offline YAML regression tests for the CI and Recovery workflows' current
+  read-only permissions, literal hosted runner and absence of secret references.
+  Pin PyYAML for validation only; workflow settings and CodeQL are unchanged.
+
 - Exclude CLOSED and CLOSED-EXPIRED queue/ledger states from automatic posting
   verification and supply selection, including terminal holds added during a
   read; retain existing active-state eligibility and approval requirements.
