@@ -15,6 +15,9 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Add keyboard skip targets to dashboard/review content and accessible names and
+  column headers to the dashboard submission-claims table.
+
 - Keep prescreen reason prose in queue review artifacts rather than gate telemetry;
   retain gate categories and reason counts, and omit raw probe exceptions from
   packet-builder diagnostics. Evidence holds and applicant approvals are unchanged.

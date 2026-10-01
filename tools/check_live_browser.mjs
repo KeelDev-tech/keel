@@ -129,6 +129,12 @@ try {
   requireCheck("synthetic_review_visible", (await page.locator("#mode").textContent()).includes("Synthetic rehearsal"));
   requireCheck("token_removed_from_address", new URL(page.url()).hash === "");
   requireCheck("six_current_sources_visible", await page.locator("#current-materials details").count() === 6);
+  await page.keyboard.press("Tab");
+  requireCheck("skip_review_first", await page.locator(".skip").evaluate(el => el === document.activeElement));
+  await page.keyboard.press("Enter");
+  requireCheck("skip_review_focuses_main", await page.locator("#main").evaluate(el => el === document.activeElement));
+  await page.keyboard.press("Tab");
+  requireCheck("skip_review_bypasses_header", await page.locator("#scope").evaluate(el => el === document.activeElement));
   requireCheck("request_requires_explicit_confirmation", await page.locator("#request").isDisabled());
 
   await page.locator("#request-confirm").check();

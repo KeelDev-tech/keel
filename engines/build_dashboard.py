@@ -288,6 +288,9 @@ def render(data):
 <style>
 *{{box-sizing:border-box;margin:0;padding:0}}
 body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#0f1419;color:#e8eef4;padding:16px;max-width:720px;margin:0 auto}}
+.skip{{position:absolute;left:-10000px}}
+.skip:focus{{position:static;display:block;color:#e8eef4;padding:8px;outline:2px solid #7db8f0}}
+.sr-only{{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}}
 h1{{font-size:22px;margin-bottom:2px}}
 .sub{{color:#8b9bab;font-size:13px;margin-bottom:16px}}
 .live{{display:inline-block;background:#123f2a;color:#4ade80;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;margin-bottom:10px;letter-spacing:.5px}}
@@ -311,6 +314,8 @@ td:first-child{{color:#8b9bab;white-space:nowrap;width:110px}}
 .prow{{background:#1c1618;border:1px solid #3a2a2e;border-radius:10px;padding:11px 14px;margin-bottom:8px;font-size:13px}}
 footer{{margin:26px 0 10px;color:#5b6b7d;font-size:12px;line-height:1.6}}
 </style></head><body>
+<a class="skip" href="#main">Skip to dashboard</a>
+<main id="main" tabindex="-1">
 <div class="live">LOCAL SNAPSHOT</div>
 <h1>Keel</h1>
 <div class="sub">Updated {esc(now)} · Provider verification is not connected</div>
@@ -325,7 +330,7 @@ footer{{margin:26px 0 10px;color:#5b6b7d;font-size:12px;line-height:1.6}}
 {interview_html}
 
 <h2>Recent submission claims</h2>
-<div class="card"><table>{recent_rows}</table></div>
+<div class="card"><table><caption class="sr-only">Recent submission claims</caption><thead class="sr-only"><tr><th scope="col">Submitted</th><th scope="col">Company and role</th></tr></thead><tbody>{recent_rows}</tbody></table></div>
 
 <h2>Queues</h2>
 {queue_rows}
@@ -339,6 +344,7 @@ footer{{margin:26px 0 10px;color:#5b6b7d;font-size:12px;line-height:1.6}}
 <h2>Gate blocks</h2>
 {gate_html}
 
+</main>
 <footer>
 This is an offline view of local records. Status labels are claims, not provider confirmations. Preparing a packet does not submit an application or authorize an executor.
 </footer>
