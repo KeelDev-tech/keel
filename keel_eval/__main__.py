@@ -31,9 +31,18 @@ def main(argv=None):
     trace = commands.add_parser("trace-check", help="check an exported implementation trace; no host authentication")
     trace.add_argument("trace")
     trace.add_argument("--out")
+    partitions = commands.add_parser("partition-audit", help="compare exact subjects across supplied datasets; no independence claim")
+    partitions.add_argument("--development")
+    partitions.add_argument("--demo", help="development-split dataset used for demonstrations")
+    partitions.add_argument("--held-out")
+    partitions.add_argument("--out")
     args = parser.parse_args(argv)
     try:
-        if args.command == "reliability-demo":
+        if args.command == "partition-audit":
+            from .partitions import PARTITIONS, audit_partitions
+            result = audit_partitions({name: read_json(getattr(args, name)) for name in PARTITIONS
+                                       if getattr(args, name) is not None})
+        elif args.command == "reliability-demo":
             from .reliability import synthetic_demo
             result = synthetic_demo()
         elif args.command == "reliability-replay":
@@ -55,6 +64,8 @@ def main(argv=None):
         else:
             print(json.dumps(result, indent=2, sort_keys=True, allow_nan=False))
         # Zero means scoring completed, never model acceptance or authorization.
+        if args.command == "partition-audit":
+            return 3 if result["overlapping_subject_count"] else 0
         if args.command == "reliability-demo":
             return 0
         if args.command in ("reliability-replay", "trace-check"):

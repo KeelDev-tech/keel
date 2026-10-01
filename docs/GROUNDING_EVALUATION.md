@@ -142,3 +142,31 @@ criteria on the host to assess a real model. All reports retain
 `model_quality_validated: false`, `quality_release_gate_satisfied: false`, and
 `execution_authorized: false`; scoring alone cannot bypass Keel's existing human,
 consent, evidence, route, or execution controls.
+
+## Exact cross-partition audit
+
+Compare two or three existing `keel.eval.dataset.v1` files without scoring or
+calling a model:
+
+```bash
+python -m keel_eval partition-audit --development development.json --demo demo.json --held-out held-out.json
+```
+
+Development and demonstration inputs retain `split: development`; held-out
+input must declare `split: held_out`. No dataset or frozen plan is modified.
+The report compares canonical JSON subject fingerprints, excluding case IDs,
+gold labels and rationales. Renaming a case or relabelling its gold verdict
+cannot hide the same subject. String content and array order remain exact;
+paraphrases, reordered evidence and semantic leakage are not detected.
+
+Every case is counted. Missing, malformed or duplicate case IDs within a dataset
+reject the audit; IDs remain dataset-local declarations, not authenticated
+identities. Overlap locations use partition names and zero-based case positions,
+without exposing subject text, labels or raw case IDs. Dataset and subject hashes
+are correlatable fingerprints, not anonymization or proof of source identity.
+
+Exit 3 means exact cross-partition subject overlap, exit 2 invalid input/output,
+and exit 0 only means no exact overlap in the supplied partitions. Missing
+partitions are listed explicitly. None of these outcomes verifies semantic
+independence, label truth, model quality or execution authority. `--out` writes
+an exclusive private report using the existing CLI output contract.
