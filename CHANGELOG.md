@@ -15,6 +15,9 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Order eligible verification work by normalized observation instants so timezone
+  offsets and equivalent timestamp spellings preserve oldest-first scheduling.
+
 - Keep dashboard activity panels unknown when their source records are missing,
   unreadable or corrupt. Retain empty-state messages for known empty records,
   and distinguish undated submission claims from no recorded claims.

@@ -672,6 +672,13 @@ def verify(workspace, *, limit=100, timeout=120, live=False, reader=None,
             skipped['duplicate_exact_posting'] += 1; continue
         # Oldest observation first, then stable ID: failures cool down instead of starving the tail.
         stamp = (row.get('verification_attempt') or row.get('posting_verification') or {}).get('observed_at', '')
+        try:
+            # Canonical UTC text orders instants and gives equivalent spellings
+            # the same key. Keep legacy missing/malformed fallback behavior;
+            # this ordering key does not establish freshness or eligibility.
+            stamp = aware_time(stamp).isoformat(timespec='microseconds')
+        except (ValueError, TypeError, OverflowError):
+            pass
         eligible.append((stamp, rid, path, row, key))
     eligible.sort(key=lambda x: (str(x[0]), x[1]))
     scan_fit = Counter()
