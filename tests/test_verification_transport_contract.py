@@ -303,6 +303,24 @@ class VerificationTransportContractTests(unittest.TestCase):
                 self.assertEqual(calls, ['eligible'])
                 self.assertEqual(report['skipped'], {'invalid_cooldown_state': 1, 'cooldown': 1})
 
+    def test_overflowing_cooldown_holds_only_the_invalid_row(self):
+        for stamp in ('0001-01-01T00:00:00+01:00', '9999-12-31T23:59:59-01:00'):
+            with self.subTest(stamp=stamp):
+                invalid, eligible = queued(1), queued(2)
+                invalid['posting_verification'] = {'next_eligible_at': stamp}
+                atomic_json(self.queue, [invalid, eligible])
+                report = service.verify(self.home, live=True,
+                    reader=service.PublicBoardReader(fetcher=lambda *_: {
+                        'jobs': [{'id': 2, 'title': 'Synthetic eligible posting'}]}))
+                self.assertEqual(report['skipped'], {'invalid_cooldown_state': 1})
+                self.assertEqual(report['requests'], 1)
+                self.assertEqual(report['committed'], 1)
+                self.assertFalse(report['submission_authorized'])
+                after = read_json(self.queue)
+                self.assertEqual(canonical(after[0]), canonical(invalid))
+                self.assertEqual(after[1]['verification_attempt']['signal'], 'LIVE')
+                self.assertFalse(after[1]['verification_attempt']['execution_authorized'])
+
     def test_dry_run_and_supply_refuse_pending_recovery_without_writes(self):
         atomic_json(self.queue, [queued(1)])
         destination = self.home / 'data/queues/strategic-queue.json'

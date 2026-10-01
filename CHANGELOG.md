@@ -34,6 +34,9 @@
   failure exit. Document the pinned development bootstrap separately from
   applicant workspace initialization.
 
+- Hold records with out-of-range cooldown timestamps without aborting verification
+  of other eligible records in the same batch.
+
 - Accept structured URL-bound form/posting evidence in the MCP prescreen
   diagnostic, preserving brief-only PARK behavior and example-bank isolation.
   Report no execution authority even when the diagnostic is CLEAN.
