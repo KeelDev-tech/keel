@@ -348,6 +348,7 @@
   "tests/test_qresolve_recurrence.py",
   "tests/test_qresolve_schedule.py",
   "tests/test_qresolve_semantics.py",
+  "tests/test_queue_lock_contention.py",
   "tests/test_queue_transactions.py",
   "tests/test_ready_admission.py",
   "tests/test_receipt_projection.py",
