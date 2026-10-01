@@ -15,6 +15,10 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Exclude CLOSED and CLOSED-EXPIRED queue/ledger states from automatic posting
+  verification and supply selection, including terminal holds added during a
+  read; retain existing active-state eligibility and approval requirements.
+
 - Qualify reported corroboration as declared publisher diversity, expose shared
   reference/hash signals, and state that source independence is not established.
 
