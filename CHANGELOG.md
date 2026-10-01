@@ -15,6 +15,9 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Reflow dashboard score cards on narrow screens and wrap long values without
+  clipping or changing displayed counts.
+
 - Keep prescreen reason prose in queue review artifacts rather than gate telemetry;
   retain gate categories and reason counts, and omit raw probe exceptions from
   packet-builder diagnostics. Evidence holds and applicant approvals are unchanged.

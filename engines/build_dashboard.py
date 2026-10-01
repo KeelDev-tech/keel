@@ -291,8 +291,9 @@ body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
 h1{{font-size:22px;margin-bottom:2px}}
 .sub{{color:#8b9bab;font-size:13px;margin-bottom:16px}}
 .live{{display:inline-block;background:#123f2a;color:#4ade80;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;margin-bottom:10px;letter-spacing:.5px}}
-.score{{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin:14px 0}}
-.stat{{background:#18222c;border-radius:12px;padding:14px 10px;text-align:center}}
+.score{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:14px 0}}
+.stat{{min-width:0;overflow-wrap:anywhere;background:#18222c;border-radius:12px;padding:14px 10px;text-align:center}}
+@media(max-width:480px){{.score{{grid-template-columns:1fr}}}}
 .stat .n{{font-size:26px;font-weight:800;color:#fff}}
 .stat .l{{font-size:11px;color:#8b9bab;margin-top:4px}}
 h2{{font-size:15px;text-transform:uppercase;letter-spacing:1px;color:#8b9bab;margin:22px 0 10px}}
