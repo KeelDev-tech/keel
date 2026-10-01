@@ -15,6 +15,9 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Reject question-unlock claims that conflict with canonical non-question
+  holds; retain conditional question counts without authorizing any release.
+
 - Cover the existing workbench CSP on HTML, JSON and application error responses
   with socket-free handler tests selected in CI; no server policy changes.
 

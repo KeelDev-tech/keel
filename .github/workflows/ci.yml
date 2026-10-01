@@ -90,6 +90,10 @@ jobs:
           tests/test_frontier_evaluation.py
       - name: Run stdlib test suite
         run: python3 -m unittest discover -s tests
+      - name: Test conditional question supply and flow contracts
+        env:
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+        run: python3 -m pytest -q --import-mode=importlib tests/test_flow.py
       - name: Run offline Hypothesis prescreen properties
         env:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"

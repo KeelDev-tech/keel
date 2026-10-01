@@ -104,11 +104,20 @@ def build(snapshot, *, now, assurance=None):
     ready = inventory(snapshot["leads"], holds, attempts, now=now)
     role_map = {row["role_id"]: row for row in snapshot["leads"]}
     require({row["role_id"] for row in snapshot["holds"]} <= role_map.keys(), "hold references unknown role")
+    # Answers can address question holds, but cannot clear unrelated canonical
+    # holds. Reject contradictory claims instead of advertising false unlocks.
+    question_hold_families = {"consent", "operator_input"}
+    question_blocked = {row["role_id"] for row in holds["rows"]
+                        if row["family"] not in question_hold_families}
     for row in records(snapshot["question_dependencies"]):
         require(row.get("role_id") in role_map, "question dependency references unknown role")
         lead = role_map[row["role_id"]]
         require(row.get("fit_score") == lead["fit_score"] and row.get("action_band") == lead.get("action_band"),
                 "question dependency conflicts with current role gates")
+        if row.get("other_gates_clear") is True:
+            require(row["role_id"] not in question_blocked
+                    and not set(lead["holds"]) - question_hold_families,
+                    "question dependency conflicts with canonical holds")
     executable_ids = {row["role_id"] for row in ready["rows"] if row["executable"]}
     release_blocked = {row["role_id"] for row in holds["rows"] if row["family"] != "cooldown"}
     attempt_blocked = {row["application_id"] for row in attempts["applications"] if row["hold_required"]}
