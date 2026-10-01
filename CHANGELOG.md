@@ -15,6 +15,10 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Audit exact subject fingerprints across supplied development, demonstration
+  and held-out datasets without changing frozen plans or claiming semantic
+  independence; reject invalid identities instead of omitting cases.
+
 - Exclude CLOSED and CLOSED-EXPIRED queue/ledger states from automatic posting
   verification and supply selection, including terminal holds added during a
   read; retain existing active-state eligibility and approval requirements.
