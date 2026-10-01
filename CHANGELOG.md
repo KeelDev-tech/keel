@@ -19,9 +19,17 @@
   and held-out datasets without changing frozen plans or claiming semantic
   independence; reject invalid identities instead of omitting cases.
 
+- Keep queue-lock retries paced and deadline-bounded when stale diagnostic
+  metadata cannot be removed; retain kernel lock authority and transaction
+  recovery, and cap sleeps to the remaining waiter budget.
+
 - Exclude CLOSED and CLOSED-EXPIRED queue/ledger states from automatic posting
   verification and supply selection, including terminal holds added during a
   read; retain existing active-state eligibility and approval requirements.
+
+- Isolate retained-history replay correctness accounting from host scheduling
+  delays; label synthetic controller time separately from observed elapsed time
+  and retain production budget-overrun refusal with regression coverage.
 
 - Qualify reported corroboration as declared publisher diversity, expose shared
   reference/hash signals, and state that source independence is not established.
