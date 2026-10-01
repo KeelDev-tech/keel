@@ -15,6 +15,9 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Show field labels and required/optional status in both sides of existing packet
+  comparisons, including changes where the value stays the same.
+
 - Reflow dashboard score cards on narrow screens and wrap long values without
   clipping or changing displayed counts.
 - Add keyboard skip targets to dashboard/review content and accessible names and

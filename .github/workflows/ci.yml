@@ -65,6 +65,10 @@ jobs:
           tests/test_outcome_linkage.py
           tests/test_outcome_snapshot.py
           tests/test_record_outcome_timestamps.py
+      - name: Test exact packet review and decisions
+        env:
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+        run: PYTHONPATH=tests:. python3 -m pytest -q --import-mode=importlib tests/test_muse_review.py tests/test_muse_dashboard.py tests/test_sources_decisions.py
       - name: Run stdlib test suite
         run: python3 -m unittest discover -s tests
       - name: Run offline Hypothesis prescreen properties
