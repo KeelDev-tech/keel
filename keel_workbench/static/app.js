@@ -70,8 +70,8 @@ async function load() {
   const [view,catalog,history] = await Promise.all([api("/api/v1/overview"),api("/api/v1/workflows"),api("/api/v1/history")]);
   state.view=view; state.catalog=catalog.workflows; state.history=history.runs; freshness(); render();
 }
-function roleTable(roles) {
-  if(!roles.length) return '<div class="empty">No opportunities match these filters. Try a different lane or search.</div>';
+function roleTable(roles, total=roles.length) {
+  if(!roles.length) return `<div class="empty">${total ? 'No opportunities match these filters. Try a different lane or search.' : 'No opportunities in this export.'}</div>`;
   return `<div class="table-wrap"><table><thead><tr><th scope="col">Opportunity</th><th scope="col">Lane</th><th scope="col">Fit</th><th scope="col">Queue</th><th scope="col">Review</th></tr></thead><tbody>${roles.map(r=>`<tr><td><button class="opportunity-title" data-role="${esc(r.role_id)}">${esc(r.title)}</button><span class="company">${esc(r.company)}</span></td><td>${esc(r.lane)}</td><td><span class="fit">${esc(r.fit_score)}</span></td><td>${badge(words(r.queue_status))}</td><td>${badge(r.review_checks_passed ? "Checks passed" : "Review required",r.review_checks_passed ? "teal" : "amber")}</td></tr>`).join("")}</tbody></table></div>`;
 }
 function overview() {
@@ -93,7 +93,7 @@ function updatePipeline() {
   const roles=state.view.roles.filter(r=>(state.lane==="All lanes" || r.lane===state.lane) &&
     (state.filter==="All roles" || state.filter==="Needs review" && !r.review_checks_passed || state.filter==="Base checks passed" && r.base_checks_passed || state.filter==="All review checks passed" && r.review_checks_passed) &&
     `${r.role_id} ${r.title} ${r.company}`.toLocaleLowerCase().includes(q));
-  $("#pipeline-table").innerHTML=roleTable(roles)+`<div class="table-footer"><span>${roles.length} of ${state.view.roles.length} opportunities</span><span>Click a role for its evidence and blockers</span></div>`;
+  $("#pipeline-table").innerHTML=roleTable(roles,state.view.roles.length)+`<div class="table-footer"><span>${roles.length} of ${state.view.roles.length} opportunities</span><span>Click a role for its evidence and blockers</span></div>`;
 }
 function evidence() {
   const v=state.view; const artifacts=v.evidence?.artifacts || [];
@@ -203,7 +203,7 @@ document.addEventListener("click", async event=>{
   else if(button.dataset.nav) go(button.dataset.nav);
   else if(button.classList.contains("brand")) {event.preventDefault();go("overview");}
   else if(button.dataset.role) showRole(button.dataset.role);
-  else if(button.dataset.workflow) {state.workflow=button.dataset.workflow;state.scope="";render();}
+  else if(button.dataset.workflow) {state.workflow=button.dataset.workflow;state.scope="";render();$(".workflow-card.active")?.focus();}
   else if(button.dataset.start || button.hasAttribute("data-brief")) {state.workflow=button.dataset.start || "daily-brief";state.scope="";go("workflows");}
   else if(button.dataset.roleWorkflow) {state.workflow=button.dataset.roleWorkflow;state.scope=button.dataset.id;$("#detail").close();go("workflows");}
   else if(button.hasAttribute("data-download-result") && state.report) download(`keel-${state.report.workflow_id}-${state.report.request_id}.json`,state.report);
