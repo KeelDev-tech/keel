@@ -15,6 +15,10 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Surface unresolved resume requirement feedback for UNKNOWN and PARTIAL as
+  well as MISSING, normalize whitespace, and treat invalid statuses as UNKNOWN.
+  Feedback remains advisory and does not infer absent qualifications.
+
 - Apply value-bound applicant receipts and exact scope checks to every packet
   prescreen. Empty, unconfirmed, expired or out-of-scope answers and unverified
   banded rules cannot clear required questions; valid scoped facts remain usable.
