@@ -15,6 +15,10 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Surface unresolved resume requirement feedback for UNKNOWN and PARTIAL as
+  well as MISSING, normalize whitespace, and treat invalid statuses as UNKNOWN.
+  Feedback remains advisory and does not infer absent qualifications.
+
 - Label legacy preparation brief rules as unverified references requiring
   applicant review, rather than claiming approval that the rules do not prove.
   Existing buffered briefs with the obsolete approval header must be rebuilt.
