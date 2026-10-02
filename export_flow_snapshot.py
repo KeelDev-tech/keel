@@ -355,6 +355,7 @@ def build_holds(tray, queue_index, observed_at, evidence_revision):
         key = card.get("key")
         question = card.get("question") or ""
         family = map_family(question)
+        employers = {lead.get("employer") or "unknown" for lead in card.get("leads", []) or []}
         opened = parse_status_ts(card.get("first_seen")) or observed_at
         review_after = (opened + timedelta(days=REVIEW_AFTER_DAYS)).isoformat()
         for lead in card.get("leads", []) or []:
@@ -371,6 +372,7 @@ def build_holds(tray, queue_index, observed_at, evidence_revision):
                 "hold_id": f"{key}:{role_id}",
                 "role_id": role_id,
                 "family": family,
+                "question_id": key if len(employers) == 1 else f"{key}@{lead.get('employer') or 'unknown'}",
                 "owner": owner,
                 "opened_at": opened.isoformat(),
                 # No employer/platform deadline is evidenced on tray cards:

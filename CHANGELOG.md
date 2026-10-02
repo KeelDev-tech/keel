@@ -15,6 +15,10 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Preserve exact question provenance on exported holds so topical policy,
+  verification and cooldown labels do not reject their own question dependencies;
+  unrelated holds still block and review reuse is bound to question provenance.
+
 - Reject question-unlock claims that conflict with canonical non-question
   holds; retain conditional question counts without authorizing any release.
 
