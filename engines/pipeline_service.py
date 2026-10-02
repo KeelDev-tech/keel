@@ -972,6 +972,44 @@ def supply_report(workspace):
             'note': 'Posting presence is not form completeness, applicant eligibility, READY or submission approval.'}
 
 
+def validate_preparation_packet(workspace, packet_path):
+    """Check current review inputs without recovering queues or granting authority."""
+    import apply_loop
+    import packet_contract
+    from safe_io import contained_path
+    workspace = Path(workspace).absolute()
+    with queue_lock(timeout=10, owner='validate-packet', recover=False):
+        packet = read_json(contained_path(workspace / 'data/launch-packets', packet_path))
+        role_id = packet['role_id']
+        if not isinstance(role_id, str) or not role_id.strip():
+            raise ValueError('packet role_id is required')
+        # Missing queues cannot establish that the target is unique. Unlike
+        # intake, validation must not interpret absent canonical files as empty.
+        documents = { _queue_path(workspace, name): read_json(_queue_path(workspace, name))
+                      for name in QUEUES }
+        ledger = rows(read_json(workspace / 'data/application-ledger.json'))
+        current = _all_rows(documents)
+        matches = [(path, row) for path, row in current if row.get('role_id') == role_id]
+        if len(matches) != 1:
+            raise ValueError('role_id missing or duplicated')
+        path, entry = matches[0]
+        posting = _key(entry)
+        if posting is None or sum(_key(row) == posting for _, row in current) != 1:
+            raise ValueError('posting identity missing or duplicated across queues')
+        ledger_ids, ledger_keys = _terminal_ledger_index(ledger)
+        if role_id in ledger_ids or posting in ledger_keys:
+            raise ValueError('role or exact posting has an active or terminal ledger outcome')
+        origin = path.name.removesuffix('-queue.json')
+        if origin not in {'standard', 'strategic'} or _held(entry):
+            raise ValueError('role has an active, terminal or explicit hold state')
+        if not posting_is_current(entry, posting):
+            raise ValueError('fresh exact posting verification required')
+        packet_contract.validate(packet, entry, read_json(workspace / 'data/answer_bank.json'),
+                                 read_json(workspace / 'data/policy.json'), workspace,
+                                 apply_loop._materials_for(entry, origin))
+    return {'valid_preparation_packet': True, 'execution_authorized': False}
+
+
 def prepare_role(workspace, role_id, resume, *, _offline_fixture=False):
     """An explicit operator selection prepares one review packet; never changes READY.
 
