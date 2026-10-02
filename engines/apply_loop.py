@@ -1301,7 +1301,9 @@ def build_generic_brief(entry, intel, bank):
     if authority["abstained_keys"]:
         lines.append("  - Leave these keys blank; scope or authority is unresolved: " +
                      ", ".join(row["key"] for row in authority["abstained_keys"]))
-    lines += ["", "BANDED-QUESTION RULES (pre-approved — apply without improvising):"]
+    lines += ["", "BANDED-QUESTION RULES (unverified reference; applicant review required):",
+              "These rules are not evidence of applicant approval and must not supply "
+              "answers or commitments without separately confirmed, scoped applicant evidence."]
     for k, rule in bank.get("banded_questions", {}).items():
         r = rule.get("rule", rule) if isinstance(rule, dict) else rule
         lines.append(f"  - {k}: {r}")
