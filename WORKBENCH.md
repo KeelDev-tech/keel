@@ -261,12 +261,20 @@ access. Node is optional for syntax verification; it is not needed at runtime.
 See `docs/WORKBENCH_HANDOFF.md` and `audit/workbench-validation.json` for the
 actual release evidence and known verification limit.
 
-The rendered browser interface could not be exercised in this environment: the
-available remote browser rejects loopback navigation with `ERR_BLOCKED_BY_CLIENT`.
-Actual server/SDK HTTP integration and workflow tests do run. On the receiving
-host, open the demo and verify search/filter/detail, every workflow, JSON
-download/import, scenario comparison, mobile layout, and keyboard navigation
-before calling the UI production-verified.
+The original release's remote browser rejected loopback navigation. CI now runs
+`tools/check_workbench_ui.py` against a temporary synthetic loopback server using
+agent-browser 0.38.2, Node 24 and the runner's sandboxed Chrome. It checks actual
+rendering, table heading contrast, workflow keyboard focus, distinct empty-export
+and unmatched-filter messages, and JavaScript exceptions. The job retains only
+synthetic screenshots and a check report. No applicant workspace is loaded.
+
+On a compatible development host, install that pinned CLI into a temporary
+prefix and pass its executable, Chrome and a temporary output directory through
+`--browser`, `--chrome` and `--out`. A browser launch refusal is an unavailable
+check, not a pass: do not disable its sandbox or change host permissions. These
+bounded browser checks do not establish full production UI verification. Search,
+detail, every workflow, JSON download/import, scenario comparison and mobile
+layout still require receiving-host verification.
 
 ## Contributing and release boundaries
 
