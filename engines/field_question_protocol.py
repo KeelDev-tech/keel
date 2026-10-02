@@ -599,8 +599,8 @@ def close_question(question, answer, bank_key=None, provenance="",
             raise ValueError("a nonempty applicant answer is required")
         if not dry_run:
             _backup_bank_once()
-            pats = set(existing.get("question_patterns") or []) if isinstance(existing, dict) else set()
-            pats.add(normalize_question(question))
+            # A reply confirms this question, not inherited legacy aliases.
+            pats = {normalize_question(question)}
             source = provenance or "applicant (volunteered)"
             entry = {"question_patterns": sorted(pats), "answer": answer,
                      "value": answer, "scope": capture_scope,

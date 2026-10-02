@@ -328,3 +328,13 @@ class CaptureToPrescreenTests(unittest.TestCase):
                 self.path.write_text('{"answers": {}, "_provenance": {}}')
                 self.capture(writer, scope=None)
                 self.assertEqual(self.screen(json.loads(self.path.read_text())), 'CLEAN')
+
+    def test_fresh_capture_does_not_authorize_legacy_question_aliases(self):
+        self.path.write_text(json.dumps({'answers': {'first_name': {
+            'answer': 'Old value', 'question_patterns': ['Unrelated legacy obligation']}},
+            '_provenance': {'first_name': {'source': 'legacy note'}}}))
+        self.capture('frp')
+        bank = json.loads(self.path.read_text())
+        self.assertEqual(bank['answers']['first_name']['question_patterns'],
+                         [self.frp.normalize_question('What is your first name?')])
+        self.assertEqual(self.frp.bank_pattern_lookup('Unrelated legacy obligation', bank), (None, None))
