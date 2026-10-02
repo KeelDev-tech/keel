@@ -442,3 +442,57 @@ def test_cli_invalid_input_creates_no_report(tmp_path, raw):
     src = tmp_path / "bad.json"; out = tmp_path / "report.json"; src.write_text(raw)
     assert main(["board", str(src), "--now", NOW.isoformat(), "--out", str(out)]) == 2
     assert not out.exists()
+
+
+@pytest.mark.parametrize('prompt', ['Are you willing to travel?', 'Complete verification?', 'Accept rate limits?'])
+@pytest.mark.parametrize('split_employers', [False, True])
+def test_exported_question_hold_provenance_survives_board_join(prompt, split_employers):
+    from export_flow_snapshot import build_holds, build_question_dependencies, build_tray_document
+    data = make_snapshot()
+    card_leads = [{'role_id': 'role-4', 'fit': 84, 'employer': 'Example'}]
+    if split_employers:
+        card_leads.append({'role_id': 'role-5', 'fit': 84, 'employer': 'Other Example'})
+    tray = {'cards': [{'key': 'synthetic-question', 'question': prompt, 'leads': card_leads}]}
+    index = {row['role_id']: {'action_band': 'APPLY', 'unresolved': ['synthetic-question']}
+             for row in card_leads}
+    generated = build_holds(tray, index, NOW, 'synthetic-revision')
+    data['holds'] += generated
+    data['tray']['questions'] += build_tray_document(tray)['questions']
+    data['question_dependencies'] = build_question_dependencies(tray, index)
+    for row in data['leads']:
+        row['holds'] = sorted({h['family'] for h in data['holds'] if h['role_id'] == row['role_id']})
+    before = copy.deepcopy(data)
+    report = build(data, now=NOW)
+    assert data == before
+    assert any('role-4' in g['roles_unlocked_if_answered'] for g in report['questions']['groups'])
+    assert not next(r for r in report['readiness']['rows'] if r['role_id'] == 'role-4')['executable']
+    assert not report['execution_authorized']
+    assert all(not h['release_authorized'] for h in report['holds']['rows'])
+    # Provenance must match this role's exact dependency, not just a family.
+    for provenance in (None, 'unrelated-question'):
+        invalid = copy.deepcopy(data)
+        target = next(h for h in invalid['holds'] if h['hold_id'] == generated[0]['hold_id'])
+        if provenance is None:
+            target.pop('question_id', None)
+        else:
+            target['question_id'] = provenance
+        with pytest.raises(ContractError, match='question dependency conflicts with canonical holds'):
+            build(invalid, now=NOW)
+    # A question must not conceal a separate canonical hold of the same family.
+    data['holds'].append(hold(hold_id='unrelated-hold', role_id='role-4', family=generated[0]['family']))
+    with pytest.raises(ContractError, match='question dependency conflicts with canonical holds'):
+        build(data, now=NOW)
+
+
+def test_question_provenance_changes_invalidate_hold_review():
+    original = hold(family='policy', question_id='travel')
+    reviewed = decision(original)
+    changed = {**original, 'question_id': 'other-question'}
+    assert review_holds([original], [reviewed], now=NOW)['rows'][0]['review_reusable_for_inspection']
+    assert not review_holds([changed], [reviewed], now=NOW)['rows'][0]['review_reusable_for_inspection']
+
+
+@pytest.mark.parametrize('question_id', [None, '', 1, []])
+def test_hold_question_provenance_requires_explicit_identifier(question_id):
+    with pytest.raises(ContractError):
+        review_holds([hold(question_id=question_id)], [], now=NOW)
