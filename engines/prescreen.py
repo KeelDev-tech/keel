@@ -180,15 +180,10 @@ def _no_ai_hard_stop(text):
     """No-AI/unaided attestations never inherit ordinary truthfulness consent."""
     return any(pattern.search(str(text or "")) for pattern in NO_AI_ATTEST_RE)
 
-# Pre-authorized attestation scope. These answer-bank keys correspond to
-# STANDARD application-form legal attestations (arbitration agreement,
-# background-check consent, at-will acknowledgment,
-# information-truthfulness attestation, data-privacy consent) that the
-# operator has pre-approved as standing answers. The screen_packet
-# ATTEST_RE loop skips the park ONLY when the attestation text maps to one
-# of these banked keys; the keys must exist in the operator's own
-# answer_bank.json — the shipped answer_bank.example.json carries none, so
-# nothing is pre-authorized out of the box.
+# Recognized application-form consent keys. Membership identifies the question
+# class, not applicant authority. screen_packet first validates each value-bound
+# receipt and scope; only that projection can supply an answer. Shipped examples
+# and banded rules provide no approval. No-AI/personal-work stops remain absolute.
 PREAUTHORIZED_ATTEST_KEYS = frozenset({
     "arbitration_agreement",
     "background_check_consent",
@@ -532,21 +527,16 @@ def render_probe_brief(intel):
 
 
 def load_promotion_answer_bank(entry):
-    """Load current workspace assertions, validated for the exact role/employer.
+    """Load raw workspace assertions; screen_packet validates value and scope.
 
-    Engine examples and unconfirmed values never supply promotion answers.
-    Read/shape failures propagate to the caller's UNKNOWN hold.
+    Preserve original value-bound receipts until the shared screening boundary.
+    Flattening scoped values first would invalidate their receipt hashes.
     """
     from pathlib import Path
     from safe_io import contained_path, read_json
-    from packet_contract import confirmed_answers
     workspace = Path(os.environ.get("KEEL_HOME", PIPELINE)).absolute()
     path = contained_path(workspace, "data/answer_bank.json", must_exist=False)
-    bank = read_json(path, missing={"answers": {}})
-    answers, _ = confirmed_answers(bank, role_id=entry.get("role_id"),
-                                   employer=entry.get("company"), role_context=entry)
-    # Banded rules lack value-bound receipts; they cannot clear promotion.
-    return {**bank, "answers": answers, "banded_questions": {}}
+    return read_json(path, missing={"answers": {}})
 
 
 def screen_entry_prepromotion(entry, url=None, answer_bank=None, posting_text=None):
@@ -642,13 +632,14 @@ def extract_required_text_questions(intel):
 
 
 def question_mappable(question, answer_bank):
-    """True only if an answer_bank answer key or banded-question rule clearly
-    covers the question. `answer_bank` is the loaded answer_bank.json dict."""
+    """Map a question to a nonempty answer in the screen's validated projection.
+
+    This lexical helper does not establish receipt or scope authority itself.
+    """
     if _no_ai_hard_stop(question):
         return False, None
     answers = (answer_bank or {}).get("answers", {})
-    banded = (answer_bank or {}).get("banded_questions", {})
-    valid_keys = set(answers) | set(banded)
+    valid_keys = {key for key, value in answers.items() if value is not None and value != ""}
     for pattern, key in BANK_MAP:
         if pattern.search(question) and key in valid_keys:
             return True, key
@@ -667,6 +658,19 @@ def screen_packet(packet, answer_bank, employer_patterns=None):
     parked lead is never mistaken for verification-only by verify_retry.
     """
     reasons = screening_coverage_reasons(packet)
+    from packet_contract import confirmed_answers
+    if answer_bank is not None and not isinstance(answer_bank, dict):
+        reasons.append("Applicant answer bank is malformed; applicant review required.")
+    bank = answer_bank if isinstance(answer_bank, dict) else {"answers": {}}
+    bank = {"answers": {}, **bank}
+    try:
+        answers, _ = confirmed_answers(bank, role_id=packet.get("role_id"),
+                                       employer=packet.get("company"), role_context=packet)
+    except (ValueError, TypeError, AttributeError):
+        answers = {}
+        reasons.append("Applicant answer authority is unavailable; applicant review required.")
+    # Examples and banded references are not value-bound applicant assertions.
+    answer_bank = {**bank, "answers": answers, "banded_questions": {}}
     brief = packet.get("brief", "") or ""
     company = packet.get("company", "") or ""
     form_intel = packet.get("form_intel")
@@ -681,6 +685,24 @@ def screen_packet(packet, answer_bank, employer_patterns=None):
     for line in intel.splitlines():
         if re.search(r"\[(?:text|checkbox|radio|dropdown)\]", line, re.I) and _no_ai_hard_stop(line):
             reasons.append("Required no-AI / unaided-work attestation needs the applicant's explicit word (attest): " + line[:160])
+
+    # Required consent controls are not limited to free-text fields. Match
+    # each label independently so a nearby approved question cannot lend its
+    # authority to a different commitment. Ordinary options are unaffected.
+    if form_intel_is_complete(form_intel, packet.get("ats_url")):
+        for question in form_intel["questions"]:
+            if question.get("required") is not True:
+                continue
+            label = " ".join([question["label"], *question.get("options", [])])
+            consent_keys = {key for pattern, key in BANK_MAP
+                            if key in PREAUTHORIZED_ATTEST_KEYS and pattern.search(label)}
+            explicit_consent = re.search(r"\bconsent\b|\bagree to\b|\backnowledge\b|\b(?:I|we) authorize\b", label, re.I)
+            if not (consent_keys or explicit_consent or _hit(ATTEST_RE, label)):
+                continue
+            if (not _no_ai_hard_stop(label) and consent_keys
+                    and consent_keys.issubset(answer_bank["answers"])):
+                continue
+            reasons.append("Required consent/attestation needs the applicant's scoped decision (attest): " + label[:160])
 
     # Posting-text eligibility: hard blockers that live on the posting,
     # invisible to form-intel screening. Screened ONLY on posting_text —
@@ -706,31 +728,19 @@ def screen_packet(packet, answer_bank, employer_patterns=None):
             f"words (essay): \"{label[:120]}\""
         )
 
-    for pat in _hit(ATTEST_RE, intel):
-        m = re.search(pat, intel, re.I)
-        if not m:
+    # Legacy/optional attestation text also stays within its own form line.
+    # A broad character window can borrow a neighbor's approval or mistake an
+    # approved attestation for a nearby identity field.
+    for line in intel.splitlines():
+        if not _hit(ATTEST_RE, line):
             continue
-        label = m.group(0).strip()
-        # Window the match so question_mappable sees the actual question,
-        # not the whole intel blob.
-        window = intel[max(0, m.start() - 250): m.end() + 250]
-        # Hard-stop classes first: no-AI / unaided-work / personally-completed
-        # would be FALSE if answered by an agent — always park.
-        if any(p.search(window) for p in NO_AI_ATTEST_RE):
-            reasons.append(
-                f"Required attestation needs the applicant's explicit word (attest): "
-                f"\"{label[:120]}\""
-            )
-            continue
-        # Pre-authorized routing: standard legal attestations whose text maps
-        # to a banked pre-authorized key skip the park — the brief carries the
-        # operator's standing answer. Anything else parks.
-        ok, _key = question_mappable(window, answer_bank)
-        if ok and _key in PREAUTHORIZED_ATTEST_KEYS:
+        consent_keys = {key for pattern, key in BANK_MAP
+                        if key in PREAUTHORIZED_ATTEST_KEYS and pattern.search(line)}
+        if (not _no_ai_hard_stop(line) and consent_keys
+                and consent_keys.issubset(answer_bank["answers"])):
             continue
         reasons.append(
-            f"Required attestation needs the applicant's explicit word (attest): "
-            f"\"{label[:120]}\""
+            "Required attestation needs the applicant's explicit word (attest): " + line[:160]
         )
 
     for q in extract_required_text_questions(intel):

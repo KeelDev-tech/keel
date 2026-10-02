@@ -30,7 +30,11 @@ sys.path.insert(0, ENGINES)
 os.environ["FIELD_PROTOCOL_DIR"] = tempfile.mkdtemp(prefix="keel-test-frp-")
 import prescreen
 
-BANK = json.load(open(os.path.join(ENGINES, "answer_bank.example.json")))
+# Positive controls use explicit synthetic assertions, never shipped examples.
+from packet_contract import answer_receipt
+BANK = {"answers": {"first_name": "Riley", "last_name": "Fixture", "email": "riley@fixture.invalid"}}
+BANK["_provenance"] = {key: answer_receipt(value, "synthetic test assertion")
+                       for key, value in BANK["answers"].items()}
 
 GENUINE_WORDS = ("essay", "wording", "travel", "attest", "reference", "applicant",
                  "salary", "degree", "location", "hybrid", "onsite",
