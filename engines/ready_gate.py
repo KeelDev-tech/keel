@@ -278,6 +278,12 @@ def packet_admission(packet, entry, bank, *, now=None, workspace=None, for_execu
         for key in ("role_id", "company", "title", "brief", "ats_url"):
             if not isinstance(packet.get(key), str) or not packet[key].strip():
                 deny("missing_packet_field:" + key, "packet missing field: " + key)
+        # A valid old seal does not make the retired template's approval claim
+        # true. Buffer refresh and lookup must rebuild these artifacts too.
+        if isinstance(packet.get("brief"), str) and (
+                "BANDED-QUESTION RULES (pre-approved — apply without improvising):"
+                in packet["brief"].splitlines()):
+            deny("obsolete_brief_authority", "packet contains an obsolete approval claim; rebuild required")
         if any(packet.get(key) != _context(entry).get(key)
                for key in ("role_id", "company", "title", "ats_url")):
             deny("packet_context_mismatch", "packet target differs from current queue context")

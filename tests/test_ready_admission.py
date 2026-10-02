@@ -478,3 +478,39 @@ def test_builder_hold_routes_only_real_questions_to_input(tmp_path, monkeypatch,
     apply_loop.main()
     assert released == [(entry["role_id"], "fixture-task")]
     assert len(parked) == (0 if evidence_error else 1)
+
+
+def old_approval_packet(entry):
+    pkt = packet(entry)
+    pkt['brief'] = pkt['brief'].replace(
+        'BANDED-QUESTION RULES (unverified reference; applicant review required):',
+        'BANDED-QUESTION RULES (pre-approved — apply without improvising):')
+    # Simulate a valid, fresh artifact sealed before the wording correction.
+    return ready_gate.seal_packet(pkt, entry, bank())
+
+
+@pytest.mark.parametrize('for_execution', [False, True])
+def test_sealed_old_approval_brief_requires_rebuild(for_execution):
+    entry = lead()
+    pkt = old_approval_packet(entry)
+    before = copy.deepcopy(pkt)
+    result = ready_gate.packet_admission(pkt, entry, bank(), for_execution=for_execution)
+    assert not result['allowed']
+    assert 'obsolete_brief_authority' in result['reason_codes']
+    assert pkt == before
+    assert ready_gate.packet_admission(packet(entry), entry, bank(), for_execution=for_execution)['allowed']
+
+
+def test_buffer_lookup_does_not_reuse_old_approval_brief(tmp_path, monkeypatch):
+    entry = lead()
+    Path(apply_loop.QUEUE).write_text(json.dumps([entry]))
+    path = tmp_path / 'old-packet.json'
+    path.write_text(json.dumps(old_approval_packet(entry)))
+    monkeypatch.setattr(apply_loop, 'load_answer_bank', bank)
+    built_at = datetime.now(timezone.utc).isoformat()
+    monkeypatch.setattr(apply_loop, 'load_buffer_state', lambda: [{
+        'role_id': entry['role_id'], 'packet_path': str(path),
+        'built_at': built_at}])
+    assert apply_loop._buffered_fresh_packet(entry['role_id']) is None
+    path.write_text(json.dumps(packet(entry)))
+    assert apply_loop._buffered_fresh_packet(entry['role_id']) == str(path)
