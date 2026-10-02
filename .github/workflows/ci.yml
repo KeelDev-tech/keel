@@ -43,7 +43,7 @@ jobs:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
         run: PYTHONPATH=tests:. python3 -m pytest -q --import-mode=importlib tests/test_muse_review.py tests/test_muse_dashboard.py tests/test_sources_decisions.py
       - name: Test seeded tailoring audit and grader failure detection
-        run: python3 -m pytest -q tests/test_tailoring_audit.py tests/test_grounding_claims_answers.py tests/test_grounding_packet.py
+        run: python3 -m pytest -q tests/test_tailoring_audit.py tests/test_profile_answer_advisories.py tests/test_grounding_claims_answers.py tests/test_grounding_packet.py
       - name: Run offline seeded tailoring audit
         run: python3 -S tools/run_tailoring_audit.py --out "${RUNNER_TEMP}/keel-tailoring-audit"
       - name: Retain tailoring audit results

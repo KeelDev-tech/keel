@@ -15,6 +15,11 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Add value-free advisory profile-versus-answer contact differences to doctor.
+  Equivalent phone/LinkedIn formatting is normalized; findings never overwrite
+  applicant facts or change readiness. Experience cannot be inferred from
+  incomplete résumé chronology and is explicitly not compared.
+
 - Label legacy preparation brief rules as unverified references requiring
   applicant review, rather than claiming approval that the rules do not prove.
   Existing buffered briefs with the obsolete approval header must be rebuilt.

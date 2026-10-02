@@ -174,9 +174,16 @@ def doctor(workspace, capabilities=False):
     # Required queues, ledger and preparation inputs were checked above.
     observation_warnings = collect(workspace)['warnings']
     add('Public boundary', True, 'Preparation only; no paid APIs or application submission are implemented by this CLI.')
+    from profile_answer_review import compare
+    try:
+        profile = read_json(workspace / 'data/applicant_profile.json')
+    except (OSError, ValueError, TypeError):
+        profile = None
+    profile_review = compare(profile, bank)
     result = {'ready_for_local_preparation': all(c['status'] == 'PASS' for c in checks),
             'provider_verification_available': False, 'checks': checks,
-            'observation_warnings': observation_warnings}
+            'observation_warnings': observation_warnings,
+            'profile_answer_review': profile_review}
     if capabilities:
         from tools.release_profile import capability_report
         result['capabilities'] = capability_report(workspace)
