@@ -219,3 +219,22 @@ def test_prescreen_preserves_explicit_invalid_form_binding(source_url):
     assert out["verdict"] == "PARK"
     assert out["execution_authorized"] is False
     assert evidence["form_intel"]["source_url"] == source_url
+
+
+@pytest.mark.parametrize('state', ['supported', 'unknown', 'held'])
+def test_pipeline_preserves_exact_scoring_evidence(monkeypatch, state):
+    role, profile = _supported_scoring_inputs()
+    if state == 'unknown':
+        profile = {}
+    elif state == 'held':
+        role['holds'] = ['synthetic-review-required']
+    expected = scoring.keel_score_role(role, profile)
+    monkeypatch.setattr(discovery, 'keel_search_roles', lambda *args: {'roles': [role]})
+    out = pipeline.keel_run_pipeline('operations', profile=profile)
+    row = out['stages'][0]
+    for field in ('score_evidence', 'score_breakdown', 'score_bounds'):
+        assert row[field] == expected[field]
+    assert row['action_band'] == expected['action_band']
+    assert row['execution_authorized'] is out['execution_authorized'] is False
+    if state != 'supported':
+        assert 'prescreen' not in row
