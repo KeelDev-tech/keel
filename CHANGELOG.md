@@ -15,6 +15,11 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Restore `validate-packet` against complete current queues and ledger. Refuse
+  duplicate, held, changed or stale review packets and pending queue recovery.
+  Canonical hold fields, nested gates and all matching ledger outcomes apply;
+  successful validation remains preparation-only and grants no execution authority.
+
 - Label legacy preparation brief rules as unverified references requiring
   applicant review, rather than claiming approval that the rules do not prove.
   Existing buffered briefs with the obsolete approval header must be rebuilt.
