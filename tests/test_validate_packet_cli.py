@@ -11,6 +11,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'engines'))
 import packet_contract
+import ready_gate
 from safe_io import atomic_json, utc_now
 
 
@@ -120,6 +121,38 @@ class ValidatePacketCliTests(unittest.TestCase):
         atomic_json(journal, {'synthetic_pending_transaction': True})
         result = self.run_cli(2)
         self.assertIn('recovery required', result['error'])
+
+
+    def test_every_matching_ledger_outcome_blocks_review_validation(self):
+        for status in ('FAILED', 'WITHDRAWN', 'OFFER', 'HIRED', 'UNRECOGNIZED_OUTCOME'):
+            for match in ('role', 'posting', 'identity-twin'):
+                with self.subTest(status=status, match=match):
+                    row = {**self.entry, 'status': status}
+                    if match != 'role': row['role_id'] = 'other-role'
+                    if match != 'posting': row['application_url'] = 'https://job-boards.greenhouse.io/fixture/jobs/2'
+                    if match != 'identity-twin': row.update(company='Other fixture', title='Other role')
+                    atomic_json(self.home / 'data/application-ledger.json', [row])
+                    self.run_cli(2)
+
+    def test_unrelated_ledger_outcome_does_not_block_review_validation(self):
+        atomic_json(self.home / 'data/application-ledger.json', [{
+            'role_id': 'other-role', 'company': 'Other fixture', 'title': 'Other role',
+            'application_url': 'https://job-boards.greenhouse.io/other/jobs/2', 'status': 'FAILED'}])
+        self.assertFalse(self.run_cli()['execution_authorized'])
+
+    def test_canonical_hold_fields_block_even_when_bound_into_packet(self):
+        cases = [(field, {field: True}) for field in ready_gate.HOLD_FIELDS]
+        cases += [('gate:' + field, {'gates': {field: True}}) for field in ready_gate.HOLD_FIELDS]
+        cases += [(field, {field: ['Synthetic unresolved question']}) for field in ready_gate.QUESTION_FIELDS]
+        cases += [('malformed-gates', {'gates': ['malformed']})]
+        for label, changes in cases:
+            with self.subTest(hold=label):
+                entry = {**self.entry, **changes}
+                self.queue('standard', [entry])
+                packet = packet_contract.prepare(entry, self.bank, self.policy, self.home,
+                    entry['materials'], {'questions': []}, now=self.now)
+                atomic_json(self.path, packet)
+                self.run_cli(2)
 
 
 if __name__ == '__main__':
