@@ -1,34 +1,43 @@
-# FIT SCORING MODEL (0–100) + HARD-REQUIREMENT CLASSIFIER
+# Evidence-based fit scoring (0–100)
 
-## Components (total 100)
-| Component | Max | What it measures |
-|---|---|---|
-| Experience Alignment | 25 | How closely verified experience matches required work |
-| Transferable Skills | 15 | Operations, sales, leadership, AI, research, stakeholder work |
-| Hard Requirements | 20 | Education, years, credentials, technical requirements (start at 20, deduct for gaps) |
-| Career Upside | 10 | Growth, leadership, AI exposure, future optionality |
-| Compensation | 10 | Value relative to alternatives; $80K+ baseline interest, higher = more |
-| Founder Experience Advantage | 5 | Whether ownership experience improves candidacy |
-| Industry Alignment | 5 | Relevant industries (hospitality, wine, tech, consulting) |
-| Location / Work Model | 5 | Practical fit: commute, remote, relocation posture |
-| Employer / Role Quality | 5 | Legitimacy, stability, mission, trajectory |
+The implemented contract is [Evidence-based role scoring](../docs/SCORING_CONTRACT.md)
+for `engines/score_roles.py`. This rubric summarizes that contract; it does not
+supply applicant facts, waive requirements, or authorize an application.
 
-## Bands
-- 90–100: PRIORITY APPLY — excellent match
-- 82–89: APPLY — good match, no serious unsupported requirement
-- 72–81: STRATEGIC / STRETCH — exceptional upside only
-- Below 72: SKIP unless unusual strategic reason (document it)
+| Component | Maximum |
+|---|---:|
+| Experience alignment | 25 |
+| Transferable skills | 15 |
+| Hard requirements | 20 |
+| Career upside | 10 |
+| Compensation | 10 |
+| Founder advantage | 5 |
+| Industry alignment | 5 |
+| Location / work model | 5 |
+| Employer quality | 5 |
 
-## Hard-requirement classifier
-For every listed hard requirement, classify:
-- VERIFIED — candidate demonstrably satisfies it
-- PARTIAL — candidate partially satisfies or adjacent experience applies
-- MISSING — candidate clearly does not satisfy a mandatory requirement (materially reduces fit; -8 to -15 on Hard Requirements)
-- UNKNOWN — cannot determine from posting or profile (flag in manifest; do not assume)
+Each component uses the weighted mean of explicit, evidence-backed criterion
+matches times its maximum. Supported human assessments are available only for
+the subjective components described in the contract. The scorer sums component
+bounds; it does not multiply compensation, freshness or other ranking factors,
+and it does not apply fixed per-gap deductions. Compensation and work-model
+preferences come from the reviewed applicant profile, not universal defaults.
 
-Hard-requirement examples: required degree, license, certification, clearance, mandatory language, industry tenure, enterprise sales history, programming skills, platform experience, travel %, relocation, work authorization.
+`fit_score` is the supported lower bound; `fit_score_upper` includes unresolved
+weight. Unknown evidence is not a proven mismatch. `score_breakdown`,
+`score_bounds`, `score_evidence` and `score_coverage_percent` explain the result;
+the MCP composite pipeline preserves these fields too. References are audit
+pointers, not authenticated proof or statistical confidence intervals.
 
-Rule: a clearly MISSING mandatory requirement caps the role at STRATEGIC (≤81) unless the requirement is plausibly waivable — document the judgment.
+Display bands use the lower bound: PRIORITY at 90+, APPLY at 82+, STRATEGIC at 72+,
+and SKIP below 72. These labels are not execution decisions. The scorer recommends
+APPLY only at 82+ with reviewed requirements, all mandatory requirements satisfied,
+and no supplied hold. Mandatory UNKNOWN, PARTIAL, MISSING or adverse legacy status
+blocks eligibility regardless of other strengths; a subjective assessment cannot
+waive it. Other outcomes follow the contract's HOLD/LOW-FIT rules.
 
-## Priority formula (queue ranking)
-Fit × Compensation × Career Upside × Employer Quality × Freshness, with penalties for missing requirements, stale postings, low-quality employers, excessive commute, unclear compensation, industry mismatch, unverified qualifications.
+The operational intake/READY fit floor remains 75. It is a separate gate from the
+scorer's 82-point recommendation threshold; neither replaces canonical readiness,
+policy, posting verification, attempt history or fresh human approval. Scoring
+always returns `execution_authorized=false`, `approval_valid=false` and PARKED
+status. Do not overwrite an operational queue row with the scoring result.
