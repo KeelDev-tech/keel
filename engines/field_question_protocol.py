@@ -673,7 +673,12 @@ def cmd_classify(args):
 def cmd_close(args):
     res = close_question(args.question, args.answer, bank_key=args.bank_key,
                          provenance=args.provenance, dry_run=args.dry_run, scope=args.scope)
-    print(json.dumps(res, indent=1))
+    # CLI output may be captured in shared logs. Keep bank identifiers, role
+    # identifiers and scope-reason text inside the private API result.
+    print(json.dumps({"matched_entries": int(res["matched_entries"]),
+                      "revival_candidate_count": len(res["revival_candidates"]),
+                      "dry_run": bool(res["dry_run"]),
+                      "scope_required": res.get("scope_required") is True}, indent=1))
 
 
 def cmd_report(_args):

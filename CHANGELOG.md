@@ -23,6 +23,8 @@
   Fresh tray and FRP human captures now carry value-bound receipts and governed
   scope; derived/legacy values gain no authority. Ambiguous consent still needs
   explicit scope, and validated custom-question metadata survives prescreen.
+  Fresh FRP receipts do not inherit legacy aliases; CLI capture output contains
+  counts and status flags rather than private result details.
 
 - Restore `validate-packet` against complete current queues and ledger. Refuse
   duplicate, held, changed or stale review packets and pending queue recovery.

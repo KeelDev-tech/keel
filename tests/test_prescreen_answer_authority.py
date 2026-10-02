@@ -338,3 +338,22 @@ class CaptureToPrescreenTests(unittest.TestCase):
         self.assertEqual(bank['answers']['first_name']['question_patterns'],
                          [self.frp.normalize_question('What is your first name?')])
         self.assertEqual(self.frp.bank_pattern_lookup('Unrelated legacy obligation', bank), (None, None))
+
+    def test_close_cli_prints_counts_without_private_result_details(self):
+        import contextlib
+        import io
+        from types import SimpleNamespace
+        marker = 'synthetic-private-detail'
+        result = {'matched_entries': 2, 'bank_key': marker,
+                  'revival_candidates': [marker], 'dry_run': False,
+                  'scope_required': True, 'reason': marker}
+        output = io.StringIO()
+        args = SimpleNamespace(question='Synthetic question?', answer='Yes',
+                               bank_key='synthetic_key', provenance='synthetic',
+                               dry_run=False, scope=None)
+        with patch.object(self.frp, 'close_question', return_value=result), contextlib.redirect_stdout(output):
+            self.frp.cmd_close(args)
+        self.assertNotIn(marker, output.getvalue())
+        self.assertEqual(json.loads(output.getvalue()), {
+            'matched_entries': 2, 'revival_candidate_count': 1,
+            'dry_run': False, 'scope_required': True})
