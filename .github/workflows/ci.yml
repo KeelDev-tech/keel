@@ -118,3 +118,27 @@ jobs:
         run: PYTHONPATH=. python3 tests/benchmark_productivity_history.py
       - name: Honesty-gates demo smoke test
         run: KEEL_DEMO_PAUSE=0 python3 demo/honesty_gates_demo.py
+  workbench-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Install pinned browser verification CLI
+        run: npm install --prefix "${RUNNER_TEMP}/keel-ui-tools" agent-browser@0.38.2
+      - name: Verify synthetic workbench in a sandboxed browser
+        run: |
+          KEEL_UI_CHROME="$(command -v google-chrome || command -v chromium)"
+          python tools/check_workbench_ui.py --browser "${RUNNER_TEMP}/keel-ui-tools/node_modules/.bin/agent-browser" --chrome "$KEEL_UI_CHROME" --out "${RUNNER_TEMP}/keel-ui-report"
+      - name: Retain synthetic UI verification
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-ui
+          path: |
+            ${{ runner.temp }}/keel-ui-report/report.json
+            ${{ runner.temp }}/keel-ui-report/*.png
