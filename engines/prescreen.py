@@ -691,7 +691,7 @@ def screen_packet(packet, answer_bank, employer_patterns=None):
         for question in form_intel["questions"]:
             if question.get("required") is not True:
                 continue
-            label = question["label"]
+            label = " ".join([question["label"], *question.get("options", [])])
             consent_keys = {key for pattern, key in BANK_MAP
                             if key in PREAUTHORIZED_ATTEST_KEYS and pattern.search(label)}
             explicit_consent = re.search(r"\bconsent\b|\bagree to\b|\backnowledge\b|\b(?:I|we) authorize\b", label, re.I)

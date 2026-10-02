@@ -145,5 +145,13 @@ class PrescreenAnswerAuthorityTests(unittest.TestCase):
         self.assertEqual(self.screen(bank), 'CLEAN')
 
 
+    def test_consent_statement_in_required_option_needs_decision(self):
+        for kind in ('checkbox', 'radio', 'dropdown'):
+            with self.subTest(kind=kind):
+                self.intel['questions'] = [{'label': 'Employment terms', 'type': kind,
+                    'required': True, 'options': ['I acknowledge at-will employment']}]
+                self.assertEqual(self.screen({'answers': {}}), 'PARK')
+
+
 if __name__ == '__main__':
     unittest.main()
