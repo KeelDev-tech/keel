@@ -123,6 +123,39 @@ def _context(entry):
             "resume_version": entry.get("resume_version")}
 
 
+def entry_hold_reasons(entry):
+    """Return canonical (code, reason) holds without requiring READY or APPLY.
+
+    Preparation validation shares these holds without acquiring the broader
+    admission semantics, such as queue promotion or execution permission.
+    """
+    if not isinstance(entry, dict):
+        return [("invalid_entry", "invalid queue entry")]
+    result = []
+
+    def deny(code, reason):
+        result.append((code, reason))
+
+    for field in HOLD_FIELDS:
+        # Nonempty malformed flag/hold values fail closed, rather than being
+        # coerced into an affirmative clearance.
+        if entry.get(field):
+            deny("explicit_hold:" + field, "explicit hold: " + field)
+    for field in QUESTION_FIELDS:
+        questions = entry.get(field)
+        if questions not in (None, [], ""):
+            deny("unanswered_questions:" + field, "unanswered questions: " + field)
+    gates = entry.get("gates")
+    if gates is not None:
+        if not isinstance(gates, dict):
+            deny("invalid_gates", "gate state is malformed")
+        else:
+            for field in HOLD_FIELDS:
+                if gates.get(field):
+                    deny("explicit_gate:" + field, "explicit gate: " + field)
+    return result
+
+
 def entry_admission(entry, origin="standard", *, require_ready=True, now=None, workspace=None):
     """Cheap static checks; an allowed result still requires packet/live checks.
 
@@ -163,23 +196,8 @@ def entry_admission(entry, origin="standard", *, require_ready=True, now=None, w
                 deny("blocklisted_employer", "blocklisted employer")
         except (OSError, ValueError, TypeError):
             deny("blocklist_unconfirmed", "employer blocklist is unconfirmed")
-    for field in HOLD_FIELDS:
-        # Nonempty malformed flag/hold values fail closed, rather than being
-        # coerced into an affirmative clearance.
-        if entry.get(field):
-            deny("explicit_hold:" + field, "explicit hold: " + field)
-    for field in QUESTION_FIELDS:
-        questions = entry.get(field)
-        if questions not in (None, [], ""):
-            deny("unanswered_questions:" + field, "unanswered questions: " + field)
-    gates = entry.get("gates")
-    if gates is not None:
-        if not isinstance(gates, dict):
-            deny("invalid_gates", "gate state is malformed")
-        else:
-            for field in HOLD_FIELDS:
-                if gates.get(field):
-                    deny("explicit_gate:" + field, "explicit gate: " + field)
+    for code, reason in entry_hold_reasons(entry):
+        deny(code, reason)
     if "posting_verification" in entry or "verification_attempt" in entry:
         # Import lazily: pipeline_service can use this module for diagnostics
         # without introducing an import cycle or any network action.
