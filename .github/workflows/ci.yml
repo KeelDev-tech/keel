@@ -31,6 +31,11 @@ jobs:
           tests/test_operational_runtime.py
           tests/test_machine_contracts.py
           tests/test_storage_preflight.py
+      # These are pytest functions; unittest discovery collects none of them.
+      - name: Test evidence-based scoring contracts
+        env:
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+        run: python3 -m pytest -q --import-mode=importlib tests/test_score_roles_evidence.py
       - name: Test operational recovery including every publication cut point
         run: python3 -m pytest -q tests/test_operational_recovery.py
       - name: Test exact packet review and decisions
