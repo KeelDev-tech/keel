@@ -107,16 +107,26 @@ def build(snapshot, *, now, assurance=None):
     # Answers can address question holds, but cannot clear unrelated canonical
     # holds. Reject contradictory claims instead of advertising false unlocks.
     question_hold_families = {"consent", "operator_input"}
-    question_blocked = {row["role_id"] for row in holds["rows"]
-                        if row["family"] not in question_hold_families}
+    holds_by_role = {}
+    for hold in snapshot["holds"]:
+        holds_by_role.setdefault(hold["role_id"], []).append(hold)
     for row in records(snapshot["question_dependencies"]):
         require(row.get("role_id") in role_map, "question dependency references unknown role")
         lead = role_map[row["role_id"]]
         require(row.get("fit_score") == lead["fit_score"] and row.get("action_band") == lead.get("action_band"),
                 "question dependency conflicts with current role gates")
         if row.get("other_gates_clear") is True:
-            require(row["role_id"] not in question_blocked
-                    and not set(lead["holds"]) - question_hold_families,
+            # Exported question holds retain their topical family (e.g. policy).
+            # Only exact provenance within this role's dependencies can explain
+            # that family in the lead's summary; a separate hold still blocks.
+            required_questions = row.get("open_question_ids")
+            require(type(required_questions) is list, "explicit open question IDs required")
+            related = [hold for hold in holds_by_role.get(row["role_id"], [])
+                       if hold.get("question_id") is not None and hold["question_id"] in required_questions]
+            explained_families = question_hold_families | {hold["family"] for hold in related}
+            require(all(hold in related or hold["family"] in question_hold_families
+                        for hold in holds_by_role.get(row["role_id"], []))
+                    and not set(lead["holds"]) - explained_families,
                     "question dependency conflicts with canonical holds")
     executable_ids = {row["role_id"] for row in ready["rows"] if row["executable"]}
     release_blocked = {row["role_id"] for row in holds["rows"] if row["family"] != "cooldown"}

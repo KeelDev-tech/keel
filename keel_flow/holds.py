@@ -7,8 +7,11 @@ FAMILIES = {"dedupe", "verification", "cooldown", "consent", "operator_input", "
 
 def hold_scope(hold):
     """Bind a review to the role, blocker, evidence and exact release condition."""
-    return digest({key: hold.get(key) for key in
-                   ("hold_id", "role_id", "family", "evidence_revision", "release_condition", "opened_at")})
+    scope = {key: hold.get(key) for key in
+             ("hold_id", "role_id", "family", "evidence_revision", "release_condition", "opened_at")}
+    if "question_id" in hold:
+        scope["question_id"] = hold["question_id"]
+    return digest(scope)
 
 
 def review_holds(holds, decisions, *, now):
@@ -26,6 +29,8 @@ def review_holds(holds, decisions, *, now):
     require(set(by_hold) <= {h["hold_id"] for h in holds}, "review references an unknown hold")
     results = []
     for hold in holds:
+        if "question_id" in hold:
+            text(hold["question_id"], "question_id")
         for key in ("role_id", "evidence_revision", "release_condition"):
             text(hold.get(key), key)
         require(hold.get("family") in FAMILIES, "unknown hold family")
