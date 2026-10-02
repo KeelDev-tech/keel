@@ -67,20 +67,28 @@ def esc(s):
 
 
 def truthfulness_check(profile, role):
-    """Return a list of gaps: role requirements the profile cannot support.
+    """Return advisory gaps for unresolved requirements without a matching capability.
 
-    The tailor prints these and REFUSES to invent bridging copy. A gap is
-    information for the applicant (skip the role, or supply real evidence),
-    never a prompt to embellish.
+    Names match exactly after whitespace normalization (no fuzzy inference).
+    Missing, null and invalid statuses mean UNKNOWN. This feedback neither
+    proves a qualification absent nor changes rendering or applicant authority.
     """
+    def normalized(value):
+        return " ".join(value.split()) if isinstance(value, str) else ""
+
     gaps = []
-    must_haves = (role.get("hard_requirements") or [])
-    capabilities = set(profile.get("verified_capabilities") or [])
-    for req in must_haves:
-        name = req.get("name", "")
-        status = req.get("status", "UNKNOWN")  # VERIFIED | PARTIAL | MISSING | UNKNOWN
-        if status == "MISSING" and name not in capabilities:
-            gaps.append(f"MISSING hard requirement with no profile support: {name}")
+    capabilities = {normalized(value) for value in profile.get("verified_capabilities") or []}
+    capabilities.discard("")
+    for req in role.get("hard_requirements") or []:
+        name = normalized(req.get("name")) if isinstance(req, dict) else ""
+        if not name:
+            gaps.append("Review hard requirement: missing or invalid requirement name")
+            continue
+        status = normalized(req.get("status")).upper()
+        if status not in {"VERIFIED", "PARTIAL", "MISSING", "UNKNOWN"}:
+            status = "UNKNOWN"
+        if status != "VERIFIED" and name not in capabilities:
+            gaps.append(f"{status} hard requirement without a matching verified capability; review: {name}")
     return gaps
 
 

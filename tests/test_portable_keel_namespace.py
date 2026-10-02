@@ -20,7 +20,7 @@ class PortableNamespaceTests(unittest.TestCase):
         (self.copy / 'engines').mkdir()
         (self.copy / 'privacy').mkdir()
         shutil.copyfile(ROOT / 'keel.py', self.copy / 'keel.py')
-        for name in ('safe_io.py', 'safe_http.py', 'packet_contract.py'):
+        for name in ('safe_io.py', 'safe_http.py', 'packet_contract.py', 'profile_state.py'):
             shutil.copyfile(ROOT / 'engines' / name, self.copy / 'engines' / name)
         for file in (ROOT / 'privacy').glob('*.py'):
             shutil.copyfile(file, self.copy / 'privacy' / file.name)
