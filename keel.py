@@ -467,14 +467,8 @@ def main(argv=None):
             result = {'fresh_buffer_packets': count, 'execution_authorized': False,
                       'queue_claimed': False, 'scope': 'screened_packet_buffer'}
         elif args.command == 'validate-packet':
-            import apply_loop
-            import packet_contract
-            from safe_io import contained_path
-            packet = read_json(contained_path(Path(args.home) / 'data/launch-packets', args.packet))
-            entry, origin = apply_loop._current_entry(packet['role_id'])
-            packet_contract.validate(packet, entry, apply_loop.load_answer_bank(), apply_loop.load_policy(),
-                                     args.home, apply_loop._materials_for(entry, origin))
-            result = {'valid_preparation_packet': True, 'execution_authorized': False}
+            import pipeline_service
+            result = pipeline_service.validate_preparation_packet(args.home, args.packet)
         else:
             result = roles
         print(json.dumps(result, indent=2))

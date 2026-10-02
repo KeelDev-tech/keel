@@ -51,6 +51,12 @@ BANK = {"answers": {
 }}
 
 
+# Explicit synthetic receipts keep positive consent controls meaningful.
+from packet_contract import answer_receipt
+BANK["_provenance"] = {key: answer_receipt(value, "synthetic test consent")
+                       for key, value in BANK["answers"].items()}
+
+
 def make_packet(company, lines, role_id="TEST-1"):
     intel = "\n".join(lines)
     questions = []
