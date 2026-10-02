@@ -341,6 +341,44 @@ class PacketTests(Isolated):
         packet['integrity_sha256']=storage.digest({k:v for k,v in packet.items() if k!='integrity_sha256'})
         with self.assertRaises(ValueError):self.validate(packet)
 
+    def test_expired_packet_keeps_shared_attachment_and_source_bytes(self):
+        first = self.packet()
+        source = self.root / 'resume.txt'
+        original = source.read_bytes()
+        second_entry = {**self.entry, 'role_id': 'R-2'}
+        second = contract.prepare(second_entry, self.bank, self.policy, self.root,
+                                  self.material, self.intel, now=self.now+timedelta(minutes=30))
+        self.assertEqual(first['upload_files'], second['upload_files'])
+        at = self.now + timedelta(seconds=contract.TTL_SECONDS)
+        with self.assertRaisesRegex(ValueError, 'packet expired'):
+            self.validate(first, now=at)
+        self.assertEqual(source.read_bytes(), original)
+        self.assertEqual(Path(first['upload_files'][0]).read_bytes(), original)
+        self.assertTrue(contract.validate(second, second_entry, self.bank, self.policy,
+                                         self.root, self.material, now=at))
+        self.assertFalse(second['execution_authorized'])
+
+    def test_later_copy_failure_keeps_earlier_copy_without_returning_packet(self):
+        cover = self.root / 'cover.txt'
+        cover.write_text('Synthetic cover material')
+        self.material['cover_letter'] = 'cover.txt'
+        resume_bytes = (self.root / 'resume.txt').read_bytes()
+        cover_bytes = cover.read_bytes()
+        copied = []
+        def fail_second(path, body):
+            if copied:
+                raise OSError('synthetic second-copy failure')
+            storage.atomic_bytes(path, body)
+            copied.append(Path(path))
+        with patch.object(contract, 'atomic_bytes', side_effect=fail_second):
+            with self.assertRaisesRegex(OSError, 'synthetic second-copy failure'):
+                self.packet()
+        self.assertEqual(len(copied), 1)
+        self.assertEqual(copied[0].read_bytes(), resume_bytes)
+        self.assertEqual((self.root / 'resume.txt').read_bytes(), resume_bytes)
+        self.assertEqual(cover.read_bytes(), cover_bytes)
+        self.assertEqual(list((self.root / 'data/packet-materials').iterdir()), copied)
+
     def test_boolean_schema_version_rejected(self):
         packet=self.packet();packet['schema_version']=True
         packet['integrity_sha256']=storage.digest({k:v for k,v in packet.items() if k!='integrity_sha256'})

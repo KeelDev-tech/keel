@@ -78,6 +78,12 @@ class PreparationIdentityGuardsTests(unittest.TestCase):
                 self.prepare()
         self.release.assert_called_once()
         self.assertFalse((self.home / 'data/launch-packets/fixture-role.json').exists())
+        copies = list((self.home / 'data/packet-materials').iterdir())
+        self.assertEqual(len(copies), 1)
+        self.assertEqual(copies[0].read_bytes(), self.material.read_bytes())
+        selected = read_json(self.queue)[0]
+        self.assertEqual(selected['status'], 'PARKED-PENDING-VERIFICATION')
+        self.assertEqual(selected['preparation_selection']['scope'], 'review_only')
 
     def test_concurrent_queue_duplicate_exact_posting_discards_packet(self):
         real_prepare = packet_contract.prepare
@@ -101,6 +107,17 @@ class PreparationIdentityGuardsTests(unittest.TestCase):
         self.assertEqual(result['status'], 'PREPARED_REVIEW_REQUIRED')
         self.assertEqual(read_json(self.queue)[0]['status'], 'PARKED-PENDING-VERIFICATION')
         self.release.assert_called_once()
+
+
+    def test_lease_release_failure_leaves_review_packet_and_material(self):
+        self.release.return_value = (False, {'status': 'synthetic-release-failure'})
+        with self.assertRaisesRegex(RuntimeError, 'preparation lease release failed'):
+            self.prepare()
+        self.release.assert_called_once()
+        packet = read_json(self.home / 'data/launch-packets/fixture-role.json')
+        self.assertFalse(packet['execution_authorized'])
+        self.assertEqual(packet['status'], 'PREPARED_REVIEW_REQUIRED')
+        self.assertEqual(Path(packet['upload_files'][0]).read_bytes(), self.material.read_bytes())
 
 
 if __name__ == '__main__':
