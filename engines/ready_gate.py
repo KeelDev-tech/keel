@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import answer_resolver
+from profile_state import profile_dependency
 from safe_io import contained_path, digest, file_digest, fresh
 from keel_paths import HOME
 from fit_policy import main_floor
@@ -251,6 +252,7 @@ def seal_packet(packet, entry, bank, *, now=None, workspace=None):
     packet["ready_manifest"] = {"schema_version": 1,
         "created_at": (now or datetime.now(timezone.utc)).isoformat(),
         "context_sha256": digest(_context(entry)),
+        "profile": profile_dependency(workspace or HOME),
         "material_versions": _attachment_versions(packet, workspace or HOME), **authority}
     packet["launch_integrity_sha256"] = digest(
         {k: v for k, v in packet.items() if k != "launch_integrity_sha256"})
@@ -295,6 +297,8 @@ def packet_admission(packet, entry, bank, *, now=None, workspace=None, for_execu
                 deny("expired_packet", "packet manifest expired or future dated")
             if manifest.get("context_sha256") != digest(_context(entry)):
                 deny("packet_context_mismatch", "packet context changed; rebuild required")
+            if manifest.get("profile") != profile_dependency(workspace or HOME):
+                deny("profile_changed", "packet profile changed or binding missing; rebuild required")
             if manifest.get("material_versions") != _attachment_versions(packet, workspace or HOME):
                 deny("materials_changed", "packet material bytes changed; rebuild required")
             _values, authority = scoped_answers(entry, bank)

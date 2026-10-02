@@ -305,6 +305,49 @@ class PacketTests(Isolated):
         packet=self.packet();self.assertTrue(self.validate(packet));self.assertFalse(packet['execution_authorized'])
         self.assertEqual(packet['status'],'PREPARED_REVIEW_REQUIRED')
 
+    def test_profile_state_changes_invalidate_preparation(self):
+        profile = self.root/'data/applicant_profile.json'
+        for change in ('create', 'edit', 'delete', 'old'):
+            with self.subTest(change=change):
+                profile.parent.mkdir(exist_ok=True)
+                profile.unlink(missing_ok=True)
+                if change in ('edit', 'delete'):
+                    profile.write_text('{"verified_capabilities": []}')
+                packet = self.packet()
+                self.assertTrue(self.validate(packet))
+                if change == 'delete':
+                    profile.unlink()
+                elif change == 'old':
+                    packet['dependencies'].pop('profile', None)
+                    packet['integrity_sha256'] = storage.digest({k: v for k, v in packet.items() if k != 'integrity_sha256'})
+                else:
+                    profile.write_text('{"verified_capabilities": ["Synthetic skill"]}')
+                with self.assertRaisesRegex(ValueError, 'inputs changed'):
+                    self.validate(packet)
+
+    def test_profile_formatting_is_not_a_change_and_values_are_not_retained(self):
+        profile = self.root/'data/applicant_profile.json'
+        profile.parent.mkdir(exist_ok=True)
+        profile.write_text('{"name": "Synthetic Person", "education": "Synthetic Degree"}')
+        packet = self.packet()
+        profile.write_text('{ "education": "Synthetic Degree", "name": "Synthetic Person" }')
+        self.assertTrue(self.validate(packet))
+        self.assertEqual(set(packet['dependencies']['profile']), {'state', 'sha256'})
+        self.assertNotIn('Synthetic Person', json.dumps(packet['dependencies']['profile']))
+
+    def test_invalid_profile_cannot_be_treated_as_absent(self):
+        profile = self.root/'data/applicant_profile.json'
+        profile.parent.mkdir(exist_ok=True)
+        for content in ('null', '[]', '{bad'):
+            with self.subTest(content=content):
+                profile.write_text(content)
+                with self.assertRaises(ValueError):
+                    self.packet()
+        profile.unlink()
+        profile.symlink_to(self.root/'missing-profile.json')
+        with self.assertRaises(ValueError):
+            self.packet()
+
     def test_answer_changes_require_new_assertion(self):
         self.bank['answers']['us_work_auth']='Yes'
         with self.assertRaises(ValueError):self.packet()

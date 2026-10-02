@@ -15,6 +15,11 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Bind applicant profile presence and content in modern preparation packets and
+  legacy ready manifests. Creating, deleting or changing the profile invalidates
+  packets; older packets without this binding require rebuilding. Hashes detect
+  drift, not truth, and no applicant authority is inferred.
+
 - Label legacy preparation brief rules as unverified references requiring
   applicant review, rather than claiming approval that the rules do not prove.
   Existing buffered briefs with the obsolete approval header must be rebuilt.

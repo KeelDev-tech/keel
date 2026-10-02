@@ -395,6 +395,7 @@ def test_packet_builder_keeps_runtime_artifacts_inside_workspace(tmp_path, monke
     assert (tmp_path / "data/form-intel/fixture-role.intel.json").is_file()
     assert not (tmp_path / "code/briefs").exists()
     built = json.loads(Path(path).read_text())
+    assert built["ready_manifest"]["profile"] == {"state": "absent"}
     assert built["execution_authorized"] is False
     assert built["scope"] == "preparation_only"
     assert built["form_intel_complete"] is True
@@ -514,3 +515,30 @@ def test_buffer_lookup_does_not_reuse_old_approval_brief(tmp_path, monkeypatch):
     assert apply_loop._buffered_fresh_packet(entry['role_id']) is None
     path.write_text(json.dumps(packet(entry)))
     assert apply_loop._buffered_fresh_packet(entry['role_id']) == str(path)
+
+
+@pytest.mark.parametrize('change', ['create', 'edit', 'delete', 'old'])
+def test_profile_changes_invalidate_legacy_packets_and_buffer(tmp_path, monkeypatch, change):
+    profile = tmp_path / 'data/applicant_profile.json'
+    if change in ('edit', 'delete'):
+        profile.write_text('{"verified_capabilities": []}')
+    entry = lead()
+    pkt = packet(entry)
+    assert ready_gate.packet_admission(pkt, entry, bank(), for_execution=False)['allowed']
+    if change == 'delete':
+        profile.unlink()
+    elif change == 'old':
+        pkt['ready_manifest'].pop('profile', None)
+        from safe_io import digest
+        pkt['launch_integrity_sha256'] = digest({k: v for k, v in pkt.items() if k != 'launch_integrity_sha256'})
+    else:
+        profile.write_text('{"verified_capabilities": ["Synthetic skill"]}')
+    assert not ready_gate.packet_admission(pkt, entry, bank(), for_execution=False)['allowed']
+    Path(apply_loop.QUEUE).write_text(json.dumps([entry]))
+    path = tmp_path / 'packet.json'
+    path.write_text(json.dumps(pkt))
+    monkeypatch.setattr(apply_loop, 'load_answer_bank', bank)
+    monkeypatch.setattr(apply_loop, 'load_buffer_state', lambda: [{
+        'role_id': entry['role_id'], 'packet_path': str(path),
+        'built_at': datetime.now(timezone.utc).isoformat()}])
+    assert apply_loop._buffered_fresh_packet(entry['role_id']) is None
