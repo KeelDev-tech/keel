@@ -136,6 +136,23 @@ def test_scalar_value_requires_current_applicant_receipt():
     assert "fixture@fixture.invalid" in apply_loop.build_generic_brief(lead(), None, answers)
 
 
+@pytest.mark.parametrize("rule", ["Ask the applicant for the exact value.",
+                                 {"rule": "Ask the applicant for the exact value.", "approved": True}])
+def test_banded_rules_are_reference_not_applicant_approval(rule):
+    answers = bank()
+    answers["banded_questions"] = {"synthetic_rule": rule}
+    before = copy.deepcopy(answers)
+    brief = apply_loop.build_generic_brief(lead(), None, answers)
+    assert "pre-approved" not in brief
+    assert "apply without improvising" not in brief
+    assert "BANDED-QUESTION RULES (unverified reference; applicant review required):" in brief
+    assert "These rules are not evidence of applicant approval" in brief
+    assert "Ask the applicant for the exact value." in brief
+    assert "PREPARATION ONLY" in brief
+    assert "Fixture Applicant" in brief  # scoped applicant evidence remains available
+    assert answers == before
+
+
 def test_unchanged_packet_stays_admissible_without_raw_values_in_manifest():
     entry = lead(); pkt = packet(entry)
     assert ready_gate.packet_admission(pkt, entry, bank())["allowed"]

@@ -15,6 +15,9 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Label legacy preparation brief rules as unverified references requiring
+  applicant review, rather than claiming approval that the rules do not prove.
+
 - Reject question-unlock claims that conflict with canonical non-question
   holds; retain conditional question counts without authorizing any release.
 
