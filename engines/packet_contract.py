@@ -51,7 +51,8 @@ def confirmed_answers(bank, *, role_id, employer=None, role_context=None, now=No
                      and receipt.get("scope") in ("general", role_id)
                      and aware_time(receipt.get("recorded_at")) <= now
                      and (not receipt.get("expires_at") or aware_time(receipt["expires_at"]) > now)
-                     and not PLACEHOLDER.search(str(value)))
+                     and not PLACEHOLDER.search(str(
+                         value.get("value", value.get("answer", "")) if isinstance(value, dict) else value)))
         except (TypeError, ValueError, OverflowError):
             valid = False
         if valid:

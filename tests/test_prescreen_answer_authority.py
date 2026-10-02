@@ -173,3 +173,158 @@ class PrescreenAnswerAuthorityTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class CaptureToPrescreenTests(unittest.TestCase):
+    def setUp(self):
+        PrescreenAnswerAuthorityTests.setUp(self)
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.path = self.root / 'bank.json'
+        self.path.write_text(json.dumps({'answers': {}, '_provenance': {}}))
+        import field_question_protocol as frp
+        self.frp = frp
+        for key, value in [('BANK_PATH', str(self.path)), ('QUEUE_DIR', str(self.root)),
+                           ('BACKLOG_PATH', str(self.root / 'backlog.jsonl')),
+                           ('HITCOUNTS_PATH', str(self.root / 'hits.json'))]:
+            p = patch.object(frp, key, value, create=True)
+            p.start(); self.addCleanup(p.stop)
+
+    def capture(self, writer, *, key='first_name', question='What is your first name?', scope='global', answer='Riley'):
+        if writer == 'tray':
+            import tray_answer
+            result = tray_answer.apply_bank_write(str(self.path), key, answer, scope,
+                {'key': 'synthetic-card', 'question': question}, 'synthetic reply', employers=set())
+            return result
+        return self.frp.close_question(question, answer, bank_key=key,
+            provenance='synthetic applicant own words', bank_path=str(self.path),
+            backlog_path=str(self.root / 'backlog.jsonl'), scope=scope)
+
+    def screen(self, bank):
+        return prescreen.screen_packet(self.packet, bank, {})['verdict']
+
+    def test_new_human_captures_clear_required_question(self):
+        for writer in ('tray', 'frp'):
+            with self.subTest(writer=writer):
+                self.capture(writer)
+                bank = json.loads(self.path.read_text())
+                self.assertEqual(self.screen(bank), 'CLEAN')
+                self.assertEqual(bank['_provenance']['first_name']['asserted_by'], 'applicant')
+
+    def test_captured_answers_remain_value_scope_and_time_bound(self):
+        for writer in ('tray', 'frp'):
+            self.capture(writer, scope='employer:Fixture')
+            captured = json.loads(self.path.read_text())
+            self.assertEqual(self.screen(captured), 'CLEAN')
+            for damage in ('value', 'scope', 'question-metadata', 'expired', 'wrong-role', 'unreceipted'):
+                with self.subTest(writer=writer, damage=damage):
+                    bank = copy.deepcopy(captured)
+                    if damage == 'value': bank['answers']['first_name']['value'] = 'Changed'
+                    elif damage == 'scope': bank['answers']['first_name']['scope'] = 'global'
+                    elif damage == 'question-metadata': bank['answers']['first_name']['question_patterns'] = ['Different obligation']
+                    elif damage == 'expired': bank['_provenance']['first_name']['expires_at'] = (utc_now()-timedelta(seconds=1)).isoformat()
+                    elif damage == 'wrong-role': bank['_provenance']['first_name']['scope'] = 'other-role'
+                    else: bank['_provenance'] = {}
+                    self.assertEqual(self.screen(bank), 'PARK')
+            self.packet['company'] = 'Other'
+            self.assertEqual(self.screen(captured), 'PARK')
+            self.packet['company'] = 'Fixture'
+
+    def test_custom_frp_capture_survives_validated_projection(self):
+        question = 'Which synthetic workflow have you practiced?'
+        self.capture('frp', key='synthetic_workflow', question=question)
+        self.packet['frp_enabled'] = True
+        self.intel['questions'][0]['label'] = question
+        self.assertEqual(self.screen(json.loads(self.path.read_text())), 'CLEAN')
+        self.assertEqual(self.packet['frp_derived_answers'][question]['answer'], 'Riley')
+
+    def test_ambiguous_consent_does_not_gain_receipt_or_close_backlog(self):
+        question = 'I agree to arbitration'
+        for writer in ('tray', 'frp'):
+            with self.subTest(writer=writer):
+                self.path.write_text('{"answers": {}, "_provenance": {}}')
+                self.capture(writer, key='arbitration_agreement', question=question, scope=None, answer='Yes')
+                bank = json.loads(self.path.read_text())
+                self.assertNotIn('arbitration_agreement', bank['answers'])
+                self.assertNotIn('asserted_by', bank.get('_provenance', {}).get('arbitration_agreement', {}))
+
+    def test_malformed_banks_are_not_replaced_or_authorized(self):
+        for writer in ('tray', 'frp'):
+            for content in ('{bad', '[]', '{"answers": []}', '{"answers": {}, "_provenance": []}'):
+                with self.subTest(writer=writer, content=content):
+                    self.path.write_text(content)
+                    try:
+                        self.capture(writer)
+                    except ValueError:
+                        pass
+                    self.assertEqual(self.path.read_text(), content)
+
+    def test_explicit_consent_scope_is_required_and_employer_bound(self):
+        self.intel['questions'][0].update(label='I agree to arbitration', type='checkbox')
+        for writer in ('tray', 'frp'):
+            with self.subTest(writer=writer):
+                self.capture(writer, key='arbitration_agreement', question='I agree to arbitration', scope='employer:Fixture', answer='Yes')
+                bank = json.loads(self.path.read_text())
+                self.assertEqual(self.screen(bank), 'CLEAN')
+                self.packet['company'] = 'Other'
+                self.assertEqual(self.screen(bank), 'PARK')
+                self.packet['company'] = 'Fixture'
+
+    def test_capture_does_not_receipt_unrelated_legacy_or_derived_answers(self):
+        for writer in ('tray', 'frp'):
+            with self.subTest(writer=writer):
+                legacy = {'answers': {'legacy_fact': 'Synthetic old fact'},
+                          '_provenance': {'legacy_fact': {'source': 'old note'}}}
+                self.path.write_text(json.dumps(legacy))
+                self.capture(writer)
+                bank = json.loads(self.path.read_text())
+                self.assertEqual(bank['answers']['legacy_fact'], legacy['answers']['legacy_fact'])
+                self.assertEqual(bank['_provenance']['legacy_fact'], legacy['_provenance']['legacy_fact'])
+        self.frp.ensure_bank_key('derived_fact', 'Synthetic derivation', 'derived source', bank_path=str(self.path))
+        self.assertNotIn('asserted_by', json.loads(self.path.read_text())['_provenance']['derived_fact'])
+
+    def test_frp_dry_run_and_ambiguous_consent_leave_backlog_open(self):
+        question = 'I agree to arbitration'
+        backlog = self.root / 'backlog.jsonl'
+        row = {'norm': self.frp.normalize_question(question), 'status': 'open', 'role_id': 'fixture-role'}
+        backlog.write_text(json.dumps(row)+'\n')
+        before = self.path.read_bytes(), backlog.read_bytes()
+        result = self.frp.close_question(question, 'Yes', bank_key='arbitration_agreement',
+            bank_path=str(self.path), backlog_path=str(backlog))
+        self.assertTrue(result['scope_required'])
+        self.assertEqual((self.path.read_bytes(), backlog.read_bytes()), before)
+        self.frp.close_question(question, 'Yes', bank_key='arbitration_agreement', scope='employer:Fixture',
+            bank_path=str(self.path), backlog_path=str(backlog), dry_run=True)
+        self.assertEqual((self.path.read_bytes(), backlog.read_bytes()), before)
+
+    def test_answer_placeholders_and_no_ai_still_park_after_capture(self):
+        for writer in ('tray', 'frp'):
+            with self.subTest(writer=writer):
+                self.capture(writer)
+                bank = json.loads(self.path.read_text())
+                entry = bank['answers']['first_name']
+                entry['value'] = 'YOUR_FIRST_NAME'
+                bank['_provenance']['first_name'] = packet_contract.answer_receipt(entry, 'synthetic')
+                self.assertEqual(self.screen(bank), 'PARK')
+        self.intel['questions'][0].update(label='I certify no AI assistance was used', type='checkbox')
+        self.capture('tray', key='information_truthfulness_attestation', question='I certify no AI assistance was used')
+        self.assertEqual(self.screen(json.loads(self.path.read_text())), 'PARK')
+
+    def test_frp_does_not_inherit_consent_authority_or_widen_fact_scope(self):
+        self.capture('frp', scope='employer:Fixture')
+        self.capture('frp', scope=None)
+        bank = json.loads(self.path.read_text())
+        self.assertEqual(bank['answers']['first_name']['scope'], 'employer:Fixture')
+        self.capture('frp', key='arbitration_agreement', question='I agree to arbitration', scope='global', answer='Yes')
+        before = self.path.read_bytes()
+        result = self.capture('frp', key='arbitration_agreement', question='I agree to arbitration', scope=None, answer='Yes')
+        self.assertTrue(result['scope_required'])
+        self.assertEqual(before, self.path.read_bytes())
+
+    def test_fresh_plain_fact_capture_uses_existing_scope_policy(self):
+        for writer in ('tray', 'frp'):
+            with self.subTest(writer=writer):
+                self.path.write_text('{"answers": {}, "_provenance": {}}')
+                self.capture(writer, scope=None)
+                self.assertEqual(self.screen(json.loads(self.path.read_text())), 'CLEAN')
