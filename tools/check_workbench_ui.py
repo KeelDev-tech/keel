@@ -89,7 +89,7 @@ def check(browser, chrome, out):
             record('empty export does not blame filters', evaluate(
                 "document.querySelector('#pipeline-table').innerText.includes('No opportunities in this export')"))
             call('screenshot', str(out / 'empty.png'))
-            record('no JavaScript exceptions', not call('errors').get('errors'))
+            record('no JavaScript exceptions', call('errors')['errors'] == [])
             report = {'synthetic': True, 'execution_authorized': False,
                       'contrast': contrast, 'checks': checks,
                       'status': 'PASS' if all(row['passed'] for row in checks) else 'FAIL'}

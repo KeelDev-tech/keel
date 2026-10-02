@@ -120,6 +120,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
       - name: Install pinned browser verification CLI
         run: npm install --prefix "${RUNNER_TEMP}/keel-ui-tools" agent-browser@0.38.2
       - name: Verify synthetic workbench in a sandboxed browser
