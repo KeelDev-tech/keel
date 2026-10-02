@@ -15,6 +15,10 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Surface unresolved resume requirement feedback for UNKNOWN and PARTIAL as
+  well as MISSING, normalize whitespace, and treat invalid statuses as UNKNOWN.
+  Feedback remains advisory and does not infer absent qualifications.
+
 - Bind applicant profile presence and content in modern preparation packets and
   legacy ready manifests. Creating, deleting or changing the profile invalidates
   packets; older packets without this binding require rebuilding. Hashes detect
