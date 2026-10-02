@@ -15,6 +15,12 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Apply value-bound applicant receipts and exact scope checks to every packet
+  prescreen. Empty, unconfirmed, expired or out-of-scope answers and unverified
+  banded rules cannot clear required questions; valid scoped facts remain usable.
+  Required consent controls use their own question and cannot inherit an adjacent
+  approval. Ordinary option controls retain their existing behavior.
+
 - Restore `validate-packet` against complete current queues and ledger. Refuse
   duplicate, held, changed or stale review packets and pending queue recovery.
   Canonical hold fields, nested gates and all matching ledger outcomes apply;
