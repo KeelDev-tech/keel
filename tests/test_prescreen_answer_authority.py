@@ -161,5 +161,15 @@ class PrescreenAnswerAuthorityTests(unittest.TestCase):
         self.assertEqual(self.screen({'answers': {}}), 'CLEAN')
 
 
+    def test_adjacent_receipted_identity_and_consent_both_remain_usable(self):
+        self.intel['questions'].append({'label': 'I agree to arbitration', 'type': 'checkbox',
+                                       'required': True, 'options': ['Yes', 'No']})
+        bank = copy.deepcopy(self.bank)
+        bank['answers']['arbitration_agreement'] = 'Yes'
+        bank['_provenance']['arbitration_agreement'] = packet_contract.answer_receipt(
+            'Yes', 'synthetic consent', role_id='fixture-role')
+        self.assertEqual(self.screen(bank), 'CLEAN')
+
+
 if __name__ == '__main__':
     unittest.main()

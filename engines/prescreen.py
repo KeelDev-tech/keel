@@ -728,31 +728,19 @@ def screen_packet(packet, answer_bank, employer_patterns=None):
             f"words (essay): \"{label[:120]}\""
         )
 
-    for pat in _hit(ATTEST_RE, intel):
-        m = re.search(pat, intel, re.I)
-        if not m:
+    # Legacy/optional attestation text also stays within its own form line.
+    # A broad character window can borrow a neighbor's approval or mistake an
+    # approved attestation for a nearby identity field.
+    for line in intel.splitlines():
+        if not _hit(ATTEST_RE, line):
             continue
-        label = m.group(0).strip()
-        # Window the match so question_mappable sees the actual question,
-        # not the whole intel blob.
-        window = intel[max(0, m.start() - 250): m.end() + 250]
-        # Hard-stop classes first: no-AI / unaided-work / personally-completed
-        # would be FALSE if answered by an agent — always park.
-        if any(p.search(window) for p in NO_AI_ATTEST_RE):
-            reasons.append(
-                f"Required attestation needs the applicant's explicit word (attest): "
-                f"\"{label[:120]}\""
-            )
-            continue
-        # Pre-authorized routing: standard legal attestations whose text maps
-        # to a banked pre-authorized key skip the park — the brief carries the
-        # operator's standing answer. Anything else parks.
-        ok, _key = question_mappable(window, answer_bank)
-        if ok and _key in PREAUTHORIZED_ATTEST_KEYS:
+        consent_keys = {key for pattern, key in BANK_MAP
+                        if key in PREAUTHORIZED_ATTEST_KEYS and pattern.search(line)}
+        if (not _no_ai_hard_stop(line) and consent_keys
+                and consent_keys.issubset(answer_bank["answers"])):
             continue
         reasons.append(
-            f"Required attestation needs the applicant's explicit word (attest): "
-            f"\"{label[:120]}\""
+            "Required attestation needs the applicant's explicit word (attest): " + line[:160]
         )
 
     for q in extract_required_text_questions(intel):
