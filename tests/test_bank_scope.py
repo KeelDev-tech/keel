@@ -186,8 +186,8 @@ def test_write_employer_scope_accepted():
         assert entry["question"] == CONSENT_CARD["question"]
         assert entry["card_key"] == CONSENT_CARD["key"]
         assert isinstance(entry["question_variants"], list)
-        assert bank["_provenance"]["sms_consent_acme"]["scope"] == \
-            "employer:Acme"
+        assert bank["_provenance"]["sms_consent_acme"]["scope"] == "general"
+        assert bank["_provenance"]["sms_consent_acme"]["answer_scope"] == "employer:Acme"
 
 
 def test_write_explicit_global_accepted():

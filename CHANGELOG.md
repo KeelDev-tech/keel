@@ -20,6 +20,9 @@
   banded rules cannot clear required questions; valid scoped facts remain usable.
   Required consent controls use their own question and cannot inherit an adjacent
   approval. Ordinary option controls retain their existing behavior.
+  Fresh tray and FRP human captures now carry value-bound receipts and governed
+  scope; derived/legacy values gain no authority. Ambiguous consent still needs
+  explicit scope, and validated custom-question metadata survives prescreen.
 
 - Restore `validate-packet` against complete current queues and ledger. Refuse
   duplicate, held, changed or stale review packets and pending queue recovery.
