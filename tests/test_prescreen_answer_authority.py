@@ -153,5 +153,13 @@ class PrescreenAnswerAuthorityTests(unittest.TestCase):
                 self.assertEqual(self.screen({'answers': {}}), 'PARK')
 
 
+    def test_malformed_bank_does_not_become_empty_authority(self):
+        self.intel['questions'] = []
+        for bank in ([], 'malformed', {'answers': []}, {'answers': None}):
+            with self.subTest(bank=bank):
+                self.assertEqual(self.screen(bank), 'PARK')
+        self.assertEqual(self.screen({'answers': {}}), 'CLEAN')
+
+
 if __name__ == '__main__':
     unittest.main()

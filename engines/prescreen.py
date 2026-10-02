@@ -659,6 +659,8 @@ def screen_packet(packet, answer_bank, employer_patterns=None):
     """
     reasons = screening_coverage_reasons(packet)
     from packet_contract import confirmed_answers
+    if answer_bank is not None and not isinstance(answer_bank, dict):
+        reasons.append("Applicant answer bank is malformed; applicant review required.")
     bank = answer_bank if isinstance(answer_bank, dict) else {"answers": {}}
     bank = {"answers": {}, **bank}
     try:
