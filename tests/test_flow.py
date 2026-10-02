@@ -86,6 +86,45 @@ def test_question_gate_conflicts_reject_export():
     with pytest.raises(ContractError): build(data, now=NOW)
 
 
+@pytest.mark.parametrize("family", ["dedupe", "verification", "cooldown", "policy", "unknown_attempt"])
+@pytest.mark.parametrize("location", ["lead", "joined"])
+def test_question_unlock_claim_rejects_non_question_hold(family, location):
+    data = make_snapshot()
+    row = next(row for row in data["leads"] if row["role_id"] == "role-4")
+    if location == "lead":
+        row["holds"] = [family]
+    else:
+        data["holds"].append(hold(hold_id="question-blocker", role_id="role-4", family=family))
+    before = copy.deepcopy(data)
+    with pytest.raises(ContractError, match="question dependency conflicts with canonical holds"):
+        build(data, now=NOW)
+    assert data == before
+    # Honest blocked dependencies remain valid diagnostic input, with no unlock.
+    data["question_dependencies"][0]["other_gates_clear"] = False
+    report = build(data, now=NOW)
+    assert "role-4" in report["questions"]["excluded_roles"]
+    assert all("role-4" not in group["roles_progressed"] for group in report["questions"]["groups"])
+    assert not report["execution_authorized"]
+
+
+@pytest.mark.parametrize("family", ["consent", "operator_input"])
+@pytest.mark.parametrize("location", ["lead", "joined"])
+def test_question_holds_remain_conditional_without_authorizing_release(family, location):
+    data = make_snapshot()
+    row = next(row for row in data["leads"] if row["role_id"] == "role-4")
+    if location == "lead":
+        row["holds"] = [family]
+    else:
+        data["holds"].append(hold(hold_id="question-blocker", role_id="role-4", family=family))
+    before = copy.deepcopy(data)
+    report = build(data, now=NOW)
+    assert any("role-4" in group["roles_unlocked_if_answered"] for group in report["questions"]["groups"])
+    assert not next(row for row in report["readiness"]["rows"] if row["role_id"] == "role-4")["executable"]
+    assert all(not row["release_authorized"] for row in report["questions"]["dependency_bundles"])
+    assert not report["execution_authorized"]
+    assert data == before
+
+
 @pytest.mark.parametrize("seconds,state", [(0, "HEALTHY"), (90, "HEALTHY"), (91, "UNVERIFIED"), (-1, "UNVERIFIED")])
 def test_bridge_freshness_uses_actual_both_implementations(seconds, state):
     result = compare_supply({"schema_version": 1, "ready": 5, "actionable": 1,
