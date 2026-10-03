@@ -15,6 +15,11 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Add value-free advisory profile-versus-answer contact differences to doctor.
+  Equivalent phone/LinkedIn formatting is normalized; findings never overwrite
+  applicant facts or change readiness. Experience cannot be inferred from
+  incomplete résumé chronology and is explicitly not compared.
+
 - Surface unresolved resume requirement feedback for UNKNOWN and PARTIAL as
   well as MISSING, normalize whitespace, and treat invalid statuses as UNKNOWN.
   Feedback remains advisory and does not infer absent qualifications.
