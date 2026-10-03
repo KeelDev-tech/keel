@@ -254,6 +254,8 @@ honest-automation contract above. Two files define the project's shape:
   what stays private, and why.
 
 Start with [docs/PERSONALIZE.md](docs/PERSONALIZE.md) to make a copy yours.
+See [preparation material retention](docs/PREPARATION_MATERIALS.md) for what
+packet expiry and failed preparation do—and do not—remove.
 
 ## Project layout
 

@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import re
 from safe_http import validate_url
+from profile_state import profile_dependency
 from safe_io import (atomic_bytes, atomic_json, aware_time, canonical, contained_path,
                      digest, file_digest, fresh, read_json, utc_now)
 
@@ -85,7 +86,8 @@ def dependencies(entry, bank, policy, workspace, materials):
                 raise ValueError("unsupported material file type")
             documents.append({"kind": kind, "source_path": str(path), **file_digest(path)})
     return {"entry_sha256": digest(entry), "answers_sha256": digest(bank),
-            "policy_sha256": digest(policy), "materials": documents}
+            "policy_sha256": digest(policy), "materials": documents,
+            "profile": profile_dependency(workspace)}
 
 
 def prepare(entry, bank, policy, workspace, materials, intel, *, now=None):
