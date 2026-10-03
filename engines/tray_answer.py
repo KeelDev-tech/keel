@@ -251,7 +251,7 @@ def apply_bank_write(bank_path, banked_key, answer, scope_arg, card,
     except Exception as e:  # scope-check failure: fail to quarantine + continue
         bank = original
         banked = False
-        bank.setdefault("_provenance", {}).pop(banked_key, None)
+        # Failed replacement must not revoke the original answer receipt.
         bank.setdefault("_quarantined", {})[banked_key] = {
             "was": answer,
             "quarantined_at": datetime.now(timezone.utc).strftime(

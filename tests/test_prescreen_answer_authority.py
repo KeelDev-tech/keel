@@ -357,3 +357,43 @@ class CaptureToPrescreenTests(unittest.TestCase):
         self.assertEqual(json.loads(output.getvalue()), {
             'matched_entries': 2, 'revival_candidate_count': 1,
             'dry_run': False, 'scope_required': True})
+
+    def test_failed_tray_overwrite_preserves_existing_receipt(self):
+        import tray_answer
+        from contextlib import nullcontext
+        for failure in ('invalid-scope', 'classifier-error', 'write-error'):
+            with self.subTest(failure=failure):
+                self.path.write_text('{"answers": {}, "_provenance": {}}')
+                self.capture('tray', answer='Riley')
+                before = json.loads(self.path.read_text())
+                scope = 'invalid' if failure == 'invalid-scope' else 'global'
+                guard = nullcontext()
+                if failure == 'classifier-error':
+                    guard = patch.object(tray_answer.bs, 'decide_bank_scope', side_effect=RuntimeError('synthetic failure'))
+                elif failure == 'write-error':
+                    original_write = tray_answer.queue_io.atomic_write_json
+                    attempts = []
+                    def fail_once(*args, **kwargs):
+                        attempts.append(1)
+                        if len(attempts) == 1:
+                            raise OSError('synthetic pre-write failure')
+                        return original_write(*args, **kwargs)
+                    guard = patch.object(tray_answer.queue_io, 'atomic_write_json', side_effect=fail_once)
+                with guard:
+                    result = self.capture('tray', scope=scope, answer='Rejected replacement')
+                after = json.loads(self.path.read_text())
+                self.assertEqual(result, (False, True, 'ambiguous'))
+                self.assertEqual(after['answers'], before['answers'])
+                self.assertEqual(after['_provenance'], before['_provenance'])
+                self.assertEqual(after['_quarantined']['first_name']['was'], 'Rejected replacement')
+                self.assertEqual(self.screen(after), 'CLEAN')
+
+    def test_failed_tray_overwrite_does_not_upgrade_legacy_answer(self):
+        bank = {'answers': {'first_name': 'Legacy value'},
+                '_provenance': {'first_name': {'source': 'legacy note'}}}
+        self.path.write_text(json.dumps(bank))
+        self.capture('tray', scope='invalid', answer='Rejected replacement')
+        after = json.loads(self.path.read_text())
+        self.assertEqual(after['answers'], bank['answers'])
+        self.assertEqual(after['_provenance'], bank['_provenance'])
+        self.assertEqual(self.screen(after), 'PARK')
