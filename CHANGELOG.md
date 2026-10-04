@@ -15,6 +15,9 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Pipeline doctor reports unevaluated packet integrity as null when static
+  admission blocks inspection, without inventing a missing-packet loss reason.
+
 - Require exact integer revision binding on native preparation receipts. Boolean
   or float revisions halt with an unknown effect, without retrying or continuing.
 
