@@ -15,6 +15,10 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Resume bounded buffer-refill scans across stable candidate order so held
+  prefixes do not starve later eligible work. Every visit rechecks admission;
+  scan limits, approval gates and concurrency limits are unchanged.
+
 - Pipeline doctor reports unevaluated packet integrity as null when static
   admission blocks inspection, without inventing a missing-packet loss reason.
 

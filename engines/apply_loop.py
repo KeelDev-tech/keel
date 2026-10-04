@@ -862,9 +862,10 @@ def _load_buffer_watermark():
         return {}
 
 
-def _save_buffer_watermark(queue_hash):
+def _save_buffer_watermark(queue_hash, scan_hash=None, scan_next=0):
     os.makedirs(os.path.dirname(BUFFER_WATERMARK), exist_ok=True)
     json.dump({"queue_hash": queue_hash,
+               "scan_hash": scan_hash, "scan_next": scan_next,
                "cycle_at": datetime.now(timezone.utc).isoformat()},
               open(BUFFER_WATERMARK, "w"), indent=1)
 
@@ -1022,6 +1023,7 @@ def refresh_buffer(tagged=None, now=None):
     """Prefetch launch packets for the top-ranked eligible leads.
 
     Keeps BUFFER_MIN_FRESH fresh packets warm (BUFFER_SIZE hard ceiling).
+    Bounded scans resume across calls while candidate order is unchanged.
     Skips the whole pass when the queue content matches the last cycle's
     watermark AND the buffer is already full of fresh, present packets.
     Leads stay READY while buffered — no IN-FLIGHT markers are written.
@@ -1080,8 +1082,9 @@ def refresh_buffer(tagged=None, now=None):
         # Refresh-skip watermark: identical queue content + full fresh
         # buffer means there is nothing to do.
         qhash = _queue_content_hash(tagged)
+        watermark = _load_buffer_watermark()
         if fresh >= BUFFER_MIN_FRESH and \
-                _load_buffer_watermark().get("queue_hash") == qhash:
+                watermark.get("queue_hash") == qhash:
             save_buffer_state(state)
             return fresh
 
@@ -1099,12 +1102,20 @@ def refresh_buffer(tagged=None, now=None):
         scan_limit = int(os.environ.get("KEEL_BUFFER_SCAN_LIMIT", BUFFER_SCAN_LIMIT))
         if not 1 <= scan_limit <= 1000:
             raise ValueError("KEEL_BUFFER_SCAN_LIMIT must be an integer in 1..1000")
-        # A blocked high-score head must not starve eligible leads below it.
-        # Scan the bounded queue until the fill target is met, rather than
-        # slicing before the eligibility checks.
-        for entry, origin in candidates[:scan_limit]:
+        # Resume a bounded pass across stable candidate ordering. This cursor
+        # grants no admission and retains no gate result; every visit rechecks.
+        scan_hash = _queue_content_hash([(entry.get("role_id"), origin)
+                                         for entry, origin in candidates])
+        start = watermark.get("scan_next", 0)
+        if (watermark.get("scan_hash") != scan_hash or type(start) is not int
+                or not 0 <= start < len(candidates)):
+            start = 0
+        ordered = candidates[start:] + candidates[:start]
+        scanned = 0
+        for entry, origin in ordered[:scan_limit]:
             if built >= min(need, room):
                 break
+            scanned += 1
             role_id = entry.get("role_id", "")
             ok, why = eligible(entry, origin)
             if not ok:
@@ -1172,7 +1183,8 @@ def refresh_buffer(tagged=None, now=None):
             )
             print(f"BUFFERED {role_id} -> {path}")
         save_buffer_state(state)
-        _save_buffer_watermark(qhash)
+        next_index = (start + scanned) % len(candidates) if candidates else 0
+        _save_buffer_watermark(qhash, scan_hash, next_index)
         return _buffer_fresh_count(state, max(now, datetime.now(timezone.utc)), tagged, bank)
     finally:
         try:
