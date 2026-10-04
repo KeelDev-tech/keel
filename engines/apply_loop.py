@@ -858,7 +858,7 @@ def _load_buffer_watermark():
         with open(BUFFER_WATERMARK) as f:
             d = json.load(f)
         return d if isinstance(d, dict) else {}
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
+    except (FileNotFoundError, json.JSONDecodeError, UnicodeDecodeError, OSError):
         return {}
 
 

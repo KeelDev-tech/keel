@@ -390,6 +390,18 @@ def test_refill_reordered_candidates_reset_cursor_and_empty_queue_is_safe(refill
     assert run() == 0
 
 
+@pytest.mark.parametrize("contents", [b"{", b"null", b"[]", b"\xff\xfe", b'{"scan_next": \xff}'])
+def test_refill_corrupt_watermark_recovers_with_bounded_gate_checks(refill_case, contents):
+    entries, saved, scanned, run = refill_case
+    assert run() == 0
+    Path(apply_loop.BUFFER_WATERMARK).write_bytes(contents)
+    assert run() == 0 and saved == []
+    assert scanned[3:] == ['blocked-0', 'blocked-1', 'blocked-2']
+    assert run() == 1
+    assert scanned[6:] == ['blocked-3', 'fixture-role']
+    assert [row['role_id'] for row in saved] == ['fixture-role']
+
+
 def test_refill_cursor_never_bypasses_current_launch_guard(refill_case, monkeypatch):
     entries, saved, scanned, run = refill_case
     assert run() == 0

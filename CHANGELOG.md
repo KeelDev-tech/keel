@@ -289,6 +289,8 @@ All notable changes to Keel are documented here. The format follows
 
 ## [Unreleased]
 
+- Recover bounded packet refill when its advisory watermark contains invalid text encoding; current admission gates are still rechecked.
+
 ### Added
 - Safety rails as code: `docs/OPERATING-CONSTRAINTS.md` documents the
   numbered operating constraints (C-01…C-20), each enforced in a named
