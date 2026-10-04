@@ -456,6 +456,37 @@ def test_refill_new_high_rank_waits_only_for_pending_visits(refill_case):
     assert [row['role_id'] for row in saved] == ['new-eligible']
 
 
+@pytest.mark.parametrize("cut", ["serialize", "publish"])
+def test_refill_interrupted_watermark_preserves_previous_progress(refill_case, monkeypatch, cut):
+    entries, saved, scanned, run = refill_case
+    entries[-1]['human_hold'] = True
+    assert run() == 0
+    path = Path(apply_loop.BUFFER_WATERMARK)
+    previous = path.read_bytes()
+
+    def interrupted_dump(value, stream, **kwargs):
+        stream.write('{"partial":')
+        stream.flush()
+        raise OSError("synthetic interrupted persistence")
+
+    def interrupted_replace(*args):
+        raise OSError("synthetic failed publication")
+
+    with monkeypatch.context() as fault:
+        if cut == "serialize":
+            fault.setattr(apply_loop.json, "dump", interrupted_dump)
+        else:
+            fault.setattr(apply_loop.os, "replace", interrupted_replace)
+        with pytest.raises(OSError):
+            run()
+    assert path.read_bytes() == previous
+    assert saved == []
+    entries[-1]['human_hold'] = False
+    before = len(scanned)
+    assert run() == 1
+    assert scanned[before:] == ['blocked-3', 'fixture-role']
+
+
 def test_refill_cursor_never_bypasses_current_launch_guard(refill_case, monkeypatch):
     entries, saved, scanned, run = refill_case
     assert run() == 0

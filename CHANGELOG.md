@@ -17,7 +17,9 @@
 
 - Preserve pending buffer-refill visits across queue additions, removals and
   reranking so held prefixes do not starve later eligible work. Every visit rechecks admission;
-  scan limits, approval gates and concurrency limits are unchanged.
+  scan limits, approval gates and concurrency limits are unchanged. Publish
+  advisory scan progress atomically so interrupted writes retain the previous
+  complete cursor; temporary partial state never grants admission.
 
 - Pipeline doctor reports unevaluated packet integrity as null when static
   admission blocks inspection, without inventing a missing-packet loss reason.

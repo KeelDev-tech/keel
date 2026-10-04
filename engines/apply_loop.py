@@ -864,10 +864,14 @@ def _load_buffer_watermark():
 
 def _save_buffer_watermark(queue_hash, scan_pending=None):
     os.makedirs(os.path.dirname(BUFFER_WATERMARK), exist_ok=True)
-    json.dump({"queue_hash": queue_hash,
-               "scan_pending": scan_pending or [],
-               "cycle_at": datetime.now(timezone.utc).isoformat()},
-              open(BUFFER_WATERMARK, "w"), indent=1)
+    # The refill lock serializes writers. Preserve the last complete cursor
+    # if serialization or publication fails; partial temporary state is ignored.
+    tmp = BUFFER_WATERMARK + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump({"queue_hash": queue_hash,
+                   "scan_pending": scan_pending or [],
+                   "cycle_at": datetime.now(timezone.utc).isoformat()}, f, indent=1)
+    os.replace(tmp, BUFFER_WATERMARK)
 
 
 def _buffer_lock():
