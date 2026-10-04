@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'engines'))
@@ -75,6 +76,9 @@ def test_pipeline_doctor_measures_losses_without_mutating_data(tmp_path, monkeyp
     assert result['packet_backed_ready'] == 0
     assert result['launchable_ready'] is None
     assert result['network_reads'] == 0
+    assert result['ready_rows'][0]['packet_integrity_pass'] is None
+    assert result['ready_rows'][0]['packet_reason'] == 'packet_not_evaluated'
+    assert 'packet_missing' not in result['ready_loss_reasons']
 
 
 def test_doctor_duplicate_homes_never_count_as_ready(tmp_path):
@@ -95,7 +99,7 @@ def test_doctor_duplicate_homes_never_count_as_ready(tmp_path):
     assert result['duplicate_queue_homes']['fixture-duplicate'] == ['standard', 'strategic']
 
 
-def test_doctor_counts_prepared_artifact_without_execution_authority(tmp_path):
+def test_doctor_counts_prepared_artifact_without_execution_authority(tmp_path, monkeypatch):
     import pipeline_doctor
     import ready_gate
     initialize_workspace(tmp_path)
@@ -119,10 +123,14 @@ def test_doctor_counts_prepared_artifact_without_execution_authority(tmp_path):
     finally:
         queue_io.set_lock_path(previous)
     assert result['packet_backed_ready'] == 1
+    assert result['ready_rows'][0]['packet_integrity_pass'] is True
     assert result['launchable_ready'] is None
     assert result['submission_authorized'] is False
     assert not ready_gate.packet_admission(packet, role, bank, workspace=tmp_path)['allowed']
     (tmp_path / 'data/employer-blocklist.md').write_text('Fixture\n')
+    def forbidden(*args, **kwargs):
+        raise AssertionError('static denial must skip packet evaluation')
+    monkeypatch.setattr(ready_gate, 'packet_admission', forbidden)
     queue_io.set_lock_path(str(tmp_path / 'queue.lock'))
     try:
         blocked = pipeline_doctor.report(tmp_path)
@@ -131,6 +139,36 @@ def test_doctor_counts_prepared_artifact_without_execution_authority(tmp_path):
     assert blocked['static_admissible_ready'] == 0
     assert blocked['packet_backed_ready'] == 0
     assert 'blocklisted_employer' in blocked['ready_rows'][0]['reason_codes']
+    assert blocked['ready_rows'][0]['packet_integrity_pass'] is None
+    assert blocked['ready_rows'][0]['packet_reason'] == 'packet_not_evaluated'
+    assert blocked['ready_loss_reasons'] == {'blocklisted_employer': 1}
+
+
+@pytest.mark.parametrize('packet_exists', [False, True])
+def test_doctor_evaluated_missing_or_invalid_packet_is_false(tmp_path, packet_exists):
+    import pipeline_doctor
+    initialize_workspace(tmp_path)
+    role = {'role_id': 'fixture-negative', 'company': 'Fixture', 'title': 'Role',
+            'status': 'READY', 'action_band': 'APPLY', 'fit_score': 80}
+    atomic_json(tmp_path / 'data/queues/standard-queue.json', [role])
+    if packet_exists:
+        atomic_json(tmp_path / 'data/launch-packets/buffer/fixture-negative.json', {})
+    previous = queue_io.get_lock_path()
+    queue_io.set_lock_path(str(tmp_path / 'queue.lock'))
+    try:
+        result = pipeline_doctor.report(tmp_path)
+    finally:
+        queue_io.set_lock_path(previous)
+    row, = result['ready_rows']
+    assert row['static_admission_pass'] is True
+    assert row['packet_integrity_pass'] is False
+    assert row['packet_reason'] != 'packet_not_evaluated'
+    if packet_exists:
+        assert 'missing_manifest' in row['packet_reason']
+    else:
+        assert row['packet_reason'] == 'packet_missing'
+    assert result['packet_backed_ready'] == 0
+    assert result['launchable_ready'] is None
 
 
 def test_diagnostic_missing_state_is_unknown(tmp_path):

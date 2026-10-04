@@ -69,8 +69,9 @@ def report(workspace):
             codes.append('ledger_unconfirmed')
         if name not in {'standard', 'strategic'}:
             codes.append('non_admission_queue')
-        packet_valid, packet_reason = False, 'packet_missing'
+        packet_valid, packet_reason = None, 'packet_not_evaluated'
         if not codes:
+            packet_valid, packet_reason = False, 'packet_missing'
             for folder in ('data/launch-packets/buffer', 'data/launch-packets'):
                 try:
                     path = contained_path(workspace / folder, str(rid) + '.json')
@@ -84,7 +85,7 @@ def report(workspace):
                 except (OSError, ValueError, TypeError, KeyError):
                     continue
         reasons.update(codes)
-        if not packet_valid:
+        if packet_valid is False:
             reasons[packet_reason or 'packet_invalid'] += 1
         ready_rows.append({'role_id': rid, 'queue': name,
                            'static_admission_pass': not codes,
@@ -104,7 +105,7 @@ def report(workspace):
                              for (q, s), count in sorted(states.items())],
             'nominal_ready': len(ready_rows) if not problems else None,
             'static_admissible_ready': sum(r['static_admission_pass'] for r in ready_rows) if not problems else None,
-            'packet_backed_ready': sum(r['packet_integrity_pass'] and r['static_admission_pass'] for r in ready_rows) if not problems else None,
+            'packet_backed_ready': sum(r['packet_integrity_pass'] is True and r['static_admission_pass'] for r in ready_rows) if not problems else None,
             'launchable_ready': None,
             'launchable_scope': 'Runtime ownership, current form and explicit execution approval require the host; not observed here.',
             'packet_scope': 'Packet integrity measures prepared artifacts; it does not establish execution authority.',
