@@ -77,7 +77,7 @@ def test_refresh_prescreen_failure_never_publishes_buffer_state(tmp_path, monkey
     monkeypatch.setattr(apply_loop, "load_buffer_state", lambda: [])
     monkeypatch.setattr(apply_loop, "save_buffer_state", lambda state: saved.extend(state))
     monkeypatch.setattr(apply_loop, "_load_buffer_watermark", lambda: {})
-    monkeypatch.setattr(apply_loop, "_save_buffer_watermark", lambda value: None)
+    monkeypatch.setattr(apply_loop, "_save_buffer_watermark", lambda *args: None)
     monkeypatch.setattr(apply_loop, "load_answer_bank", lambda: {})
     monkeypatch.setattr(apply_loop, "eligible", lambda *args: (True, "fixture"))
     monkeypatch.setattr(apply_loop, "_launch_guard", lambda *args: (True, "fixture-task", ""))

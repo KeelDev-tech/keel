@@ -309,12 +309,12 @@ def test_novel_ledger_outcome_for_exact_role_is_held_for_reconciliation():
     assert ready_gate.ledger_holds(lead(), [{"role_id": "fixture-role", "status": "NEW_UNRECONCILED_STATE"}])
 
 
-@pytest.mark.parametrize("scan_limit,expected", [("3", 0), ("100", 1)])
-def test_buffer_refill_scans_past_blocked_head_with_a_bounded_budget(tmp_path, monkeypatch, scan_limit, expected):
+@pytest.fixture
+def refill_case(tmp_path, monkeypatch):
     entries = [lead(role_id=f"blocked-{i}", fit_score=90-i, human_hold=True) for i in range(4)] + [lead()]
     Path(apply_loop.QUEUE).write_text(json.dumps(entries))
     saved = []
-    monkeypatch.setenv("KEEL_BUFFER_SCAN_LIMIT", scan_limit)
+    monkeypatch.setenv("KEEL_BUFFER_SCAN_LIMIT", "3")
     monkeypatch.setattr(apply_loop, "PACKETS", str(tmp_path))
     monkeypatch.setattr(apply_loop, "BUFFER_DIR", str(tmp_path / "buffer"))
     monkeypatch.setattr(apply_loop, "BUFFER_MIN_FRESH", 1)
@@ -322,9 +322,12 @@ def test_buffer_refill_scans_past_blocked_head_with_a_bounded_budget(tmp_path, m
     monkeypatch.setattr(apply_loop, "load_buffer_state", lambda: [])
     monkeypatch.setattr(apply_loop, "save_buffer_state", lambda state: saved.extend(state))
     monkeypatch.setattr(apply_loop, "load_answer_bank", bank)
-    monkeypatch.setattr(apply_loop, "_load_buffer_watermark", lambda: {})
-    monkeypatch.setattr(apply_loop, "_save_buffer_watermark", lambda value: None)
-    monkeypatch.setattr(apply_loop, "eligible", lambda entry, origin: (ready_gate.entry_admission(entry)["allowed"], "fixture"))
+    monkeypatch.setattr(apply_loop, "BUFFER_WATERMARK", str(tmp_path / "watermark.json"))
+    scanned = []
+    def eligible(entry, origin):
+        scanned.append(entry['role_id'])
+        return ready_gate.entry_admission(entry)['allowed'], 'fixture'
+    monkeypatch.setattr(apply_loop, "eligible", eligible)
     monkeypatch.setattr(apply_loop, "_launch_guard", lambda *args: (True, "fixture-task", ""))
     monkeypatch.setattr(apply_loop.prescreen, "screen_packet", lambda *args: {"verdict": "CLEAN", "reasons": []})
     monkeypatch.setattr(apply_loop.log_event, "log", lambda *args, **kwargs: None)
@@ -334,8 +337,69 @@ def test_buffer_refill_scans_past_blocked_head_with_a_bounded_budget(tmp_path, m
         path.write_text(json.dumps(packet(entry)))
         return str(path)
     monkeypatch.setattr(apply_loop, "build_packet", build)
-    assert apply_loop.refresh_buffer([(entry, "standard") for entry in entries]) == expected
+    def run():
+        Path(apply_loop.QUEUE).write_text(json.dumps(entries))
+        return apply_loop.refresh_buffer([(entry, "standard") for entry in entries])
+    return entries, saved, scanned, run
+
+
+@pytest.mark.parametrize("scan_limit,cycles,expected", [("3", 1, 0), ("100", 1, 1), ("3", 2, 1)])
+def test_buffer_refill_scans_past_blocked_head_with_a_bounded_budget(refill_case, monkeypatch, scan_limit, cycles, expected):
+    entries, saved, scanned, run = refill_case
+    monkeypatch.setenv("KEEL_BUFFER_SCAN_LIMIT", scan_limit)
+    for _ in range(cycles):
+        before = len(scanned)
+        actual = run()
+        assert len(scanned) - before <= int(scan_limit)
+    assert actual == expected
+    if cycles == 2:
+        assert scanned == ['blocked-0', 'blocked-1', 'blocked-2', 'blocked-3', 'fixture-role']
     assert [row["role_id"] for row in saved] == (["fixture-role"] if expected else [])
+
+
+def test_refill_cursor_wraps_and_rechecks_changed_holds(refill_case):
+    entries, saved, scanned, run = refill_case
+    assert run() == 0
+    entries[-1]['human_hold'] = True
+    assert run() == 0  # The newly held tail must not inherit earlier eligibility.
+    assert scanned[3:] == ['blocked-3', 'fixture-role', 'blocked-0']
+    entries[0]['human_hold'] = False
+    assert run() == 0
+    assert run() == 1
+    assert [row['role_id'] for row in saved] == ['blocked-0']
+
+
+@pytest.mark.parametrize('position', [True, -1, 5, '3', None])
+def test_refill_invalid_cursor_restarts_without_bypassing_gates(refill_case, position):
+    entries, saved, scanned, run = refill_case
+    assert run() == 0
+    path = Path(apply_loop.BUFFER_WATERMARK)
+    state = json.loads(path.read_text()); state['scan_next'] = position
+    path.write_text(json.dumps(state))
+    assert run() == 0 and saved == []
+    assert scanned[3:] == ['blocked-0', 'blocked-1', 'blocked-2']
+
+
+def test_refill_reordered_candidates_reset_cursor_and_empty_queue_is_safe(refill_case):
+    entries, saved, scanned, run = refill_case
+    assert run() == 0
+    entries[-1]['fit_score'] = 99
+    assert run() == 1
+    assert scanned[3:] == ['fixture-role']
+    entries.clear()
+    assert run() == 0
+
+
+def test_refill_cursor_never_bypasses_current_launch_guard(refill_case, monkeypatch):
+    entries, saved, scanned, run = refill_case
+    assert run() == 0
+    guards = []
+    def deny(role_id, *args):
+        guards.append(role_id)
+        return False, None, 'synthetic current resource or policy hold'
+    monkeypatch.setattr(apply_loop, '_launch_guard', deny)
+    assert run() == 0 and saved == []
+    assert guards == ['fixture-role']
 
 
 def test_direct_legacy_preparation_never_marks_queue_inflight(tmp_path, monkeypatch):
