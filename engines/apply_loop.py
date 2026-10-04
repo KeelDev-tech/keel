@@ -858,16 +858,20 @@ def _load_buffer_watermark():
         with open(BUFFER_WATERMARK) as f:
             d = json.load(f)
         return d if isinstance(d, dict) else {}
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
+    except (FileNotFoundError, json.JSONDecodeError, UnicodeDecodeError, OSError):
         return {}
 
 
-def _save_buffer_watermark(queue_hash, scan_hash=None, scan_next=0):
+def _save_buffer_watermark(queue_hash, scan_pending=None):
     os.makedirs(os.path.dirname(BUFFER_WATERMARK), exist_ok=True)
-    json.dump({"queue_hash": queue_hash,
-               "scan_hash": scan_hash, "scan_next": scan_next,
-               "cycle_at": datetime.now(timezone.utc).isoformat()},
-              open(BUFFER_WATERMARK, "w"), indent=1)
+    # The refill lock serializes writers. Preserve the last complete cursor
+    # if serialization or publication fails; partial temporary state is ignored.
+    tmp = BUFFER_WATERMARK + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump({"queue_hash": queue_hash,
+                   "scan_pending": scan_pending or [],
+                   "cycle_at": datetime.now(timezone.utc).isoformat()}, f, indent=1)
+    os.replace(tmp, BUFFER_WATERMARK)
 
 
 def _buffer_lock():
@@ -1023,7 +1027,7 @@ def refresh_buffer(tagged=None, now=None):
     """Prefetch launch packets for the top-ranked eligible leads.
 
     Keeps BUFFER_MIN_FRESH fresh packets warm (BUFFER_SIZE hard ceiling).
-    Bounded scans resume across calls while candidate order is unchanged.
+    Bounded scans finish pending candidates before revisiting ranked candidates.
     Skips the whole pass when the queue content matches the last cycle's
     watermark AND the buffer is already full of fresh, present packets.
     Leads stay READY while buffered — no IN-FLIGHT markers are written.
@@ -1102,15 +1106,21 @@ def refresh_buffer(tagged=None, now=None):
         scan_limit = int(os.environ.get("KEEL_BUFFER_SCAN_LIMIT", BUFFER_SCAN_LIMIT))
         if not 1 <= scan_limit <= 1000:
             raise ValueError("KEEL_BUFFER_SCAN_LIMIT must be an integer in 1..1000")
-        # Resume a bounded pass across stable candidate ordering. This cursor
-        # grants no admission and retains no gate result; every visit rechecks.
-        scan_hash = _queue_content_hash([(entry.get("role_id"), origin)
-                                         for entry, origin in candidates])
-        start = watermark.get("scan_next", 0)
-        if (watermark.get("scan_hash") != scan_hash or type(start) is not int
-                or not 0 <= start < len(candidates)):
-            start = 0
-        ordered = candidates[start:] + candidates[:start]
+        # Retain only identities, never eligibility or packet authority. New or
+        # reranked candidates cannot jump ahead of a pending visit; removed
+        # candidates disappear. Once pending visits finish, current rank wins.
+        by_key = {_queue_content_hash((entry.get("role_id"), origin)): (entry, origin)
+                  for entry, origin in candidates}
+        pending = watermark.get("scan_pending", [])
+        if (not isinstance(pending, list)
+                or any(not isinstance(key, str) or len(key) != 64
+                       or any(c not in "0123456789abcdef" for c in key) for key in pending)
+                or len(set(pending)) != len(pending)):
+            pending = []
+        pending = [key for key in pending if key in by_key]
+        pending_set = set(pending)
+        scan_keys = pending + [key for key in by_key if key not in pending_set]
+        ordered = [by_key[key] for key in scan_keys]
         scanned = 0
         for entry, origin in ordered[:scan_limit]:
             if built >= min(need, room):
@@ -1183,8 +1193,7 @@ def refresh_buffer(tagged=None, now=None):
             )
             print(f"BUFFERED {role_id} -> {path}")
         save_buffer_state(state)
-        next_index = (start + scanned) % len(candidates) if candidates else 0
-        _save_buffer_watermark(qhash, scan_hash, next_index)
+        _save_buffer_watermark(qhash, scan_keys[scanned:])
         return _buffer_fresh_count(state, max(now, datetime.now(timezone.utc)), tagged, bank)
     finally:
         try:

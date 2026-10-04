@@ -15,9 +15,11 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
-- Resume bounded buffer-refill scans across stable candidate order so held
-  prefixes do not starve later eligible work. Every visit rechecks admission;
-  scan limits, approval gates and concurrency limits are unchanged.
+- Preserve pending buffer-refill visits across queue additions, removals and
+  reranking so held prefixes do not starve later eligible work. Every visit rechecks admission;
+  scan limits, approval gates and concurrency limits are unchanged. Publish
+  advisory scan progress atomically so interrupted writes retain the previous
+  complete cursor; temporary partial state never grants admission.
 
 - Pipeline doctor reports unevaluated packet integrity as null when static
   admission blocks inspection, without inventing a missing-packet loss reason.
@@ -288,6 +290,8 @@ All notable changes to Keel are documented here. The format follows
   updated for the 0.4.0 freeze; `release-files.json` regenerated.
 
 ## [Unreleased]
+
+- Recover bounded packet refill when its advisory watermark contains invalid text encoding; current admission gates are still rechecked.
 
 ### Added
 - Safety rails as code: `docs/OPERATING-CONSTRAINTS.md` documents the

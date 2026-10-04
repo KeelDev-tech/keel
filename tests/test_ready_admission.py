@@ -364,30 +364,127 @@ def test_refill_cursor_wraps_and_rechecks_changed_holds(refill_case):
     assert run() == 0  # The newly held tail must not inherit earlier eligibility.
     assert scanned[3:] == ['blocked-3', 'fixture-role', 'blocked-0']
     entries[0]['human_hold'] = False
-    assert run() == 0
     assert run() == 1
+    assert scanned[6:] == ['blocked-1', 'blocked-2', 'blocked-0']
     assert [row['role_id'] for row in saved] == ['blocked-0']
 
 
-@pytest.mark.parametrize('position', [True, -1, 5, '3', None])
+@pytest.mark.parametrize('position', [True, -1, 5, '3', None, [None], ['bad'], ['a'*64, 'a'*64]])
 def test_refill_invalid_cursor_restarts_without_bypassing_gates(refill_case, position):
     entries, saved, scanned, run = refill_case
     assert run() == 0
     path = Path(apply_loop.BUFFER_WATERMARK)
-    state = json.loads(path.read_text()); state['scan_next'] = position
+    state = json.loads(path.read_text()); state['scan_pending'] = position
     path.write_text(json.dumps(state))
     assert run() == 0 and saved == []
     assert scanned[3:] == ['blocked-0', 'blocked-1', 'blocked-2']
 
 
-def test_refill_reordered_candidates_reset_cursor_and_empty_queue_is_safe(refill_case):
+def test_refill_reordered_candidates_preserve_pending_visits_and_empty_queue_is_safe(refill_case):
     entries, saved, scanned, run = refill_case
     assert run() == 0
     entries[-1]['fit_score'] = 99
     assert run() == 1
-    assert scanned[3:] == ['fixture-role']
+    assert scanned[3:] == ['blocked-3', 'fixture-role']
     entries.clear()
     assert run() == 0
+
+
+@pytest.mark.parametrize("contents", [b"{", b"null", b"[]", b"\xff\xfe", b'{"scan_next": \xff}'])
+def test_refill_corrupt_watermark_recovers_with_bounded_gate_checks(refill_case, contents):
+    entries, saved, scanned, run = refill_case
+    assert run() == 0
+    Path(apply_loop.BUFFER_WATERMARK).write_bytes(contents)
+    assert run() == 0 and saved == []
+    assert scanned[3:] == ['blocked-0', 'blocked-1', 'blocked-2']
+    assert run() == 1
+    assert scanned[6:] == ['blocked-3', 'fixture-role']
+    assert [row['role_id'] for row in saved] == ['fixture-role']
+
+
+@pytest.mark.parametrize("churn", ["add", "replace", "remove", "reorder"])
+def test_refill_pending_candidate_progress_survives_queue_churn(refill_case, churn):
+    entries, saved, scanned, run = refill_case
+    if churn == "remove":
+        entries[0:0] = [lead(role_id=f"extra-{i}", fit_score=95, human_hold=True) for i in range(30)]
+    initial_count = len(entries)
+    for cycle in range((initial_count + 2) // 3):
+        before = len(scanned)
+        count = run()
+        assert len(scanned) - before <= 3
+        if count:
+            break
+        if churn == "add":
+            entries.insert(0, lead(role_id=f"new-{cycle}", fit_score=99, human_hold=True))
+        elif churn == "replace":
+            entries[0] = lead(role_id=f"replacement-{cycle}", fit_score=99, human_hold=True)
+        elif churn == "remove":
+            entries.pop(0)
+        else:
+            entries[0]['fit_score'], entries[1]['fit_score'] = entries[1]['fit_score'], entries[0]['fit_score']
+    assert count == 1
+    assert [row['role_id'] for row in saved] == ['fixture-role']
+    assert len(scanned) <= initial_count
+
+
+def test_refill_drops_removed_pending_identity_and_recovers_legacy_cursor(refill_case):
+    entries, saved, scanned, run = refill_case
+    Path(apply_loop.BUFFER_WATERMARK).write_text(json.dumps({"scan_hash": "legacy", "scan_next": 3}))
+    assert run() == 0 and scanned == ['blocked-0', 'blocked-1', 'blocked-2']
+    entries.pop(3)  # Removed before its pending visit; never inspect stale data.
+    assert run() == 1
+    assert scanned[3:] == ['fixture-role']
+    assert [row['role_id'] for row in saved] == ['fixture-role']
+
+
+def test_refill_churn_never_reuses_old_gate_result(refill_case):
+    entries, saved, scanned, run = refill_case
+    assert run() == 0
+    entries[-1]['human_hold'] = True
+    entries.insert(0, lead(role_id="new-held", fit_score=99, human_hold=True))
+    assert run() == 0 and saved == []
+    assert scanned[3:5] == ['blocked-3', 'fixture-role']
+
+
+def test_refill_new_high_rank_waits_only_for_pending_visits(refill_case):
+    entries, saved, scanned, run = refill_case
+    entries[-1]['human_hold'] = True
+    assert run() == 0
+    entries.insert(0, lead(role_id="new-eligible", fit_score=99))
+    assert run() == 1
+    assert scanned[3:] == ['blocked-3', 'fixture-role', 'new-eligible']
+    assert [row['role_id'] for row in saved] == ['new-eligible']
+
+
+@pytest.mark.parametrize("cut", ["serialize", "publish"])
+def test_refill_interrupted_watermark_preserves_previous_progress(refill_case, monkeypatch, cut):
+    entries, saved, scanned, run = refill_case
+    entries[-1]['human_hold'] = True
+    assert run() == 0
+    path = Path(apply_loop.BUFFER_WATERMARK)
+    previous = path.read_bytes()
+
+    def interrupted_dump(value, stream, **kwargs):
+        stream.write('{"partial":')
+        stream.flush()
+        raise OSError("synthetic interrupted persistence")
+
+    def interrupted_replace(*args):
+        raise OSError("synthetic failed publication")
+
+    with monkeypatch.context() as fault:
+        if cut == "serialize":
+            fault.setattr(apply_loop.json, "dump", interrupted_dump)
+        else:
+            fault.setattr(apply_loop.os, "replace", interrupted_replace)
+        with pytest.raises(OSError):
+            run()
+    assert path.read_bytes() == previous
+    assert saved == []
+    entries[-1]['human_hold'] = False
+    before = len(scanned)
+    assert run() == 1
+    assert scanned[before:] == ['blocked-3', 'fixture-role']
 
 
 def test_refill_cursor_never_bypasses_current_launch_guard(refill_case, monkeypatch):
