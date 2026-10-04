@@ -187,12 +187,22 @@ def apply_bank_write(bank_path, banked_key, answer, scope_arg, card,
     Fail-safe: any scope-check failure quarantines the entry and never
     raises -- banking must never break unblock routing.
     """
+    from answer_resolver import load_bank
+    from packet_contract import answer_receipt
+    import copy
     banked = False
     quarantined = True
     scope = bs.SCOPE_AMBIGUOUS
+    # Never replace a corrupt bank while trying to quarantine a new capture.
     try:
-        with open(bank_path, encoding="utf-8") as f:
-            bank = json.load(f)
+        bank = load_bank(bank_path)
+        if any(not isinstance(bank.get(key, {}), dict)
+               for key in ("answers", "_provenance", "_quarantined", "_meta")):
+            raise ValueError("malformed answer bank")
+    except (OSError, ValueError):
+        return False, True, scope
+    original = copy.deepcopy(bank)
+    try:
         scope, qreason = bs.decide_bank_scope(scope_arg, card, employers)
         quarantined = (scope == bs.SCOPE_AMBIGUOUS)
         prov = bank.setdefault("_provenance", {})
@@ -228,16 +238,20 @@ def apply_bank_write(bank_path, banked_key, answer, scope_arg, card,
                     if str(m).strip()
                 })[:5],
             }
+            # Bind the entire scoped entry, including question metadata. Only
+            # this fresh applicant capture receives authority, never old values.
+            entry = bank["answers"][banked_key]
+            entry["provenance"] = prov[banked_key]["source"]
+            prov[banked_key] = {**prov[banked_key],
+                **answer_receipt(entry, entry["provenance"]), "answer_scope": scope}
             banked = True
         meta = bank.setdefault("_meta", {})
         meta["last_updated"] = datetime.now(PDT).strftime("%Y-%m-%d")
         queue_io.atomic_write_json(bank_path, bank)
     except Exception as e:  # scope-check failure: fail to quarantine + continue
-        try:
-            with open(bank_path, encoding="utf-8") as f:
-                bank = json.load(f)
-        except Exception:
-            bank = {"answers": {}, "_provenance": {}, "_quarantined": {}}
+        bank = original
+        banked = False
+        # Failed replacement must not revoke the original answer receipt.
         bank.setdefault("_quarantined", {})[banked_key] = {
             "was": answer,
             "quarantined_at": datetime.now(timezone.utc).strftime(

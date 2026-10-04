@@ -670,7 +670,10 @@ def screen_packet(packet, answer_bank, employer_patterns=None):
         answers = {}
         reasons.append("Applicant answer authority is unavailable; applicant review required.")
     # Examples and banded references are not value-bound applicant assertions.
-    answer_bank = {**bank, "answers": answers, "banded_questions": {}}
+    # Retain question-pattern metadata only for entries whose complete value
+    # and scope passed canonical validation; FRP custom captures need it.
+    approved_entries = {key: bank["answers"][key] for key in answers}
+    answer_bank = {**bank, "answers": approved_entries, "banded_questions": {}}
     brief = packet.get("brief", "") or ""
     company = packet.get("company", "") or ""
     form_intel = packet.get("form_intel")

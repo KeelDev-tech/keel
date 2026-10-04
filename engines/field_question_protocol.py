@@ -556,7 +556,7 @@ def handle_unmapped_question(question, employer, role_id, ats="", bank=None,
 
 
 def close_question(question, answer, bank_key=None, provenance="",
-                   bank_path=None, backlog_path=None, dry_run=False):
+                   bank_path=None, backlog_path=None, dry_run=False, scope=None):
     """Answer-capture loop: the applicant volunteered an answer (any chat).
 
     - Writes/updates answer_bank.json (backup first) with provenance.
@@ -568,35 +568,50 @@ def close_question(question, answer, bank_key=None, provenance="",
     norm = normalize_question(question)
     bank_path = bank_path or BANK_PATH
     backlog_path = backlog_path or BACKLOG_PATH
-    if not dry_run:
-        _backup_bank_once()
-    bank = json.load(open(bank_path)) if os.path.exists(bank_path) else {}
+    from answer_resolver import load_bank
+    from packet_contract import answer_receipt
+    import bank_scope
+    import queue_io
+    bank = load_bank(bank_path) if os.path.exists(bank_path) else {}
+    if any(not isinstance(bank.get(key, {}), dict)
+           for key in ("answers", "_provenance", "_quarantined", "_meta")):
+        raise ValueError("malformed answer bank")
     answers = bank.setdefault("answers", {})
     prov = bank.setdefault("_provenance", {})
     if bank_key:
+        existing = answers.get(bank_key)
+        # A fresh reply does not silently widen a previously scoped fact.
+        employers = bank_scope.known_employers([
+            os.path.join(QUEUE_DIR, name + '-queue.json')
+            for name in ('standard', 'strategic', 'needs_input')])
+        capture_scope, reason = bank_scope.decide_bank_scope(
+            scope, {"question": question}, employers)
+        if scope is None and capture_scope == bank_scope.SCOPE_GLOBAL and isinstance(existing, dict):
+            previous_scope = existing.get("scope")
+            if previous_scope and previous_scope != bank_scope.SCOPE_GLOBAL:
+                capture_scope = bank_scope.parse_scope_arg(previous_scope)
+        if capture_scope == bank_scope.SCOPE_AMBIGUOUS:
+            # No receipt, bank mutation, backlog closure or revival on ambiguity.
+            return {"matched_entries": 0, "bank_key": bank_key,
+                    "revival_candidates": [], "dry_run": dry_run,
+                    "scope_required": True, "reason": reason}
+        if not isinstance(answer, str) or not answer.strip():
+            raise ValueError("a nonempty applicant answer is required")
         if not dry_run:
-            existing = answers.get(bank_key)
-            if isinstance(existing, dict):
-                # Dict-shaped applicant-answer entry (question_patterns).
-                pats = set(existing.get("question_patterns") or [])
-                pats.add(normalize_question(question))
-                existing["question_patterns"] = sorted(pats)
-                existing["answer"] = answer
-                if provenance:
-                    existing["provenance"] = provenance
-            else:
-                answers[bank_key] = {
-                    "question_patterns": [normalize_question(question)],
-                    "answer": answer,
-                    "provenance": provenance or "applicant (volunteered)",
-                    "added": _now_iso(),
-                }
-            prov[bank_key] = {"source": provenance or "applicant (volunteered)",
-                              "added": _now_iso()[:10],
-                              "via": "field-requirement-protocol close"}
+            _backup_bank_once()
+            # A reply confirms this question, not inherited legacy aliases.
+            pats = {normalize_question(question)}
+            source = provenance or "applicant (volunteered)"
+            entry = {"question_patterns": sorted(pats), "answer": answer,
+                     "value": answer, "scope": capture_scope,
+                     "provenance": source, "added": _now_iso()}
+            answers[bank_key] = entry
+            prov[bank_key] = {**answer_receipt(entry, source),
+                             "added": _now_iso()[:10],
+                             "via": "field-requirement-protocol close",
+                             "answer_scope": capture_scope}
             bank.setdefault("_meta", {})["updated"] = _now_iso()[:10]
-            with open(bank_path, "w") as f:
-                json.dump(bank, f, indent=1)
+            queue_io.atomic_write_json(bank_path, bank)
     entries = load_backlog(backlog_path)
     matched = [e for e in entries if e.get("norm") == norm
                and e.get("status", "open") in OPEN_STATUSES]
@@ -657,8 +672,13 @@ def cmd_classify(args):
 
 def cmd_close(args):
     res = close_question(args.question, args.answer, bank_key=args.bank_key,
-                         provenance=args.provenance, dry_run=args.dry_run)
-    print(json.dumps(res, indent=1))
+                         provenance=args.provenance, dry_run=args.dry_run, scope=args.scope)
+    # CLI output may be captured in shared logs. Keep bank identifiers, role
+    # identifiers and scope-reason text inside the private API result.
+    print(json.dumps({"matched_entries": int(res["matched_entries"]),
+                      "revival_candidate_count": len(res["revival_candidates"]),
+                      "dry_run": bool(res["dry_run"]),
+                      "scope_required": res.get("scope_required") is True}, indent=1))
 
 
 def cmd_report(_args):
@@ -689,6 +709,7 @@ def main():
     p.add_argument("--answer", required=True)
     p.add_argument("--bank-key", default=None)
     p.add_argument("--provenance", default="")
+    p.add_argument("--scope", default=None, help="Explicit global or employer:<Name> scope; required for ambiguous consent")
     p.add_argument("--dry-run", action="store_true", default=False)
     p.set_defaults(fn=cmd_close)
     p = sub.add_parser("report", help="Backlog stats.")
