@@ -146,6 +146,38 @@ def test_receipt_scope_mismatch_is_uncertain_and_stops():
     assert report['status'] == 'UNKNOWN' and report['actions_reported_applied'] == 0
 
 
+@pytest.mark.parametrize('revision', [True, 1.0, 1], ids=['boolean', 'float', 'integer'])
+def test_receipt_revision_requires_integer_binding_after_effect(revision):
+    fixture = InjectedFixture()
+    calls = []
+    def transport(request):
+        calls.append(copy.deepcopy(request))
+        result = fixture(request)  # The first effect occurs before receipt validation.
+        if request['operation'] != 'accessibility_snapshot' and request['snapshot_revision'] == 1:
+            result['snapshot_revision'] = revision
+        return result
+    runner = adapter(fixture, transport=transport)
+    report = prepare(fixture, runner)
+    if type(revision) is int:
+        assert report['status'] == 'SIMULATED'
+        assert report['actions_reported_applied'] == 11
+        assert fixture.halts == []
+        return
+    assert report['status'] == 'UNKNOWN'
+    assert report['reason'] == 'unverified_native_action_receipt'
+    assert report['action_attempts'] == 1 and report['actions_reported_applied'] == 0
+    assert report['automatic_retry'] is False and report['readback'] is None
+    assert report['halt_record_callback_completed'] is True
+    assert len(fixture.halts) == 1 and fixture.halts[0]['unknown_effect'] is True
+    assert fixture.fixture['host_snapshot']['unknown_attempt'] is True
+    assert len(calls) == 2  # One snapshot, one attempted mutation; nothing afterward.
+    first_action = calls[1]['action']
+    assert fixture.values[first_action['field_id']] == first_action['value']
+    with pytest.raises(NativeError, match='adapter_session_exhausted_or_halted'):
+        prepare(fixture, runner)
+    assert len(calls) == 2
+
+
 def test_transport_exception_after_effect_never_exposes_message_or_retries():
     fixture = InjectedFixture()
     def transport(request):

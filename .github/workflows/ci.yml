@@ -31,6 +31,8 @@ jobs:
           tests/test_operational_runtime.py
           tests/test_machine_contracts.py
           tests/test_storage_preflight.py
+          tests/test_muse_browser.py
+          tests/test_muse_session.py
       # These are pytest functions; unittest discovery collects none of them.
       - name: Test evidence-based scoring contracts
         env:
