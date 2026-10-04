@@ -234,6 +234,7 @@ class NativeAdapter:
                                         'snapshot_revision', 'target_ref', 'operation'})
                 if (response['schema'] != 'keel.muse.native-receipt.v1' or response['request_id'] != request['request_id'] or
                         response['request_sha256'] != digest(request) or response['snapshot_id'] != request['snapshot_id'] or
+                        type(response['snapshot_revision']) is not type(request['snapshot_revision']) or
                         response['snapshot_revision'] != request['snapshot_revision'] or response['target_ref'] != request['target_ref'] or
                         response['operation'] != request['operation']):
                     raise NativeError('unverified_native_action_receipt')

@@ -15,6 +15,9 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Require exact integer revision binding on native preparation receipts. Boolean
+  or float revisions halt with an unknown effect, without retrying or continuing.
+
 - Add value-free advisory profile-versus-answer contact differences to doctor.
   Equivalent phone/LinkedIn formatting is normalized; findings never overwrite
   applicant facts or change readiness. Experience cannot be inferred from
