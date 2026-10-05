@@ -189,6 +189,33 @@ def check(browser, chrome, out):
                 "document.activeElement === window.dialogInvoker"))
             evaluate("window.fetch=window.refreshFetch; true")
 
+            # An interrupted newer request does not make an older pending
+            # request current again. Keep the last successfully shown view.
+            updated['labels'][0]['title'] = 'Interrupted synthetic opportunity'
+            app.replace(updated, previous_sha256=newest_sha256)
+            evaluate("""(() => {
+              window.heldOverview=false;
+              window.fetch=async (...args) => {
+                if(args[0] === '/api/v1/overview' && heldOverview)
+                  throw new Error('Synthetic interrupted refresh');
+                const response=await refreshFetch(...args);
+                if(args[0] !== '/api/v1/overview') return response;
+                window.heldOverview=true;
+                await new Promise(resolve=>{window.releaseOverview=resolve;});
+                return response;
+              }; return true;
+            })()""")
+            call('click', '#refresh')
+            call('wait', '--fn', 'window.heldOverview')
+            call('click', '#refresh')
+            call('wait', '--fn', "document.querySelector('#toast').textContent === 'Synthetic interrupted refresh'")
+            evaluate("window.releaseOverview(); new Promise(resolve=>setTimeout(()=>resolve(true),0))")
+            record('interrupted newer refresh does not revive older pending response', evaluate(
+                'state.view.snapshot_sha256 === '+json.dumps(newest_sha256)))
+            record('discarded refresh does not report success over newer failure', evaluate(
+                "document.querySelector('#toast').textContent === 'Synthetic interrupted refresh'"))
+            evaluate("window.fetch=window.refreshFetch; true")
+
             # Change only the browser's synthetic view, never canonical state.
             evaluate("go('pipeline'); state.query='NO_SYNTHETIC_ROLE_MATCH'; updatePipeline(); true")
             call('snapshot', '-i')

@@ -15,6 +15,9 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Discard superseded Workbench refresh responses so delayed automatic or
+  manual requests cannot replace a newer snapshot or rebuild its review view.
+
 - Preserve keyboard focus and action identity during Workbench's automatic
   refresh; return focus to search when the focused opportunity disappears.
 
