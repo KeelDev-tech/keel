@@ -263,6 +263,11 @@ packet expiry and failed preparation do—and do not—remove.
 engines/        all pipeline modules (flat package)
 tests/          acceptance tests
 docs/           architecture, personalization, contributing
+docs/FRONTIER_RELEASE.md    Keel Frontier zero-point-four-zero release notes
+docs/SOURCE_SCHEDULER.md    source-scheduler design
+docs/evaluation-frontier.md frontier evaluation methodology
+docs/CREDIT_EFFICIENCY.md   zero-point-five-zero credit-efficiency notes
+docs/VERIFICATION_READY_VALIDATION.md   verification and READY validation notes
 docs/assets/    wordmark, social preview, dashboard screenshot
 sample_data/    sanitized examples (never real applications)
 launch/         launch drafts (Show HN, thread, talking points)
