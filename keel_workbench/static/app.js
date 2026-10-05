@@ -9,7 +9,7 @@ const titles = {overview:"Overview",pipeline:"Opportunities",evidence:"Evidence"
 const state = {token:new URLSearchParams(location.hash.slice(1)).get("token") || "", page:"overview", view:null,
   catalog:[], history:[], query:"", lane:"All lanes", filter:"All roles", workflow:"source-repair", scope:"", report:null, busy:false};
 if (location.hash.includes("token=")) history.replaceState(null, "", location.pathname);
-let toastTimer;
+let toastTimer, refreshGeneration = 0;
 function toast(message, error = false) {
   const node = $("#toast"); node.textContent = message; node.classList.toggle("error", error); node.hidden = false;
   clearTimeout(toastTimer); toastTimer = setTimeout(() => { node.hidden = true; }, 7000);
@@ -67,8 +67,13 @@ function freshness() {
 }
 async function load() {
   if(!state.token) return showLogin();
+  const generation = ++refreshGeneration;
   const [view,catalog,history] = await Promise.all([api("/api/v1/overview"),api("/api/v1/workflows"),api("/api/v1/history")]);
+  // Automatic and manual refreshes share one ordering boundary. A newer
+  // request supersedes an older one even if the newer request later fails.
+  if(generation !== refreshGeneration || !state.token) return false;
   state.view=view; state.catalog=catalog.workflows; state.history=history.runs; freshness(); render();
+  return true;
 }
 function roleTable(roles, total=roles.length) {
   if(!roles.length) return `<div class="empty">${total ? 'No opportunities match these filters. Try a different lane or search.' : 'No opportunities in this export.'}</div>`;
@@ -212,7 +217,7 @@ document.addEventListener("click", async event=>{
   }
 });
 $("#close-detail").onclick=()=>$("#detail").close();
-$("#refresh").onclick=async()=>{if(state.busy)return;try{await load();toast("Workspace refreshed.");}catch(error){toast(error.message,true);}};
+$("#refresh").onclick=async()=>{if(state.busy)return;try{if(await load())toast("Workspace refreshed.");}catch(error){toast(error.message,true);}};
 function refreshVisibleView() {
   const focused = $("#main").contains(document.activeElement) ? document.activeElement : null;
   const identity = focused && ["id","data-role","data-start","data-brief","data-nav"].find(name=>focused.hasAttribute(name));
@@ -229,8 +234,11 @@ function refreshVisibleView() {
 }
 setInterval(async()=>{
   if(!state.token || !state.view || state.busy || document.hidden) return;
+  const generation = ++refreshGeneration;
   try {
-    state.view=await api("/api/v1/overview"); freshness();
+    const view=await api("/api/v1/overview");
+    if(generation !== refreshGeneration || !state.token) return;
+    state.view=view; freshness();
     refreshVisibleView();
   } catch(error) {toast(error.message,true);}
 },30000);

@@ -17,6 +17,7 @@ sys.path.insert(0, str(ROOT))
 from keel_workbench.demo import make_demo, NOW
 from keel_workbench.service import Workbench
 from keel_workbench.server import LocalServer
+from keel_trust.common import digest
 
 
 CONTRAST = r"""(() => {
@@ -126,6 +127,94 @@ def check(browser, chrome, out):
             record('removed opportunity does not activate another role', evaluate(
                 "!document.querySelector('#detail').open"))
             evaluate("window.fetch=window.originalRefreshFetch; true")
+
+            # Hold a real automatic response while a newer manual refresh
+            # reads a changed, validated synthetic service snapshot.
+            evaluate("""(() => {
+              window.refreshFetch=window.fetch; window.heldOverview=false;
+              window.fetch=async (...args) => {
+                const response=await refreshFetch(...args);
+                if(args[0] !== '/api/v1/overview' || heldOverview) return response;
+                window.heldOverview=true;
+                await new Promise(resolve=>{window.releaseOverview=resolve;});
+                return response;
+              }; return true;
+            })()""")
+            call('wait', '--fn', 'window.heldOverview')
+            updated = app.snapshot()
+            previous_sha256 = digest(updated)
+            updated['labels'][0]['title'] = 'Updated synthetic opportunity'
+            app.replace(updated, previous_sha256=previous_sha256)
+            newest_sha256 = digest(updated)
+            call('click', '#refresh')
+            call('wait', '--fn', 'state.view.snapshot_sha256 === '+json.dumps(newest_sha256))
+            call('click', '[data-page="pipeline"]')
+            call('focus', '#search')
+            evaluate("window.releaseOverview(); new Promise(resolve=>setTimeout(()=>resolve(true),0))")
+            record('old automatic response cannot replace newer manual snapshot', evaluate(
+                'state.view.snapshot_sha256 === '+json.dumps(newest_sha256)))
+            record('old automatic response cannot render obsolete opportunity', evaluate(
+                "document.querySelector('.opportunity-title').textContent === 'Updated synthetic opportunity'"))
+            record('late response respects current navigation and focus', evaluate(
+                "state.page === 'pipeline' && document.activeElement === document.querySelector('#search')"))
+            evaluate("window.fetch=window.refreshFetch; true")
+
+            # Repeat with overlapping manual refreshes and a dialog opened
+            # after the newer response. A late full render must be discarded.
+            evaluate("""(() => {
+              window.heldOverview=false;
+              window.fetch=async (...args) => {
+                const response=await refreshFetch(...args);
+                if(args[0] !== '/api/v1/overview' || heldOverview) return response;
+                window.heldOverview=true;
+                await new Promise(resolve=>{window.releaseOverview=resolve;});
+                return response;
+              }; return true;
+            })()""")
+            call('click', '#refresh')
+            call('wait', '--fn', 'window.heldOverview')
+            updated['labels'][0]['title'] = 'Newest synthetic opportunity'
+            app.replace(updated, previous_sha256=newest_sha256)
+            newest_sha256 = digest(updated)
+            call('click', '#refresh')
+            call('wait', '--fn', 'state.view.snapshot_sha256 === '+json.dumps(newest_sha256))
+            call('click', '.opportunity-title')
+            evaluate("window.dialogInvoker=document.querySelector('.opportunity-title'); window.releaseOverview(); new Promise(resolve=>setTimeout(()=>resolve(true),0))")
+            record('old manual response cannot replace newer manual snapshot', evaluate(
+                'state.view.snapshot_sha256 === '+json.dumps(newest_sha256)))
+            record('obsolete refresh preserves open dialog and its invoker', evaluate(
+                "document.querySelector('#detail').open && window.dialogInvoker.isConnected"))
+            call('click', '#close-detail')
+            record('closing dialog after obsolete response restores opportunity focus', evaluate(
+                "document.activeElement === window.dialogInvoker"))
+            evaluate("window.fetch=window.refreshFetch; true")
+
+            # An interrupted newer request does not make an older pending
+            # request current again. Keep the last successfully shown view.
+            updated['labels'][0]['title'] = 'Interrupted synthetic opportunity'
+            app.replace(updated, previous_sha256=newest_sha256)
+            evaluate("""(() => {
+              window.heldOverview=false;
+              window.fetch=async (...args) => {
+                if(args[0] === '/api/v1/overview' && heldOverview)
+                  throw new Error('Synthetic interrupted refresh');
+                const response=await refreshFetch(...args);
+                if(args[0] !== '/api/v1/overview') return response;
+                window.heldOverview=true;
+                await new Promise(resolve=>{window.releaseOverview=resolve;});
+                return response;
+              }; return true;
+            })()""")
+            call('click', '#refresh')
+            call('wait', '--fn', 'window.heldOverview')
+            call('click', '#refresh')
+            call('wait', '--fn', "document.querySelector('#toast').textContent === 'Synthetic interrupted refresh'")
+            evaluate("window.releaseOverview(); new Promise(resolve=>setTimeout(()=>resolve(true),0))")
+            record('interrupted newer refresh does not revive older pending response', evaluate(
+                'state.view.snapshot_sha256 === '+json.dumps(newest_sha256)))
+            record('discarded refresh does not report success over newer failure', evaluate(
+                "document.querySelector('#toast').textContent === 'Synthetic interrupted refresh'"))
+            evaluate("window.fetch=window.refreshFetch; true")
 
             # Change only the browser's synthetic view, never canonical state.
             evaluate("go('pipeline'); state.query='NO_SYNTHETIC_ROLE_MATCH'; updatePipeline(); true")
