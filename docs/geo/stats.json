@@ -5,7 +5,8 @@
   "evidence": {
     "evidenced": 251,
     "url_only": 4,
-    "unevidenced": 15
+    "unevidenced": 15,
+    "pointer": 1
   },
   "fabrication_gate_leads": 4,
   "leads_stopped_by_any_gate": 4034,
@@ -32,7 +33,7 @@
     "submit_intent_open": 8,
     "answer_mapping": 7,
     "captcha": 6,
-    "needs_trent_input": 6,
+    "needs_operator_input": 6,
     "recording_consent": 6,
     "singapore_work_auth_unverified": 6,
     "d1_office_exclusion": 6,
@@ -64,7 +65,7 @@
     "park_divergence": 1,
     "email_verification_code": 1,
     "dedupe_conflict": 1,
-    "trent_input": 1,
+    "operator_input": 1,
     "datadome_hard_block": 1,
     "integrity_residence_poison": 1,
     "ai_attestation": 1,
@@ -81,7 +82,7 @@
     "spam_filter": 1,
     "browser_needs_user_midfill_gate_unconfirmed": 1,
     "degree_integrity": 1,
-    "trent_input_needs_user": 1
+    "operator_input_needs_user": 1
   },
   "telemetry_events": 80338,
   "interview_invites": 3,

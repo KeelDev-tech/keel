@@ -15,6 +15,9 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Keep the current GEO snapshot, evidence buckets and public count surfaces consistent;
+  sanitize all supported operator-input gate aliases in current publication artifacts.
+
 - Preserve pending buffer-refill visits across queue additions, removals and
   reranking so held prefixes do not starve later eligible work. Every visit rechecks admission;
   scan limits, approval gates and concurrency limits are unchanged. Publish

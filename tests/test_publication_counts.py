@@ -1,4 +1,5 @@
 """Current publications must agree with the canonical, dated recount."""
+import ast
 import importlib.util
 import json
 from pathlib import Path
@@ -44,6 +45,24 @@ class PublicationCountTests(unittest.TestCase):
         self.assertIn(f'<div class="proof-number">{count}</div>', index)
         self.assertIn(f'What does the {count}-submission evidence figure mean?', index)
         self.assertEqual(stats['verified_submissions_at_launch'], 55)
+
+    def test_current_snapshot_preserves_evidence_and_public_gate_names(self):
+        stats = json.loads((ROOT / 'docs/geo/stats.json').read_text())
+        history = [json.loads(line) for line in
+                   (ROOT / 'geo-pipeline/history/snapshots.jsonl').read_text().splitlines() if line]
+        tree = ast.parse((ROOT / 'geo-pipeline/recount.py').read_text())
+        aliases = next(ast.literal_eval(node.value) for node in tree.body
+                       if isinstance(node, ast.Assign)
+                       and any(isinstance(t, ast.Name) and t.id == 'PUBLIC_GATE_NAMES'
+                               for t in node.targets))
+        snapshot = history[-1]['recount']
+        self.assertEqual(snapshot['counted_at'], stats['counted_at'])
+        for item in (stats, snapshot):
+            self.assertEqual(set(item['evidence']), {'evidenced', 'pointer', 'url_only', 'unevidenced'})
+            self.assertEqual(sum(item['evidence'].values()), item['verified_submissions_now'])
+            self.assertTrue(set(item['per_gate']).isdisjoint(aliases))
+        self.assertEqual(snapshot['evidence'], stats['evidence'])
+        self.assertEqual(snapshot['per_gate'], stats['per_gate'])
 
     def test_refresh_is_idempotent(self):
         spec = importlib.util.spec_from_file_location('refresh_site', ROOT / 'geo-pipeline/refresh_site.py')

@@ -76,6 +76,20 @@ class TestRecountGateAliases(unittest.TestCase):
         # Unrelated gates pass through untouched.
         self.assertEqual(per_gate.get("some_other_gate"), 1)
 
+    def test_every_supported_alias_is_sanitized_and_deduplicated(self):
+        lines = []
+        for i, private in enumerate(recount.PUBLIC_GATE_NAMES):
+            lines.extend([_telemetry_line(f"fixture-{i}", private),
+                          _telemetry_line(f"fixture-{i}", private, backfilled=True)])
+        with tempfile.TemporaryDirectory() as home:
+            path = os.path.join(home, "telemetry.jsonl")
+            with open(path, "w") as stream:
+                stream.write("\n".join(lines) + "\n")
+            result = recount.count_gates(path)
+        self.assertEqual(result['distinct_pairs'], len(recount.PUBLIC_GATE_NAMES))
+        self.assertEqual(set(result['per_gate']), set(recount.PUBLIC_GATE_NAMES.values()))
+        self.assertTrue(set(result['per_gate']).isdisjoint(recount.PUBLIC_GATE_NAMES))
+
     def test_backfilled_private_gate_pair_dedupes_under_alias(self):
         # The same (role, private-gate) pair appearing live and backfilled
         # must dedupe to one pair under the sanitized name (methodology v2).
