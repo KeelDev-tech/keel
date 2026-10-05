@@ -36,6 +36,7 @@ def check(browser, chrome, out):
     out.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
     env.setdefault('AGENT_BROWSER_SOCKET_DIR', str(out / 'browser-sockets'))
+    env.setdefault('AGENT_BROWSER_DEFAULT_TIMEOUT', '45000')
     command = [browser, '--json', '--namespace', 'keel-ui-'+str(os.getpid()),
                '--executable-path', chrome, '--allowed-domains', '127.0.0.1,localhost']
     def call(*args):
@@ -78,6 +79,53 @@ def check(browser, chrome, out):
                 "document.activeElement?.dataset.workflow === "+json.dumps(selected)+
                 " && document.activeElement.classList.contains('active')"))
             call('screenshot', str(out / 'workflow.png'))
+
+            # Exercise the real 30-second refresh, not a direct render call.
+            call('click', '[data-page="pipeline"]')
+            selected_role = evaluate("(() => {window.refreshTarget=document.querySelector('.opportunity-title'); refreshTarget.focus(); return refreshTarget.dataset.role;})()")
+            call('wait', '--fn', '!window.refreshTarget.isConnected')
+            call('snapshot', '-i')
+            record('automatic refresh retains opportunity focus', evaluate(
+                "document.activeElement?.dataset.role === "+json.dumps(selected_role)))
+            call('press', 'Enter')
+            record('Enter after refresh opens the same role', evaluate(
+                "document.querySelector('#detail').open && document.querySelector('#detail-content .subtitle').textContent.includes("+json.dumps(selected_role)+")"))
+            if evaluate("document.querySelector('#detail').open"):
+                call('click', '#close-detail')
+
+            call('click', '[data-page="overview"]')
+            evaluate("window.refreshTarget=document.querySelector('[data-start=\"source-repair\"]'); refreshTarget.focus(); true")
+            call('wait', '--fn', '!window.refreshTarget.isConnected')
+            call('snapshot', '-i')
+            record('automatic refresh retains overview action focus', evaluate(
+                "document.activeElement?.dataset.start === 'source-repair'"))
+            call('press', 'Enter')
+            record('Enter after refresh opens the intended workflow', evaluate(
+                "state.page === 'workflows' && state.workflow === 'source-repair'"))
+
+            # Remove one role from the synthetic response only. The real timer
+            # still fetches from the loopback server and updates the DOM.
+            call('click', '[data-page="pipeline"]')
+            evaluate("""(() => {
+              window.refreshTarget=document.querySelector('.opportunity-title');
+              refreshTarget.focus(); window.removedRole=refreshTarget.dataset.role;
+              window.originalRefreshFetch=window.fetch;
+              window.fetch=async (...args) => {
+                const response=await originalRefreshFetch(...args);
+                if(args[0] !== '/api/v1/overview') return response;
+                const body=await response.json();
+                body.roles=body.roles.filter(role=>role.role_id !== removedRole);
+                return new Response(JSON.stringify(body), {status:response.status,headers:response.headers});
+              }; return true;
+            })()""")
+            call('wait', '--fn', '!window.refreshTarget.isConnected')
+            call('snapshot', '-i')
+            record('removed opportunity falls back to pipeline search', evaluate(
+                "document.activeElement === document.querySelector('#search') && !state.view.roles.some(role=>role.role_id === removedRole)"))
+            call('press', 'Enter')
+            record('removed opportunity does not activate another role', evaluate(
+                "!document.querySelector('#detail').open"))
+            evaluate("window.fetch=window.originalRefreshFetch; true")
 
             # Change only the browser's synthetic view, never canonical state.
             evaluate("go('pipeline'); state.query='NO_SYNTHETIC_ROLE_MATCH'; updatePipeline(); true")
