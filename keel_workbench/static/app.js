@@ -213,12 +213,25 @@ document.addEventListener("click", async event=>{
 });
 $("#close-detail").onclick=()=>$("#detail").close();
 $("#refresh").onclick=async()=>{if(state.busy)return;try{await load();toast("Workspace refreshed.");}catch(error){toast(error.message,true);}};
+function refreshVisibleView() {
+  const focused = $("#main").contains(document.activeElement) ? document.activeElement : null;
+  const identity = focused && ["id","data-role","data-start","data-brief","data-nav"].find(name=>focused.hasAttribute(name));
+  const selector = identity ? `[${identity}="${CSS.escape(focused.getAttribute(identity))}"]` : null;
+  if(["overview","evidence"].includes(state.page) && !$("#detail").open) render();
+  if(state.page==="pipeline") updatePipeline();
+  // Keep surviving controls (including search inputs) untouched. Replaced
+  // controls regain their identity; a removed role falls back to search.
+  if(focused && !focused.isConnected) {
+    const replacement = selector && $(selector, $("#main"));
+    const fallback = state.page==="pipeline" ? $("#search") : $("#main");
+    (replacement || fallback).focus({preventScroll:true});
+  }
+}
 setInterval(async()=>{
   if(!state.token || !state.view || state.busy || document.hidden) return;
   try {
     state.view=await api("/api/v1/overview"); freshness();
-    if(["overview","evidence"].includes(state.page) && !$("#detail").open) render();
-    if(state.page==="pipeline") updatePipeline();
+    refreshVisibleView();
   } catch(error) {toast(error.message,true);}
 },30000);
 load().catch(error=>showLogin(error.message));

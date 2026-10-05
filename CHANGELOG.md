@@ -15,6 +15,9 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Preserve keyboard focus and action identity during Workbench's automatic
+  refresh; return focus to search when the focused opportunity disappears.
+
 - Keep the current GEO snapshot, evidence buckets and public count surfaces consistent;
   sanitize all supported operator-input gate aliases in current publication artifacts.
 
