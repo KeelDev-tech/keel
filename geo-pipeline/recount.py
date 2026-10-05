@@ -82,6 +82,7 @@ PT = ZoneInfo("America/Los_Angeles")
 PUBLIC_GATE_NAMES = {
     "needs_trent_input": "needs_operator_input",
     "trent_input_needs_user": "operator_input_needs_user",
+    "trent_input": "operator_input",
 }
 
 # Canonical ledger-status mapping lives next to the evidence gate. The

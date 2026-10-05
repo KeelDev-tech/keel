@@ -1,7 +1,7 @@
 """Regression tests for PR #21 review thread 2: recount gate-name aliases.
 
 Contract under test (geo-pipeline/recount.py):
-  1. PUBLIC_GATE_NAMES aliases the two private operator gate names to their
+  1. PUBLIC_GATE_NAMES aliases supported private operator gate names to their
      sanitized public forms.
   2. count_gates() applies the alias at generation time, so re-running the
      recount reproduces the sanitized docs/geo/stats.json keys instead of
@@ -42,13 +42,16 @@ def _telemetry_line(role_id, gate, backfilled=False):
 
 
 class TestRecountGateAliases(unittest.TestCase):
-    def test_alias_map_covers_both_private_names(self):
+    def test_alias_map_covers_supported_private_names(self):
         self.assertEqual(
             recount.PUBLIC_GATE_NAMES.get("needs_trent_input"),
             "needs_operator_input")
         self.assertEqual(
             recount.PUBLIC_GATE_NAMES.get("trent_input_needs_user"),
             "operator_input_needs_user")
+        self.assertEqual(
+            recount.PUBLIC_GATE_NAMES.get("trent_input"),
+            "operator_input")
 
     def test_count_gates_emits_sanitized_keys(self):
         lines = [
@@ -75,6 +78,20 @@ class TestRecountGateAliases(unittest.TestCase):
         self.assertNotIn("trent_input_needs_user", per_gate)
         # Unrelated gates pass through untouched.
         self.assertEqual(per_gate.get("some_other_gate"), 1)
+
+    def test_every_supported_alias_is_sanitized_and_deduplicated(self):
+        lines = []
+        for i, private in enumerate(recount.PUBLIC_GATE_NAMES):
+            lines.extend([_telemetry_line(f"fixture-{i}", private),
+                          _telemetry_line(f"fixture-{i}", private, backfilled=True)])
+        with tempfile.TemporaryDirectory() as home:
+            path = os.path.join(home, "telemetry.jsonl")
+            with open(path, "w") as stream:
+                stream.write("\n".join(lines) + "\n")
+            result = recount.count_gates(path)
+        self.assertEqual(result['distinct_pairs'], len(recount.PUBLIC_GATE_NAMES))
+        self.assertEqual(set(result['per_gate']), set(recount.PUBLIC_GATE_NAMES.values()))
+        self.assertTrue(set(result['per_gate']).isdisjoint(recount.PUBLIC_GATE_NAMES))
 
     def test_backfilled_private_gate_pair_dedupes_under_alias(self):
         # The same (role, private-gate) pair appearing live and backfilled
