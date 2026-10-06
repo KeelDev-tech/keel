@@ -254,6 +254,95 @@ class QresolveConversionTests(unittest.TestCase):
         self.assertEqual(proposal['action'], 'park')
         self.assertIsNone(proposal['answer'])
 
+    def test_non_url_linkedin_quote_stays_held_while_unrelated_fact_clears(self):
+        for bank_key, value in (
+            ('linkedin', 'No LinkedIn profile'),
+            ('linkedin_url', 'Not applicable'),
+            ('linkedin', 'https://example.invalid/in/synthetic'),
+            ('linkedin', 'https://www.linkedin.com/'),
+            ('linkedin', 'https://www.linkedin.com/company/synthetic'),
+            ('linkedin', 'https://synthetic@www.linkedin.com/in/synthetic'),
+        ):
+            with self.subTest(bank_key=bank_key, value=value):
+                case = QresolveConversionTests(); case.setUp()
+                try:
+                    question = 'What is your LinkedIn profile URL?'
+                    target = {**case.row, 'role_id': 'url-fixture', 'company': 'Synthetic Company',
+                              'unresolved': [question]}
+                    case.bank['answers'][bank_key] = {
+                        'value': value, 'scope': 'global', 'question': question,
+                        'provenance': "the applicant's own words " + date.today().isoformat(),
+                    }
+                    case.write('data/answer_bank.json', case.bank)
+                    case.write('data/queues/needs_input-queue.json', [target, case.row])
+                    report = case.success('qresolve', '--live')
+                    self.assertEqual(report['metrics']['auto_applied'], 1)
+                    after = {row['role_id']: row for row in case.read('data/queues/needs_input-queue.json')}
+                    self.assertEqual(after[target['role_id']], target)
+                    self.assertEqual(after[case.row['role_id']]['unresolved'], [])
+                    proposal = next(d for d in case.read('hidden_files/qresolve-proposals.json')['decisions']
+                                    if target['role_id'] in d['target_role_ids'])
+                    self.assertEqual(proposal['action'], 'park')
+                    self.assertIsNone(proposal['answer'])
+                finally:
+                    case.doCleanups()
+
+    def test_valid_linkedin_url_reuses_exact_quote_for_group_without_touching_consent(self):
+        for value in ('https://www.linkedin.com/in/synthetic-profile',
+                      'http://linkedin.com/in/synthetic-profile/',
+                      'linkedin.com/in/synthetic-profile',
+                      'https://www.linkedin.com/pub/synthetic-profile/1/2/3'):
+            with self.subTest(value=value):
+                case = QresolveConversionTests(); case.setUp()
+                try:
+                    question = 'What is your LinkedIn profile URL?'
+                    target = {**case.row, 'unresolved': [question]}
+                    sibling = {**target, 'role_id': 'second-url-fixture'}
+                    held = {**target, 'role_id': 'consent-fixture',
+                            'unresolved': ['Do you consent to interview recording?']}
+                    case.bank['answers'] = {'linkedin_url': {
+                        'value': value, 'scope': 'global', 'question': question,
+                        'provenance': "the applicant's own words " + date.today().isoformat(),
+                    }}
+                    case.write('data/answer_bank.json', case.bank)
+                    case.write('data/queues/needs_input-queue.json', [target, sibling, held])
+                    report = case.success('qresolve', '--live')
+                    self.assertEqual(report['metrics']['auto_applied'], 1)
+                    self.assertEqual(report['canonical_writes'], 2)
+                    after = {row['role_id']: row for row in case.read('data/queues/needs_input-queue.json')}
+                    self.assertEqual(after[held['role_id']], held)
+                    self.assertEqual(after[target['role_id']]['unresolved'], [])
+                    self.assertEqual(after[sibling['role_id']]['unresolved'], [])
+                    journal = case.journal()
+                    self.assertEqual(journal[-1]['answer'], value)
+                    self.assertEqual(case.success('qresolve', '--live')['canonical_writes'], 0)
+                    self.assertEqual(case.journal(), journal)
+                    self.assertEqual(case.read('data/answer_bank.json'), case.bank)
+                finally:
+                    case.doCleanups()
+
+    def test_active_negative_linkedin_conflict_holds_until_old_authority_expires(self):
+        question = 'What is your LinkedIn profile URL?'
+        self.row['unresolved'] = [question]
+        self.write('data/queues/needs_input-queue.json', [self.row])
+        quoted = {'scope': 'global', 'question': question,
+                  'provenance': "the applicant's own words " + date.today().isoformat()}
+        self.bank['answers'] = {
+            'linkedin': {**quoted, 'value': 'https://www.linkedin.com/in/synthetic-profile'},
+            'older_profile': {**quoted, 'value': 'No LinkedIn profile'},
+        }
+        self.write('data/answer_bank.json', self.bank)
+        report = self.success('qresolve', '--live')
+        self.assertEqual(report['canonical_writes'], 0)
+        self.assertEqual(self.read('data/queues/needs_input-queue.json'), [self.row])
+        proposal, = self.read('hidden_files/qresolve-proposals.json')['decisions']
+        self.assertIn('conflicting scoped answers', proposal['rationale'])
+        self.bank['answers']['older_profile']['expires_at'] = '2000-01-01T00:00:00Z'
+        self.write('data/answer_bank.json', self.bank)
+        report = self.success('qresolve', '--live')
+        self.assertEqual(report['metrics']['auto_applied'], 1)
+        self.assertEqual(self.read('data/queues/needs_input-queue.json')[0]['unresolved'], [])
+
     def test_supply_readonly_makes_no_files_and_reports_unknown_historical_ready_timing(self):
         self.success('qresolve', '--live')
         records = self.journal()
