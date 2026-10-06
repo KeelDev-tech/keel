@@ -16,7 +16,7 @@ import re
 import stat
 import subprocess
 import sys
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 import queue_io
 from qresolve_corpus import Corpus
@@ -127,6 +127,13 @@ def _linkedin_url_quote(value):
         return False
     try:
         parsed = urlsplit(value)
+        # Browsers normalize dot segments, including encoded dots. Reject
+        # ambiguous separators too; never normalize or rewrite the quotation.
+        segments = [unquote(part, errors='strict') for part in parsed.path.split('/')]
+        if any(part in {'.', '..'} or '/' in part or '\\' in part
+               or any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in part)
+               for part in segments):
+            return False
         return bool(parsed.scheme in {'http', 'https'}
                     and parsed.hostname in {'linkedin.com', 'www.linkedin.com'}
                     and parsed.username is None and parsed.password is None
