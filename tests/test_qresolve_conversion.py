@@ -262,6 +262,8 @@ class QresolveConversionTests(unittest.TestCase):
             ('linkedin', 'https://www.linkedin.com/'),
             ('linkedin', 'https://www.linkedin.com/company/synthetic'),
             ('linkedin', 'https://synthetic@www.linkedin.com/in/synthetic'),
+            ('linkedin', 'https://@www.linkedin.com/in/synthetic'),
+            ('linkedin', 'https://www.linkedin.com:0/in/synthetic'),
         ):
             with self.subTest(bank_key=bank_key, value=value):
                 case = QresolveConversionTests(); case.setUp()
