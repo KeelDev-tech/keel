@@ -15,6 +15,9 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Keep full Workbench refreshes authoritative over timer-only updates, and
+  discard obsolete refresh errors alongside obsolete responses.
+
 - Discard superseded Workbench refresh responses so delayed automatic or
   manual requests cannot replace a newer snapshot or rebuild its review view.
 
