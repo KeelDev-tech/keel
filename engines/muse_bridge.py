@@ -23,7 +23,8 @@ INPUTS = tuple('data/queues/' + name + '-queue.json' for name in QUEUES) + (
     'data/application-ledger.json', 'data/answer_bank.json', 'data/policy.json',
     'data/applicant_profile.json', 'data/employer-blocklist.md')
 CODE_FILES = ('fit_policy.py', 'queue_intake.py', 'ready_gate.py', 'queue_io.py',
-              'pipeline_service.py', 'muse_bridge.py', 'supply_recovery.py')
+              'pipeline_service.py', 'muse_bridge.py', 'supply_recovery.py',
+              'packet_contract.py', 'apply_loop.py')
 MAX_HOST_ROWS = 50000
 HOST_FRESH_SECONDS = 300
 
@@ -106,7 +107,8 @@ def read_state(workspace):
                     'code_manifest_sha256': code['sha256'], 'main_fit_floor': main_floor()}
         manifest['sha256'] = digest(manifest)
         return {'root': root, 'entries': entries, 'documents': documents, 'ledger': ledger,
-                'bank': values['data/answer_bank.json'], 'manifest': manifest, 'code': code}
+                'bank': values['data/answer_bank.json'], 'policy': values['data/policy.json'],
+                'manifest': manifest, 'code': code}
 
 
 def request_for(state, entry, *, now=None):
