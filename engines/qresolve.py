@@ -126,7 +126,7 @@ def _linkedin_url_quote(value):
             or any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in value)):
         return False
     try:
-        parsed = urlsplit(value if '://' in value else 'https://' + value)
+        parsed = urlsplit(value)
         return bool(parsed.scheme in {'http', 'https'}
                     and parsed.hostname in {'linkedin.com', 'www.linkedin.com'}
                     and parsed.username is None and parsed.password is None

@@ -264,6 +264,7 @@ class QresolveConversionTests(unittest.TestCase):
             ('linkedin', 'https://synthetic@www.linkedin.com/in/synthetic'),
             ('linkedin', 'https://@www.linkedin.com/in/synthetic'),
             ('linkedin', 'https://www.linkedin.com:0/in/synthetic'),
+            ('linkedin', 'linkedin.com/in/synthetic-profile'),
         ):
             with self.subTest(bank_key=bank_key, value=value):
                 case = QresolveConversionTests(); case.setUp()
@@ -292,7 +293,6 @@ class QresolveConversionTests(unittest.TestCase):
     def test_valid_linkedin_url_reuses_exact_quote_for_group_without_touching_consent(self):
         for value in ('https://www.linkedin.com/in/synthetic-profile',
                       'http://linkedin.com/in/synthetic-profile/',
-                      'linkedin.com/in/synthetic-profile',
                       'https://www.linkedin.com/pub/synthetic-profile/1/2/3'):
             with self.subTest(value=value):
                 case = QresolveConversionTests(); case.setUp()
