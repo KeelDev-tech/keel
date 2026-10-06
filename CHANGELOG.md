@@ -15,6 +15,9 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Keep LinkedIn URL questions held when banked quotations are negative
+  statements or non-profile URLs; preserve scoped factual reuse and conflicts.
+
 - Keep full Workbench refreshes authoritative over timer-only updates, and
   discard obsolete refresh errors alongside obsolete responses.
 
