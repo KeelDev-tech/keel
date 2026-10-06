@@ -15,6 +15,9 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Recognize current modern preparation packets in supply planning while
+  preserving READY transitions, execution holds, and current input validation.
+
 - Keep LinkedIn URL questions held when banked quotations are negative
   statements or non-profile URLs; preserve scoped factual reuse and conflicts.
 

@@ -56,13 +56,22 @@ def verification_only(entry):
     return is_verify_only(candidate)
 
 
-def _packet(state, entry, now):
+def _packet(state, entry, now, home):
     for folder in ('data/launch-packets/buffer', 'data/launch-packets'):
         # A role identifier is not a path capability.
         if not IDENT.fullmatch(entry['role_id']):
             return False
         try:
             packet = bridge.loads(bridge.secure_bytes(state['root'], folder + '/' + entry['role_id'] + '.json'))
+            if isinstance(packet, dict) and 'schema_version' in packet:
+                # The active preparation service emits modern review-only
+                # packets. Validate against the same coherent policy snapshot
+                # and current materials; a packet never supplies authority.
+                import packet_contract
+                from apply_loop import _materials_for
+                packet_contract.validate(packet, entry, state['bank'], state['policy'],
+                                         state['root'], _materials_for(entry, home), now=now)
+                return True
             if ready_gate.packet_admission(packet, entry, state['bank'], workspace=state['root'],
                                            now=now, for_execution=False)['allowed']:
                 return True
@@ -106,7 +115,7 @@ def _inventory(state, *, host_provider=None, now=None):
             reasons.append('verification_cooldown')
         if entry.get('verification_event_pending'):
             reasons.append('verification_event_pending')
-        packet = _packet(state, entry, now) if not reasons and current else False
+        packet = _packet(state, entry, now, home) if not reasons and current else False
         host = bridge.observe(host_provider, bridge.request_for(state, entry, now=now), now=now)
         observed = host['record']
         if observed and (observed['task_state'] != 'CLEAR' or observed['attempt_state'] != 'CLEAR'):
