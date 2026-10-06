@@ -286,7 +286,7 @@ def test_modern_preparation_is_counted_without_ready_or_execution(home):
 
 
 @pytest.mark.parametrize('changed', ['source', 'attachment', 'policy', 'bank', 'profile',
-                                     'packet', 'expiry', 'entry'])
+                                     'packet', 'expiry', 'expiry_overflow', 'entry'])
 def test_invalid_modern_preparation_does_not_block_verification_neighbor(home, changed):
     item, packet, path, now = modern_preparation(home)
     if changed == 'source': (home/'resume.txt').write_text('Changed synthetic material')
@@ -298,7 +298,8 @@ def test_invalid_modern_preparation_does_not_block_verification_neighbor(home, c
     else:
         if changed == 'packet': packet['brief'] = 'Tampered brief'
         else:
-            packet['expires_at'] = (now-timedelta(seconds=1)).isoformat()
+            packet['expires_at'] = ('9999-12-31T23:59:59-23:59' if changed == 'expiry_overflow'
+                                    else (now-timedelta(seconds=1)).isoformat())
             packet['integrity_sha256'] = digest({k:v for k,v in packet.items() if k != 'integrity_sha256'})
         atomic_json(path, packet)
     before = {p: p.read_bytes() for p in (home/'data').rglob('*') if p.is_file()}

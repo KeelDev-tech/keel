@@ -75,7 +75,7 @@ def _packet(state, entry, now, home):
             if ready_gate.packet_admission(packet, entry, state['bank'], workspace=state['root'],
                                            now=now, for_execution=False)['allowed']:
                 return True
-        except (OSError, ValueError, TypeError, KeyError):
+        except (OSError, ValueError, TypeError, KeyError, OverflowError):
             continue
     return False
 
