@@ -15,6 +15,9 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Reuse receipt-validated tray custom answers for their exact captured questions
+  and variants while preserving scope, expiry, consent, and no-AI holds.
+
 - Recognize current modern preparation packets in supply planning while
   preserving READY transitions, execution holds, and current input validation.
 

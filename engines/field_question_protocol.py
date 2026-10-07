@@ -283,17 +283,24 @@ def _tokens(s):
 
 
 def bank_pattern_lookup(question, bank):
-    """Check answer_bank entries that carry question_patterns (the
-    applicant's volunteered answers, e.g. a domain-experience detail).
+    """Match captured tray questions exactly, or existing FRP patterns.
 
-    Token-subset match: every non-stopword token of a banked pattern must
-    appear in the question's tokens. Returns (key, entry) or (None, None).
+    Tray question metadata is not a token-subset pattern: qualifiers and
+    negation must remain part of its identity. Only display whitespace is
+    normalized. The caller supplies receipt/scope-validated entries.
+    Existing FRP question_patterns retain their token-subset behavior.
     """
+    exact = ' '.join(question.split()) if isinstance(question, str) else ''
     qtok = _tokens(question)
     answers = (bank or {}).get("answers", {})
     for key, val in answers.items():
         if not isinstance(val, dict):
             continue
+        variants = val.get("question_variants")
+        captured = [val.get("question"), *(variants if isinstance(variants, list) else [])]
+        if exact and any(isinstance(text, str) and ' '.join(text.split()) == exact
+                         for text in captured):
+            return key, val
         for pat in val.get("question_patterns") or []:
             ptok = _tokens(pat)
             if ptok and ptok <= qtok:
@@ -482,6 +489,7 @@ def handle_unmapped_question(question, employer, role_id, ats="", bank=None,
     #    an applicant-volunteered answer beats classification every time.
     bkey, bval = bank_pattern_lookup(question, bank)
     if bkey:
+        answer = bval.get("value", bval.get("answer"))
         norm = normalize_question(question, [employer])
         known = [e for e in load_backlog()
                  if e.get("norm") == norm
@@ -491,7 +499,7 @@ def handle_unmapped_question(question, employer, role_id, ats="", bank=None,
             entry["status"] = "banked"
             entry["outcome"] = "answered"
             entry["closed_date"] = _now_iso()[:10]
-            entry["closed_answer"] = str(bval.get("answer", ""))[:300]
+            entry["closed_answer"] = str(answer)[:300]
             entry["bank_key"] = bkey
             _rewrite_backlog_entry(entry)
         return {
@@ -502,7 +510,7 @@ def handle_unmapped_question(question, employer, role_id, ats="", bank=None,
                                "category": "applicant-volunteered",
                                "bank_key": bkey},
             "derived": {"bank_key": bkey,
-                        "answer": bval.get("answer"),
+                        "answer": answer,
                         "provenance": bval.get("provenance"),
                         "bank_changed": False,
                         "bank_note": "answered from banked applicant answer"},
