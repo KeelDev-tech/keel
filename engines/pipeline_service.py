@@ -585,14 +585,20 @@ def posting_is_current(entry, key=None, *, now=None):
     return True
 
 
+def _verification_record(entry):
+    """Select retry and ordering history identically; an empty attempt is present."""
+    observation = entry.get('verification_attempt')
+    if observation is None:
+        observation = entry.get('posting_verification') or {}
+    return observation if isinstance(observation, dict) else None
+
+
 def _next_time(entry, key):
     # Scheduling comes from the latest attempt, independently of the last
     # usable posting observation. Transport failures can pace retries without
     # destroying decisive evidence or changing a quarantine streak.
-    observation = entry.get('verification_attempt')
+    observation = _verification_record(entry)
     if observation is None:
-        observation = entry.get('posting_verification') or {}
-    if not isinstance(observation, dict):
         return 'invalid'
     # A row may be retargeted after a prior observation. Its old posting's
     # retry timestamp cannot defer verification of a different exact posting.
@@ -674,7 +680,7 @@ def verify(workspace, *, limit=100, timeout=120, live=False, reader=None,
         if posting_counts[key] != 1:
             skipped['duplicate_exact_posting'] += 1; continue
         # Oldest observation first, then stable ID: failures cool down instead of starving the tail.
-        stamp = (row.get('verification_attempt') or row.get('posting_verification') or {}).get('observed_at', '')
+        stamp = (_verification_record(row) or {}).get('observed_at', '')
         try:
             # Canonical UTC text orders instants and gives equivalent spellings
             # the same key. Keep legacy missing/malformed fallback behavior;
