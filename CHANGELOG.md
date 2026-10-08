@@ -15,6 +15,9 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Preserve sealed packets during prescreen rechecks; require rebuilding when
+  current answers need new annotations, and leave publication to the builder.
+
 - Use the same verification history for cooldowns and scheduling so malformed
   legacy observations cannot abort an eligible neighbor's posting check.
 
