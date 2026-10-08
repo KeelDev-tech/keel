@@ -1,0 +1,2374 @@
+{
+  "baseline_main": "706ef51a81d0418a33d390105a693bddf3507a70",
+  "execution_authorized": false,
+  "integration_main": "cb6a90d8aaf9b95183a7bc990ec097805dfe679e",
+  "integration_note": "All seven additive files reconciled onto final main. Existing qualification/source reducer directories and connector source bytes are unchanged; combined preparation/answer tests and benchmarks rerun.",
+  "limits": [
+    "Offline local serial synthetic workload only; no actual Muse interoperability or approval.",
+    "20 supported and 30 headroom roles mean a complete authorized workspace, not a page from a larger graph.",
+    "Each complete role has seven source components and one 58-byte attachment; large files were not capacity tested.",
+    "Snapshot/provider freshness and grant correctness remain trusted host responsibilities."
+  ],
+  "log_sha256": {
+    "after-regressions-py311.txt": "564449e5c59672f84149922e6591eacf98825a3341ccf67412abcd6d3b48f972",
+    "after-regressions-py312.txt": "cff343589d6ae507b1052a0d3b8f8d78bfe261494aa55f5bfecc0f789f9a1723",
+    "after-unittest-py312.txt": "6305cb1273205027ec72dd9d900ea9adf48d95e300d42df80ce7c4392e625913",
+    "baseline-pytest-py312.txt": "0dfa44a46e072c7f52c094049cc1203ab24f1ce6298d3c61171dcd26405abe7e",
+    "baseline-unittest-py312.txt": "78b3217fae120330c5d46234123131d62ccfa541baa60cc0b0edc44e706c9e03",
+    "ci-unittest-py311.txt": "b73269c39b5dc7694ba15c9af08818fc7c8118a5eef0abaec41d0bce739456a2",
+    "combined-cases-before.txt": "24c28048b6eac0d860e7a1330d45aafa4b9a0adf113dbda75de22c0854f53515",
+    "combined-main-regressions-py311.txt": "93fd08841cb58328eec9e9b8b99a684ca2d3f2832c40a9133be9078c47b7b3e4",
+    "combined-main-regressions-py312.txt": "c1e3986786f19f4654593acf5626e9010425ad5e7d80ad045fce723312b6eef0",
+    "explicit-mcp-py311.txt": "d8bb6dc45ead39a01895c16a6d05be281bd3fb5d8b0524bd181719f247dad7de",
+    "explicit-mcp-py312.txt": "c5f7f79f7158806b4b7e9e83b60b7f2d737fb6fc18a6dadd9c464bbb0ecb872b",
+    "integrated-unittest-py312.txt": "7e32fd40bd42fb89dbfcdb5f12a474ada677edd4a771d2fc73a423a05ba3d5eb",
+    "regression-before-py312.txt": "998a4cf9f4c5192bf83ecb4ee4959e5ca1a836df0b62c5ce1be742d8be4b05d8"
+  },
+  "recorded_at": "2026-10-08T11:11:02.704048+00:00",
+  "runs": {
+    "py311": {
+      "benchmark": {
+        "budgets": {
+          "output_bytes": 262144,
+          "p95_ms": 2000.0
+        },
+        "clock": "perf_counter_ns",
+        "environment": {
+          "available_cpus": 5,
+          "cgroup_memory_limit_bytes": 17179869184,
+          "cpu_model": "AMD EPYC 9V74 80-Core Processor",
+          "logical_cpus": 5,
+          "machine": "x86_64",
+          "physical_memory_bytes": 18882699264,
+          "python": "3.11.16",
+          "python_implementation": "CPython",
+          "release": "6.18.44",
+          "resource_basis": "Host-reported resources; shared capacity is not reserved.",
+          "system": "Linux"
+        },
+        "headroom_ratio": 1.5,
+        "headroom_roles": 30,
+        "limitations": [
+          "Local warmed-cache serial measurements; no endpoint, network or concurrent workload tested.",
+          "Headroom is 1.5 times the role count for these declared profiles, not every input dimension.",
+          "Synthetic attachments are 58 bytes each; large attachments and arbitrary record sizes were not benchmarked.",
+          "Missing-source profiles retain setup files but reference and evaluate no attachments."
+        ],
+        "measurement": "Full adapter.call through encoded JSON, including both grant checks.",
+        "measurements": [
+          {
+            "attachment_bytes": 1160,
+            "attachment_count": 20,
+            "checks": {
+              "all_results_expected": true,
+              "attachments_unchanged": true,
+              "input_byte_bound_met": true,
+              "input_depth_bound_met": true,
+              "input_node_bound_met": true,
+              "input_unchanged": true,
+              "latency_budget_met": true,
+              "output_budget_met": true
+            },
+            "fixture_attachment_bytes": 1160,
+            "fixture_attachment_count": 20,
+            "input_bytes": 184855,
+            "input_depth": 10,
+            "input_nodes": 5840,
+            "max_ms": 136.381,
+            "output_max_bytes": 42381,
+            "p50_ms": 109.31,
+            "p95_ms": 131.193,
+            "passed": true,
+            "profile": "complete",
+            "roles": 20,
+            "sample_ms": [
+              106.233,
+              104.482,
+              107.847,
+              131.193,
+              117.499,
+              109.31,
+              111.676,
+              111.825,
+              136.381,
+              115.906,
+              113.745,
+              102.758,
+              97.509,
+              95.423,
+              96.744,
+              100.544,
+              100.179,
+              100.661,
+              121.161,
+              111.068,
+              111.401
+            ],
+            "samples": 21,
+            "warmup_calls": 1
+          },
+          {
+            "attachment_bytes": 0,
+            "attachment_count": 0,
+            "checks": {
+              "all_results_expected": true,
+              "attachments_unchanged": true,
+              "input_byte_bound_met": true,
+              "input_depth_bound_met": true,
+              "input_node_bound_met": true,
+              "input_unchanged": true,
+              "latency_budget_met": true,
+              "output_budget_met": true
+            },
+            "fixture_attachment_bytes": 1160,
+            "fixture_attachment_count": 20,
+            "input_bytes": 97454,
+            "input_depth": 8,
+            "input_nodes": 2812,
+            "max_ms": 71.366,
+            "output_max_bytes": 36313,
+            "p50_ms": 58.776,
+            "p95_ms": 66.922,
+            "passed": true,
+            "profile": "missing_sources",
+            "roles": 20,
+            "sample_ms": [
+              66.922,
+              63.151,
+              62.28,
+              61.561,
+              71.366,
+              58.174,
+              63.35,
+              62.919,
+              60.253,
+              57.499,
+              56.468,
+              57.428,
+              58.776,
+              58.456,
+              60.935,
+              57.528,
+              57.55,
+              57.299,
+              58.672,
+              62.279,
+              57.577
+            ],
+            "samples": 21,
+            "warmup_calls": 1
+          },
+          {
+            "attachment_bytes": 1740,
+            "attachment_count": 30,
+            "checks": {
+              "all_results_expected": true,
+              "attachments_unchanged": true,
+              "input_byte_bound_met": true,
+              "input_depth_bound_met": true,
+              "input_node_bound_met": true,
+              "input_unchanged": true,
+              "latency_budget_met": true,
+              "output_budget_met": true
+            },
+            "fixture_attachment_bytes": 1740,
+            "fixture_attachment_count": 30,
+            "input_bytes": 274925,
+            "input_depth": 10,
+            "input_nodes": 8660,
+            "max_ms": 165.887,
+            "output_max_bytes": 62981,
+            "p50_ms": 153.018,
+            "p95_ms": 165.437,
+            "passed": true,
+            "profile": "complete",
+            "roles": 30,
+            "sample_ms": [
+              144.063,
+              147.259,
+              145.346,
+              149.489,
+              142.908,
+              153.871,
+              147.384,
+              157.297,
+              162.444,
+              154.041,
+              159.901,
+              148.422,
+              149.899,
+              165.437,
+              165.887,
+              154.439,
+              151.68,
+              155.154,
+              153.018,
+              159.546,
+              152.318
+            ],
+            "samples": 21,
+            "warmup_calls": 1
+          },
+          {
+            "attachment_bytes": 0,
+            "attachment_count": 0,
+            "checks": {
+              "all_results_expected": true,
+              "attachments_unchanged": true,
+              "input_byte_bound_met": true,
+              "input_depth_bound_met": true,
+              "input_node_bound_met": true,
+              "input_unchanged": true,
+              "latency_budget_met": true,
+              "output_budget_met": true
+            },
+            "fixture_attachment_bytes": 1740,
+            "fixture_attachment_count": 30,
+            "input_bytes": 143894,
+            "input_depth": 8,
+            "input_nodes": 4122,
+            "max_ms": 110.061,
+            "output_max_bytes": 53923,
+            "p50_ms": 86.726,
+            "p95_ms": 107.135,
+            "passed": true,
+            "profile": "missing_sources",
+            "roles": 30,
+            "sample_ms": [
+              94.7,
+              95.212,
+              97.358,
+              93.0,
+              93.853,
+              101.622,
+              92.04,
+              91.151,
+              107.135,
+              110.061,
+              84.636,
+              85.868,
+              84.52,
+              81.82,
+              82.585,
+              80.284,
+              79.332,
+              80.388,
+              86.726,
+              79.035,
+              80.17
+            ],
+            "samples": 21,
+            "warmup_calls": 1
+          }
+        ],
+        "overload": {
+          "output_bytes": 117,
+          "passed": true,
+          "report": {
+            "error": {
+              "code": "WORKLOAD_EXCEEDED"
+            },
+            "execution_authorized": false,
+            "ok": false,
+            "schema": "keel.connector.readiness.v1"
+          },
+          "roles": 31
+        },
+        "passed": true,
+        "percentile_method": "p50 median; p95 nearest rank",
+        "samples_per_profile": 21,
+        "supported_roles": 20,
+        "synthetic": true
+      },
+      "execution_authorized": false,
+      "passed": true,
+      "scenarios": [
+        {
+          "checks": {
+            "attachments_unchanged": true,
+            "bounded_output": true,
+            "current_matches_evidence": true,
+            "execution_unauthorized": true,
+            "input_unchanged": true,
+            "one_role_accounted_for": true,
+            "qualified_count": true,
+            "successful_synthetic_report": true
+          },
+          "output_bytes": 3239,
+          "passed": true,
+          "report": {
+            "applications": [
+              {
+                "capture_review_checks_passed": true,
+                "execution_authorized": false,
+                "next_step": {
+                  "code": "VERIFY_PREPARATION_AND_READBACK",
+                  "responsibility": "human"
+                },
+                "reason_codes": [],
+                "scope_ref": "acbbed556013b99839fa4244e78d16a21963b51b7217c95c4df07406b060e6d4",
+                "sources": [
+                  {
+                    "component": "policy",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "b0ef962e04b1950e6c0e54b9da8b617d89859231b9d0171576fcd10f7682c5df",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "form",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "08b45753827d520291422e49273435eb401a07034d08df6dd4b90a0937cc4e52",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "answers",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "395eb3a844a61f3a82b634e25d4e81fb882985c489b54a12616cf9b68cb31ab0",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "attachments",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "6246cbc26372a634a90c7da354c3e8fb38ca4697cb041a2cf51e706aa56a70b3",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "target",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "bb7e6f38e9d1abbbafdf26c682d9c5b69be39cc7347fe80e4e0a8df087626062",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "approval",
+                    "expires_at": "2026-09-18T12:02:00+00:00",
+                    "observed_at": "2026-09-18T12:00:00+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "4097f4a2f38d5b6556276300211af2bd1e3688d41639f5bac3ac8865dc1edf4a",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "route",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "d81492c3c6423567bdc5e58cf627a9874f6b72cc6213339ea984c0d7f630e871",
+                    "status": "READY"
+                  }
+                ],
+                "state": "CAPTURE_TO_REVIEW_CHECKS_PASSED"
+              }
+            ],
+            "canonical_current": true,
+            "current": true,
+            "evaluated_at": "2026-09-18T12:00:00+00:00",
+            "execution_authorized": false,
+            "freshness_basis": "AS_OF_EVALUATED_AT",
+            "observed_at": "2026-09-18T12:00:00+00:00",
+            "ok": true,
+            "pins": {
+              "flow_sha256": "746f7e002a6fa122be20966998f01de8725a6c2dea1cead8e338f9b4c03a1b19",
+              "snapshot_sha256": "d562dcacf8a9fc7809a7926d2fab935a53ff72ee5e9d64fd7d0b7f7a64aeaba5",
+              "source_revision_sha256": "f99a0b1805e6abb6a7f0fc699979dc09132cb445f3124d55920fedf8399ae55f",
+              "source_snapshot_sha256": "ebd8d52a9366978f69db4a00e4bb9de16d05488e38847220084031a1110299d8"
+            },
+            "pipeline_active": true,
+            "returned_roles": 1,
+            "schema": "keel.connector.readiness.v1",
+            "source_snapshot": {
+              "expires_at": "2026-09-18T12:01:30+00:00",
+              "observed_at": "2026-09-18T12:00:00+00:00",
+              "reason_code": null,
+              "status": "READY"
+            },
+            "synthetic": true,
+            "uncertainty": {
+              "canonical_packet_content_verified": false,
+              "factual_support_verified": false,
+              "form_readback": "NOT_RUN",
+              "operator_authenticity_verified": false,
+              "question_impact": "NOT_ASSESSED",
+              "rendered_preparation": "NOT_RUN",
+              "source_authenticity_verified": false
+            },
+            "workspace_ref": "947928760ff88610d7b3ff42fb00742a410243c858386f2d4e1ad4c26112ec25",
+            "workspace_roles": 1
+          },
+          "scenario": "current",
+          "synthetic": true
+        },
+        {
+          "checks": {
+            "attachments_unchanged": true,
+            "bounded_output": true,
+            "current_matches_evidence": true,
+            "execution_unauthorized": true,
+            "input_unchanged": true,
+            "one_role_accounted_for": true,
+            "original_observation_preserved": true,
+            "qualified_count": true,
+            "refresh_unknown": true,
+            "successful_synthetic_report": true
+          },
+          "output_bytes": 3399,
+          "passed": true,
+          "report": {
+            "applications": [
+              {
+                "capture_review_checks_passed": false,
+                "execution_authorized": false,
+                "next_step": {
+                  "code": "REFRESH_COMPLETE_WORKSPACE",
+                  "responsibility": "system"
+                },
+                "reason_codes": [
+                  "assurance_not_passed",
+                  "assurance_review_required",
+                  "assurance_unverified",
+                  "material_review_required",
+                  "observation_stale",
+                  "refresh_current_export",
+                  "source_records_incomplete"
+                ],
+                "scope_ref": "acbbed556013b99839fa4244e78d16a21963b51b7217c95c4df07406b060e6d4",
+                "sources": [
+                  {
+                    "component": "policy",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "b0ef962e04b1950e6c0e54b9da8b617d89859231b9d0171576fcd10f7682c5df",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "form",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "08b45753827d520291422e49273435eb401a07034d08df6dd4b90a0937cc4e52",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "answers",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "395eb3a844a61f3a82b634e25d4e81fb882985c489b54a12616cf9b68cb31ab0",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "attachments",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "6246cbc26372a634a90c7da354c3e8fb38ca4697cb041a2cf51e706aa56a70b3",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "target",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "bb7e6f38e9d1abbbafdf26c682d9c5b69be39cc7347fe80e4e0a8df087626062",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "approval",
+                    "expires_at": "2026-09-18T12:02:00+00:00",
+                    "observed_at": "2026-09-18T12:00:00+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "4097f4a2f38d5b6556276300211af2bd1e3688d41639f5bac3ac8865dc1edf4a",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "route",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "d81492c3c6423567bdc5e58cf627a9874f6b72cc6213339ea984c0d7f630e871",
+                    "status": "READY"
+                  }
+                ],
+                "state": "UNKNOWN"
+              }
+            ],
+            "canonical_current": false,
+            "current": false,
+            "evaluated_at": "2026-09-18T12:01:31+00:00",
+            "execution_authorized": false,
+            "freshness_basis": "AS_OF_EVALUATED_AT",
+            "observed_at": "2026-09-18T12:00:00+00:00",
+            "ok": true,
+            "pins": {
+              "flow_sha256": "746f7e002a6fa122be20966998f01de8725a6c2dea1cead8e338f9b4c03a1b19",
+              "snapshot_sha256": "d562dcacf8a9fc7809a7926d2fab935a53ff72ee5e9d64fd7d0b7f7a64aeaba5",
+              "source_revision_sha256": "f99a0b1805e6abb6a7f0fc699979dc09132cb445f3124d55920fedf8399ae55f",
+              "source_snapshot_sha256": "ebd8d52a9366978f69db4a00e4bb9de16d05488e38847220084031a1110299d8"
+            },
+            "pipeline_active": true,
+            "returned_roles": 1,
+            "schema": "keel.connector.readiness.v1",
+            "source_snapshot": {
+              "expires_at": "2026-09-18T12:01:30+00:00",
+              "observed_at": "2026-09-18T12:00:00+00:00",
+              "reason_code": "source_expired",
+              "status": "STALE"
+            },
+            "synthetic": true,
+            "uncertainty": {
+              "canonical_packet_content_verified": false,
+              "factual_support_verified": false,
+              "form_readback": "NOT_RUN",
+              "operator_authenticity_verified": false,
+              "question_impact": "NOT_ASSESSED",
+              "rendered_preparation": "NOT_RUN",
+              "source_authenticity_verified": false
+            },
+            "workspace_ref": "947928760ff88610d7b3ff42fb00742a410243c858386f2d4e1ad4c26112ec25",
+            "workspace_roles": 1
+          },
+          "scenario": "stale",
+          "synthetic": true
+        },
+        {
+          "checks": {
+            "attachments_unchanged": true,
+            "bounded_output": true,
+            "current_matches_evidence": true,
+            "execution_unauthorized": true,
+            "input_unchanged": true,
+            "one_role_accounted_for": true,
+            "original_observation_preserved": true,
+            "qualified_count": true,
+            "refresh_unknown": true,
+            "successful_synthetic_report": true
+          },
+          "output_bytes": 3238,
+          "passed": true,
+          "report": {
+            "applications": [
+              {
+                "capture_review_checks_passed": false,
+                "execution_authorized": false,
+                "next_step": {
+                  "code": "REFRESH_COMPLETE_WORKSPACE",
+                  "responsibility": "system"
+                },
+                "reason_codes": [
+                  "refresh_current_export"
+                ],
+                "scope_ref": "acbbed556013b99839fa4244e78d16a21963b51b7217c95c4df07406b060e6d4",
+                "sources": [
+                  {
+                    "component": "policy",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "b0ef962e04b1950e6c0e54b9da8b617d89859231b9d0171576fcd10f7682c5df",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "form",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "08b45753827d520291422e49273435eb401a07034d08df6dd4b90a0937cc4e52",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "answers",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "395eb3a844a61f3a82b634e25d4e81fb882985c489b54a12616cf9b68cb31ab0",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "attachments",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "6246cbc26372a634a90c7da354c3e8fb38ca4697cb041a2cf51e706aa56a70b3",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "target",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "bb7e6f38e9d1abbbafdf26c682d9c5b69be39cc7347fe80e4e0a8df087626062",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "approval",
+                    "expires_at": "2026-09-18T12:02:00+00:00",
+                    "observed_at": "2026-09-18T12:00:00+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "4097f4a2f38d5b6556276300211af2bd1e3688d41639f5bac3ac8865dc1edf4a",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "route",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "d81492c3c6423567bdc5e58cf627a9874f6b72cc6213339ea984c0d7f630e871",
+                    "status": "READY"
+                  }
+                ],
+                "state": "UNKNOWN"
+              }
+            ],
+            "canonical_current": false,
+            "current": false,
+            "evaluated_at": "2026-09-18T12:00:00+00:00",
+            "execution_authorized": false,
+            "freshness_basis": "AS_OF_EVALUATED_AT",
+            "observed_at": "2026-09-18T12:00:00+00:00",
+            "ok": true,
+            "pins": {
+              "flow_sha256": "6421f6ecd75e37dc7766727ac3546b275d80b4311267f42df737811e0a262321",
+              "snapshot_sha256": "3007df4d9ab34810ef0d78adc059999aa9a5dfbda350486e64ca0545cffcfc1c",
+              "source_revision_sha256": "f99a0b1805e6abb6a7f0fc699979dc09132cb445f3124d55920fedf8399ae55f",
+              "source_snapshot_sha256": "ebd8d52a9366978f69db4a00e4bb9de16d05488e38847220084031a1110299d8"
+            },
+            "pipeline_active": true,
+            "returned_roles": 1,
+            "schema": "keel.connector.readiness.v1",
+            "source_snapshot": {
+              "expires_at": "2026-09-18T12:01:30+00:00",
+              "observed_at": "2026-09-18T12:00:00+00:00",
+              "reason_code": null,
+              "status": "READY"
+            },
+            "synthetic": true,
+            "uncertainty": {
+              "canonical_packet_content_verified": false,
+              "factual_support_verified": false,
+              "form_readback": "NOT_RUN",
+              "operator_authenticity_verified": false,
+              "question_impact": "NOT_ASSESSED",
+              "rendered_preparation": "NOT_RUN",
+              "source_authenticity_verified": false
+            },
+            "workspace_ref": "947928760ff88610d7b3ff42fb00742a410243c858386f2d4e1ad4c26112ec25",
+            "workspace_roles": 1
+          },
+          "scenario": "incomplete",
+          "synthetic": true
+        },
+        {
+          "checks": {
+            "attachments_unchanged": true,
+            "bounded_output": true,
+            "execution_unauthorized": true,
+            "expected_error": true,
+            "input_unchanged": true,
+            "no_partial_applications": true
+          },
+          "output_bytes": 116,
+          "passed": true,
+          "report": {
+            "error": {
+              "code": "INVALID_SNAPSHOT"
+            },
+            "execution_authorized": false,
+            "ok": false,
+            "schema": "keel.connector.readiness.v1"
+          },
+          "scenario": "malformed",
+          "synthetic": true
+        },
+        {
+          "checks": {
+            "attachments_unchanged": true,
+            "bounded_output": true,
+            "execution_unauthorized": true,
+            "expected_error": true,
+            "input_unchanged": true,
+            "no_partial_applications": true
+          },
+          "output_bytes": 113,
+          "passed": true,
+          "report": {
+            "error": {
+              "code": "ACCESS_DENIED"
+            },
+            "execution_authorized": false,
+            "ok": false,
+            "schema": "keel.connector.readiness.v1"
+          },
+          "scenario": "cross_user",
+          "synthetic": true
+        },
+        {
+          "checks": {
+            "attachments_unchanged": true,
+            "bounded_output": true,
+            "execution_unauthorized": true,
+            "expected_error": true,
+            "grant_rechecked_before_output": true,
+            "input_unchanged": true,
+            "no_partial_applications": true
+          },
+          "output_bytes": 113,
+          "passed": true,
+          "report": {
+            "error": {
+              "code": "ACCESS_DENIED"
+            },
+            "execution_authorized": false,
+            "ok": false,
+            "schema": "keel.connector.readiness.v1"
+          },
+          "scenario": "revoked_grant",
+          "synthetic": true
+        },
+        {
+          "checks": {
+            "attachments_unchanged": true,
+            "bounded_output": true,
+            "current_matches_evidence": true,
+            "execution_unauthorized": true,
+            "existing_human_request": true,
+            "input_unchanged": true,
+            "one_role_accounted_for": true,
+            "qualified_count": true,
+            "successful_synthetic_report": true
+          },
+          "output_bytes": 3206,
+          "passed": true,
+          "report": {
+            "applications": [
+              {
+                "capture_review_checks_passed": false,
+                "execution_authorized": false,
+                "next_step": {
+                  "code": "REVIEW_EXISTING_APPROVAL_REQUEST",
+                  "responsibility": "human"
+                },
+                "reason_codes": [
+                  "source_records_incomplete"
+                ],
+                "scope_ref": "acbbed556013b99839fa4244e78d16a21963b51b7217c95c4df07406b060e6d4",
+                "sources": [
+                  {
+                    "component": "policy",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "b0ef962e04b1950e6c0e54b9da8b617d89859231b9d0171576fcd10f7682c5df",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "form",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "08b45753827d520291422e49273435eb401a07034d08df6dd4b90a0937cc4e52",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "answers",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "395eb3a844a61f3a82b634e25d4e81fb882985c489b54a12616cf9b68cb31ab0",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "attachments",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "6246cbc26372a634a90c7da354c3e8fb38ca4697cb041a2cf51e706aa56a70b3",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "target",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "bb7e6f38e9d1abbbafdf26c682d9c5b69be39cc7347fe80e4e0a8df087626062",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "approval",
+                    "expires_at": "2026-09-18T12:01:00+00:00",
+                    "observed_at": "2026-09-18T12:00:00+00:00",
+                    "reason_code": "human_decision_required",
+                    "responsibility": "human",
+                    "revision_sha256": null,
+                    "status": "MISSING"
+                  },
+                  {
+                    "component": "route",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "d81492c3c6423567bdc5e58cf627a9874f6b72cc6213339ea984c0d7f630e871",
+                    "status": "READY"
+                  }
+                ],
+                "state": "BLOCKED"
+              }
+            ],
+            "canonical_current": true,
+            "current": true,
+            "evaluated_at": "2026-09-18T12:00:00+00:00",
+            "execution_authorized": false,
+            "freshness_basis": "AS_OF_EVALUATED_AT",
+            "observed_at": "2026-09-18T12:00:00+00:00",
+            "ok": true,
+            "pins": {
+              "flow_sha256": "746f7e002a6fa122be20966998f01de8725a6c2dea1cead8e338f9b4c03a1b19",
+              "snapshot_sha256": "8d01395867eb1a36bf9fb72fe8e209bcb59150630340b0c340f7061e34b3103d",
+              "source_revision_sha256": "f99a0b1805e6abb6a7f0fc699979dc09132cb445f3124d55920fedf8399ae55f",
+              "source_snapshot_sha256": "1b1cd5e1d4b539406fdbc26ea16e58b238a9acfd6f59f9395177f5ad3623e043"
+            },
+            "pipeline_active": true,
+            "returned_roles": 1,
+            "schema": "keel.connector.readiness.v1",
+            "source_snapshot": {
+              "expires_at": "2026-09-18T12:01:30+00:00",
+              "observed_at": "2026-09-18T12:00:00+00:00",
+              "reason_code": null,
+              "status": "READY"
+            },
+            "synthetic": true,
+            "uncertainty": {
+              "canonical_packet_content_verified": false,
+              "factual_support_verified": false,
+              "form_readback": "NOT_RUN",
+              "operator_authenticity_verified": false,
+              "question_impact": "NOT_ASSESSED",
+              "rendered_preparation": "NOT_RUN",
+              "source_authenticity_verified": false
+            },
+            "workspace_ref": "947928760ff88610d7b3ff42fb00742a410243c858386f2d4e1ad4c26112ec25",
+            "workspace_roles": 1
+          },
+          "scenario": "pending_human",
+          "synthetic": true
+        },
+        {
+          "checks": {
+            "attachments_unchanged": true,
+            "bounded_output": true,
+            "current_matches_evidence": true,
+            "execution_unauthorized": true,
+            "input_unchanged": true,
+            "one_role_accounted_for": true,
+            "qualified_count": true,
+            "source_status_preserved": true,
+            "successful_synthetic_report": true
+          },
+          "output_bytes": 3212,
+          "passed": true,
+          "report": {
+            "applications": [
+              {
+                "capture_review_checks_passed": false,
+                "execution_authorized": false,
+                "next_step": {
+                  "code": "REFRESH_OR_REPAIR_SOURCE_EVIDENCE",
+                  "responsibility": "system"
+                },
+                "reason_codes": [
+                  "source_records_incomplete",
+                  "source_semantics:policy:source_expired"
+                ],
+                "scope_ref": "acbbed556013b99839fa4244e78d16a21963b51b7217c95c4df07406b060e6d4",
+                "sources": [
+                  {
+                    "component": "policy",
+                    "expires_at": "2026-09-18T11:59:59+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": "source_expired",
+                    "responsibility": "system",
+                    "revision_sha256": null,
+                    "status": "STALE"
+                  },
+                  {
+                    "component": "form",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "08b45753827d520291422e49273435eb401a07034d08df6dd4b90a0937cc4e52",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "answers",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "395eb3a844a61f3a82b634e25d4e81fb882985c489b54a12616cf9b68cb31ab0",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "attachments",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "6246cbc26372a634a90c7da354c3e8fb38ca4697cb041a2cf51e706aa56a70b3",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "target",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "bb7e6f38e9d1abbbafdf26c682d9c5b69be39cc7347fe80e4e0a8df087626062",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "approval",
+                    "expires_at": "2026-09-18T12:02:00+00:00",
+                    "observed_at": "2026-09-18T12:00:00+00:00",
+                    "reason_code": "approval_dependencies_unavailable",
+                    "responsibility": "system",
+                    "revision_sha256": null,
+                    "status": "INVALID"
+                  },
+                  {
+                    "component": "route",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "d81492c3c6423567bdc5e58cf627a9874f6b72cc6213339ea984c0d7f630e871",
+                    "status": "READY"
+                  }
+                ],
+                "state": "BLOCKED"
+              }
+            ],
+            "canonical_current": true,
+            "current": true,
+            "evaluated_at": "2026-09-18T12:00:00+00:00",
+            "execution_authorized": false,
+            "freshness_basis": "AS_OF_EVALUATED_AT",
+            "observed_at": "2026-09-18T12:00:00+00:00",
+            "ok": true,
+            "pins": {
+              "flow_sha256": "746f7e002a6fa122be20966998f01de8725a6c2dea1cead8e338f9b4c03a1b19",
+              "snapshot_sha256": "599bc584ec2869e04ccb844716fe6f5cd919be1a44a46a55c342bee25efd3e20",
+              "source_revision_sha256": "f99a0b1805e6abb6a7f0fc699979dc09132cb445f3124d55920fedf8399ae55f",
+              "source_snapshot_sha256": "a1e706486cd68498ee8f7993313b6c62ecf30c69577f5e9d79d1911dc32965ab"
+            },
+            "pipeline_active": true,
+            "returned_roles": 1,
+            "schema": "keel.connector.readiness.v1",
+            "source_snapshot": {
+              "expires_at": "2026-09-18T12:01:30+00:00",
+              "observed_at": "2026-09-18T12:00:00+00:00",
+              "reason_code": null,
+              "status": "READY"
+            },
+            "synthetic": true,
+            "uncertainty": {
+              "canonical_packet_content_verified": false,
+              "factual_support_verified": false,
+              "form_readback": "NOT_RUN",
+              "operator_authenticity_verified": false,
+              "question_impact": "NOT_ASSESSED",
+              "rendered_preparation": "NOT_RUN",
+              "source_authenticity_verified": false
+            },
+            "workspace_ref": "947928760ff88610d7b3ff42fb00742a410243c858386f2d4e1ad4c26112ec25",
+            "workspace_roles": 1
+          },
+          "scenario": "expired_source",
+          "synthetic": true
+        },
+        {
+          "checks": {
+            "attachments_unchanged": true,
+            "bounded_output": true,
+            "current_matches_evidence": true,
+            "execution_unauthorized": true,
+            "input_unchanged": true,
+            "one_role_accounted_for": true,
+            "qualified_count": true,
+            "source_status_preserved": true,
+            "successful_synthetic_report": true
+          },
+          "output_bytes": 3202,
+          "passed": true,
+          "report": {
+            "applications": [
+              {
+                "capture_review_checks_passed": false,
+                "execution_authorized": false,
+                "next_step": {
+                  "code": "REFRESH_OR_REPAIR_SOURCE_EVIDENCE",
+                  "responsibility": "system"
+                },
+                "reason_codes": [
+                  "source_records_incomplete"
+                ],
+                "scope_ref": "acbbed556013b99839fa4244e78d16a21963b51b7217c95c4df07406b060e6d4",
+                "sources": [
+                  {
+                    "component": "policy",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "b0ef962e04b1950e6c0e54b9da8b617d89859231b9d0171576fcd10f7682c5df",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "form",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "08b45753827d520291422e49273435eb401a07034d08df6dd4b90a0937cc4e52",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "answers",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "395eb3a844a61f3a82b634e25d4e81fb882985c489b54a12616cf9b68cb31ab0",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "attachments",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "6246cbc26372a634a90c7da354c3e8fb38ca4697cb041a2cf51e706aa56a70b3",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "target",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "bb7e6f38e9d1abbbafdf26c682d9c5b69be39cc7347fe80e4e0a8df087626062",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "approval",
+                    "expires_at": "2026-09-18T12:02:00+00:00",
+                    "observed_at": "2026-09-18T12:00:00+00:00",
+                    "reason_code": "approval_revoked",
+                    "responsibility": "system",
+                    "revision_sha256": null,
+                    "status": "REVOKED"
+                  },
+                  {
+                    "component": "route",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "d81492c3c6423567bdc5e58cf627a9874f6b72cc6213339ea984c0d7f630e871",
+                    "status": "READY"
+                  }
+                ],
+                "state": "BLOCKED"
+              }
+            ],
+            "canonical_current": true,
+            "current": true,
+            "evaluated_at": "2026-09-18T12:00:00+00:00",
+            "execution_authorized": false,
+            "freshness_basis": "AS_OF_EVALUATED_AT",
+            "observed_at": "2026-09-18T12:00:00+00:00",
+            "ok": true,
+            "pins": {
+              "flow_sha256": "746f7e002a6fa122be20966998f01de8725a6c2dea1cead8e338f9b4c03a1b19",
+              "snapshot_sha256": "a67a813f48ae9804fbd445040c7d5c5d01767ab15f5272beb0184f6d44bddfa3",
+              "source_revision_sha256": "f99a0b1805e6abb6a7f0fc699979dc09132cb445f3124d55920fedf8399ae55f",
+              "source_snapshot_sha256": "949136e5724f2e948ac0c40913b8e84350f642d997ba1877eba802ca0bc68f35"
+            },
+            "pipeline_active": true,
+            "returned_roles": 1,
+            "schema": "keel.connector.readiness.v1",
+            "source_snapshot": {
+              "expires_at": "2026-09-18T12:01:30+00:00",
+              "observed_at": "2026-09-18T12:00:00+00:00",
+              "reason_code": null,
+              "status": "READY"
+            },
+            "synthetic": true,
+            "uncertainty": {
+              "canonical_packet_content_verified": false,
+              "factual_support_verified": false,
+              "form_readback": "NOT_RUN",
+              "operator_authenticity_verified": false,
+              "question_impact": "NOT_ASSESSED",
+              "rendered_preparation": "NOT_RUN",
+              "source_authenticity_verified": false
+            },
+            "workspace_ref": "947928760ff88610d7b3ff42fb00742a410243c858386f2d4e1ad4c26112ec25",
+            "workspace_roles": 1
+          },
+          "scenario": "revoked_approval",
+          "synthetic": true
+        }
+      ],
+      "schema": "keel.connector.synthetic_demo.v1",
+      "setup": "Explicit synthetic fixture writes in TemporaryDirectory; deleted after the run.",
+      "synthetic": true,
+      "verification_boundary": "Offline report behavior only; no Muse interoperability or approval established."
+    },
+    "py312": {
+      "benchmark": {
+        "budgets": {
+          "output_bytes": 262144,
+          "p95_ms": 2000.0
+        },
+        "clock": "perf_counter_ns",
+        "environment": {
+          "available_cpus": 5,
+          "cgroup_memory_limit_bytes": 17179869184,
+          "cpu_model": "AMD EPYC 9V74 80-Core Processor",
+          "logical_cpus": 5,
+          "machine": "x86_64",
+          "physical_memory_bytes": 18882699264,
+          "python": "3.12.14",
+          "python_implementation": "CPython",
+          "release": "6.18.44",
+          "resource_basis": "Host-reported resources; shared capacity is not reserved.",
+          "system": "Linux"
+        },
+        "headroom_ratio": 1.5,
+        "headroom_roles": 30,
+        "limitations": [
+          "Local warmed-cache serial measurements; no endpoint, network or concurrent workload tested.",
+          "Headroom is 1.5 times the role count for these declared profiles, not every input dimension.",
+          "Synthetic attachments are 58 bytes each; large attachments and arbitrary record sizes were not benchmarked.",
+          "Missing-source profiles retain setup files but reference and evaluate no attachments."
+        ],
+        "measurement": "Full adapter.call through encoded JSON, including both grant checks.",
+        "measurements": [
+          {
+            "attachment_bytes": 1160,
+            "attachment_count": 20,
+            "checks": {
+              "all_results_expected": true,
+              "attachments_unchanged": true,
+              "input_byte_bound_met": true,
+              "input_depth_bound_met": true,
+              "input_node_bound_met": true,
+              "input_unchanged": true,
+              "latency_budget_met": true,
+              "output_budget_met": true
+            },
+            "fixture_attachment_bytes": 1160,
+            "fixture_attachment_count": 20,
+            "input_bytes": 184855,
+            "input_depth": 10,
+            "input_nodes": 5840,
+            "max_ms": 104.144,
+            "output_max_bytes": 42381,
+            "p50_ms": 87.806,
+            "p95_ms": 97.686,
+            "passed": true,
+            "profile": "complete",
+            "roles": 20,
+            "sample_ms": [
+              89.603,
+              87.144,
+              85.955,
+              88.952,
+              87.806,
+              86.173,
+              90.028,
+              91.422,
+              87.353,
+              87.87,
+              86.363,
+              97.686,
+              87.951,
+              104.144,
+              84.038,
+              88.023,
+              85.1,
+              84.584,
+              86.127,
+              87.314,
+              89.025
+            ],
+            "samples": 21,
+            "warmup_calls": 1
+          },
+          {
+            "attachment_bytes": 0,
+            "attachment_count": 0,
+            "checks": {
+              "all_results_expected": true,
+              "attachments_unchanged": true,
+              "input_byte_bound_met": true,
+              "input_depth_bound_met": true,
+              "input_node_bound_met": true,
+              "input_unchanged": true,
+              "latency_budget_met": true,
+              "output_budget_met": true
+            },
+            "fixture_attachment_bytes": 1160,
+            "fixture_attachment_count": 20,
+            "input_bytes": 97454,
+            "input_depth": 8,
+            "input_nodes": 2812,
+            "max_ms": 53.562,
+            "output_max_bytes": 36313,
+            "p50_ms": 48.632,
+            "p95_ms": 51.921,
+            "passed": true,
+            "profile": "missing_sources",
+            "roles": 20,
+            "sample_ms": [
+              49.246,
+              50.191,
+              51.921,
+              48.325,
+              50.418,
+              47.613,
+              48.945,
+              47.097,
+              48.888,
+              48.391,
+              47.003,
+              47.271,
+              49.976,
+              49.463,
+              47.6,
+              53.562,
+              47.173,
+              49.906,
+              48.632,
+              47.075,
+              47.289
+            ],
+            "samples": 21,
+            "warmup_calls": 1
+          },
+          {
+            "attachment_bytes": 1740,
+            "attachment_count": 30,
+            "checks": {
+              "all_results_expected": true,
+              "attachments_unchanged": true,
+              "input_byte_bound_met": true,
+              "input_depth_bound_met": true,
+              "input_node_bound_met": true,
+              "input_unchanged": true,
+              "latency_budget_met": true,
+              "output_budget_met": true
+            },
+            "fixture_attachment_bytes": 1740,
+            "fixture_attachment_count": 30,
+            "input_bytes": 274925,
+            "input_depth": 10,
+            "input_nodes": 8660,
+            "max_ms": 132.935,
+            "output_max_bytes": 62981,
+            "p50_ms": 125.036,
+            "p95_ms": 130.835,
+            "passed": true,
+            "profile": "complete",
+            "roles": 30,
+            "sample_ms": [
+              123.277,
+              125.619,
+              123.559,
+              132.935,
+              124.929,
+              130.835,
+              119.689,
+              126.23,
+              129.49,
+              125.855,
+              122.768,
+              128.382,
+              124.546,
+              126.393,
+              123.898,
+              128.089,
+              122.638,
+              125.036,
+              123.621,
+              123.462,
+              128.631
+            ],
+            "samples": 21,
+            "warmup_calls": 1
+          },
+          {
+            "attachment_bytes": 0,
+            "attachment_count": 0,
+            "checks": {
+              "all_results_expected": true,
+              "attachments_unchanged": true,
+              "input_byte_bound_met": true,
+              "input_depth_bound_met": true,
+              "input_node_bound_met": true,
+              "input_unchanged": true,
+              "latency_budget_met": true,
+              "output_budget_met": true
+            },
+            "fixture_attachment_bytes": 1740,
+            "fixture_attachment_count": 30,
+            "input_bytes": 143894,
+            "input_depth": 8,
+            "input_nodes": 4122,
+            "max_ms": 110.404,
+            "output_max_bytes": 53923,
+            "p50_ms": 73.536,
+            "p95_ms": 85.921,
+            "passed": true,
+            "profile": "missing_sources",
+            "roles": 30,
+            "sample_ms": [
+              69.481,
+              71.02,
+              68.328,
+              68.15,
+              65.771,
+              66.503,
+              66.976,
+              68.714,
+              73.553,
+              110.404,
+              85.921,
+              84.17,
+              80.878,
+              76.389,
+              76.59,
+              80.417,
+              69.129,
+              80.101,
+              73.536,
+              78.871,
+              73.181
+            ],
+            "samples": 21,
+            "warmup_calls": 1
+          }
+        ],
+        "overload": {
+          "output_bytes": 117,
+          "passed": true,
+          "report": {
+            "error": {
+              "code": "WORKLOAD_EXCEEDED"
+            },
+            "execution_authorized": false,
+            "ok": false,
+            "schema": "keel.connector.readiness.v1"
+          },
+          "roles": 31
+        },
+        "passed": true,
+        "percentile_method": "p50 median; p95 nearest rank",
+        "samples_per_profile": 21,
+        "supported_roles": 20,
+        "synthetic": true
+      },
+      "execution_authorized": false,
+      "passed": true,
+      "scenarios": [
+        {
+          "checks": {
+            "attachments_unchanged": true,
+            "bounded_output": true,
+            "current_matches_evidence": true,
+            "execution_unauthorized": true,
+            "input_unchanged": true,
+            "one_role_accounted_for": true,
+            "qualified_count": true,
+            "successful_synthetic_report": true
+          },
+          "output_bytes": 3239,
+          "passed": true,
+          "report": {
+            "applications": [
+              {
+                "capture_review_checks_passed": true,
+                "execution_authorized": false,
+                "next_step": {
+                  "code": "VERIFY_PREPARATION_AND_READBACK",
+                  "responsibility": "human"
+                },
+                "reason_codes": [],
+                "scope_ref": "acbbed556013b99839fa4244e78d16a21963b51b7217c95c4df07406b060e6d4",
+                "sources": [
+                  {
+                    "component": "policy",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "b0ef962e04b1950e6c0e54b9da8b617d89859231b9d0171576fcd10f7682c5df",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "form",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "08b45753827d520291422e49273435eb401a07034d08df6dd4b90a0937cc4e52",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "answers",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "395eb3a844a61f3a82b634e25d4e81fb882985c489b54a12616cf9b68cb31ab0",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "attachments",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "6246cbc26372a634a90c7da354c3e8fb38ca4697cb041a2cf51e706aa56a70b3",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "target",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "bb7e6f38e9d1abbbafdf26c682d9c5b69be39cc7347fe80e4e0a8df087626062",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "approval",
+                    "expires_at": "2026-09-18T12:02:00+00:00",
+                    "observed_at": "2026-09-18T12:00:00+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "4097f4a2f38d5b6556276300211af2bd1e3688d41639f5bac3ac8865dc1edf4a",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "route",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "d81492c3c6423567bdc5e58cf627a9874f6b72cc6213339ea984c0d7f630e871",
+                    "status": "READY"
+                  }
+                ],
+                "state": "CAPTURE_TO_REVIEW_CHECKS_PASSED"
+              }
+            ],
+            "canonical_current": true,
+            "current": true,
+            "evaluated_at": "2026-09-18T12:00:00+00:00",
+            "execution_authorized": false,
+            "freshness_basis": "AS_OF_EVALUATED_AT",
+            "observed_at": "2026-09-18T12:00:00+00:00",
+            "ok": true,
+            "pins": {
+              "flow_sha256": "746f7e002a6fa122be20966998f01de8725a6c2dea1cead8e338f9b4c03a1b19",
+              "snapshot_sha256": "d562dcacf8a9fc7809a7926d2fab935a53ff72ee5e9d64fd7d0b7f7a64aeaba5",
+              "source_revision_sha256": "f99a0b1805e6abb6a7f0fc699979dc09132cb445f3124d55920fedf8399ae55f",
+              "source_snapshot_sha256": "ebd8d52a9366978f69db4a00e4bb9de16d05488e38847220084031a1110299d8"
+            },
+            "pipeline_active": true,
+            "returned_roles": 1,
+            "schema": "keel.connector.readiness.v1",
+            "source_snapshot": {
+              "expires_at": "2026-09-18T12:01:30+00:00",
+              "observed_at": "2026-09-18T12:00:00+00:00",
+              "reason_code": null,
+              "status": "READY"
+            },
+            "synthetic": true,
+            "uncertainty": {
+              "canonical_packet_content_verified": false,
+              "factual_support_verified": false,
+              "form_readback": "NOT_RUN",
+              "operator_authenticity_verified": false,
+              "question_impact": "NOT_ASSESSED",
+              "rendered_preparation": "NOT_RUN",
+              "source_authenticity_verified": false
+            },
+            "workspace_ref": "947928760ff88610d7b3ff42fb00742a410243c858386f2d4e1ad4c26112ec25",
+            "workspace_roles": 1
+          },
+          "scenario": "current",
+          "synthetic": true
+        },
+        {
+          "checks": {
+            "attachments_unchanged": true,
+            "bounded_output": true,
+            "current_matches_evidence": true,
+            "execution_unauthorized": true,
+            "input_unchanged": true,
+            "one_role_accounted_for": true,
+            "original_observation_preserved": true,
+            "qualified_count": true,
+            "refresh_unknown": true,
+            "successful_synthetic_report": true
+          },
+          "output_bytes": 3399,
+          "passed": true,
+          "report": {
+            "applications": [
+              {
+                "capture_review_checks_passed": false,
+                "execution_authorized": false,
+                "next_step": {
+                  "code": "REFRESH_COMPLETE_WORKSPACE",
+                  "responsibility": "system"
+                },
+                "reason_codes": [
+                  "assurance_not_passed",
+                  "assurance_review_required",
+                  "assurance_unverified",
+                  "material_review_required",
+                  "observation_stale",
+                  "refresh_current_export",
+                  "source_records_incomplete"
+                ],
+                "scope_ref": "acbbed556013b99839fa4244e78d16a21963b51b7217c95c4df07406b060e6d4",
+                "sources": [
+                  {
+                    "component": "policy",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "b0ef962e04b1950e6c0e54b9da8b617d89859231b9d0171576fcd10f7682c5df",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "form",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "08b45753827d520291422e49273435eb401a07034d08df6dd4b90a0937cc4e52",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "answers",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "395eb3a844a61f3a82b634e25d4e81fb882985c489b54a12616cf9b68cb31ab0",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "attachments",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "6246cbc26372a634a90c7da354c3e8fb38ca4697cb041a2cf51e706aa56a70b3",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "target",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "bb7e6f38e9d1abbbafdf26c682d9c5b69be39cc7347fe80e4e0a8df087626062",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "approval",
+                    "expires_at": "2026-09-18T12:02:00+00:00",
+                    "observed_at": "2026-09-18T12:00:00+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "4097f4a2f38d5b6556276300211af2bd1e3688d41639f5bac3ac8865dc1edf4a",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "route",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "d81492c3c6423567bdc5e58cf627a9874f6b72cc6213339ea984c0d7f630e871",
+                    "status": "READY"
+                  }
+                ],
+                "state": "UNKNOWN"
+              }
+            ],
+            "canonical_current": false,
+            "current": false,
+            "evaluated_at": "2026-09-18T12:01:31+00:00",
+            "execution_authorized": false,
+            "freshness_basis": "AS_OF_EVALUATED_AT",
+            "observed_at": "2026-09-18T12:00:00+00:00",
+            "ok": true,
+            "pins": {
+              "flow_sha256": "746f7e002a6fa122be20966998f01de8725a6c2dea1cead8e338f9b4c03a1b19",
+              "snapshot_sha256": "d562dcacf8a9fc7809a7926d2fab935a53ff72ee5e9d64fd7d0b7f7a64aeaba5",
+              "source_revision_sha256": "f99a0b1805e6abb6a7f0fc699979dc09132cb445f3124d55920fedf8399ae55f",
+              "source_snapshot_sha256": "ebd8d52a9366978f69db4a00e4bb9de16d05488e38847220084031a1110299d8"
+            },
+            "pipeline_active": true,
+            "returned_roles": 1,
+            "schema": "keel.connector.readiness.v1",
+            "source_snapshot": {
+              "expires_at": "2026-09-18T12:01:30+00:00",
+              "observed_at": "2026-09-18T12:00:00+00:00",
+              "reason_code": "source_expired",
+              "status": "STALE"
+            },
+            "synthetic": true,
+            "uncertainty": {
+              "canonical_packet_content_verified": false,
+              "factual_support_verified": false,
+              "form_readback": "NOT_RUN",
+              "operator_authenticity_verified": false,
+              "question_impact": "NOT_ASSESSED",
+              "rendered_preparation": "NOT_RUN",
+              "source_authenticity_verified": false
+            },
+            "workspace_ref": "947928760ff88610d7b3ff42fb00742a410243c858386f2d4e1ad4c26112ec25",
+            "workspace_roles": 1
+          },
+          "scenario": "stale",
+          "synthetic": true
+        },
+        {
+          "checks": {
+            "attachments_unchanged": true,
+            "bounded_output": true,
+            "current_matches_evidence": true,
+            "execution_unauthorized": true,
+            "input_unchanged": true,
+            "one_role_accounted_for": true,
+            "original_observation_preserved": true,
+            "qualified_count": true,
+            "refresh_unknown": true,
+            "successful_synthetic_report": true
+          },
+          "output_bytes": 3238,
+          "passed": true,
+          "report": {
+            "applications": [
+              {
+                "capture_review_checks_passed": false,
+                "execution_authorized": false,
+                "next_step": {
+                  "code": "REFRESH_COMPLETE_WORKSPACE",
+                  "responsibility": "system"
+                },
+                "reason_codes": [
+                  "refresh_current_export"
+                ],
+                "scope_ref": "acbbed556013b99839fa4244e78d16a21963b51b7217c95c4df07406b060e6d4",
+                "sources": [
+                  {
+                    "component": "policy",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "b0ef962e04b1950e6c0e54b9da8b617d89859231b9d0171576fcd10f7682c5df",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "form",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "08b45753827d520291422e49273435eb401a07034d08df6dd4b90a0937cc4e52",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "answers",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "395eb3a844a61f3a82b634e25d4e81fb882985c489b54a12616cf9b68cb31ab0",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "attachments",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "6246cbc26372a634a90c7da354c3e8fb38ca4697cb041a2cf51e706aa56a70b3",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "target",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "bb7e6f38e9d1abbbafdf26c682d9c5b69be39cc7347fe80e4e0a8df087626062",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "approval",
+                    "expires_at": "2026-09-18T12:02:00+00:00",
+                    "observed_at": "2026-09-18T12:00:00+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "4097f4a2f38d5b6556276300211af2bd1e3688d41639f5bac3ac8865dc1edf4a",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "route",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "d81492c3c6423567bdc5e58cf627a9874f6b72cc6213339ea984c0d7f630e871",
+                    "status": "READY"
+                  }
+                ],
+                "state": "UNKNOWN"
+              }
+            ],
+            "canonical_current": false,
+            "current": false,
+            "evaluated_at": "2026-09-18T12:00:00+00:00",
+            "execution_authorized": false,
+            "freshness_basis": "AS_OF_EVALUATED_AT",
+            "observed_at": "2026-09-18T12:00:00+00:00",
+            "ok": true,
+            "pins": {
+              "flow_sha256": "6421f6ecd75e37dc7766727ac3546b275d80b4311267f42df737811e0a262321",
+              "snapshot_sha256": "3007df4d9ab34810ef0d78adc059999aa9a5dfbda350486e64ca0545cffcfc1c",
+              "source_revision_sha256": "f99a0b1805e6abb6a7f0fc699979dc09132cb445f3124d55920fedf8399ae55f",
+              "source_snapshot_sha256": "ebd8d52a9366978f69db4a00e4bb9de16d05488e38847220084031a1110299d8"
+            },
+            "pipeline_active": true,
+            "returned_roles": 1,
+            "schema": "keel.connector.readiness.v1",
+            "source_snapshot": {
+              "expires_at": "2026-09-18T12:01:30+00:00",
+              "observed_at": "2026-09-18T12:00:00+00:00",
+              "reason_code": null,
+              "status": "READY"
+            },
+            "synthetic": true,
+            "uncertainty": {
+              "canonical_packet_content_verified": false,
+              "factual_support_verified": false,
+              "form_readback": "NOT_RUN",
+              "operator_authenticity_verified": false,
+              "question_impact": "NOT_ASSESSED",
+              "rendered_preparation": "NOT_RUN",
+              "source_authenticity_verified": false
+            },
+            "workspace_ref": "947928760ff88610d7b3ff42fb00742a410243c858386f2d4e1ad4c26112ec25",
+            "workspace_roles": 1
+          },
+          "scenario": "incomplete",
+          "synthetic": true
+        },
+        {
+          "checks": {
+            "attachments_unchanged": true,
+            "bounded_output": true,
+            "execution_unauthorized": true,
+            "expected_error": true,
+            "input_unchanged": true,
+            "no_partial_applications": true
+          },
+          "output_bytes": 116,
+          "passed": true,
+          "report": {
+            "error": {
+              "code": "INVALID_SNAPSHOT"
+            },
+            "execution_authorized": false,
+            "ok": false,
+            "schema": "keel.connector.readiness.v1"
+          },
+          "scenario": "malformed",
+          "synthetic": true
+        },
+        {
+          "checks": {
+            "attachments_unchanged": true,
+            "bounded_output": true,
+            "execution_unauthorized": true,
+            "expected_error": true,
+            "input_unchanged": true,
+            "no_partial_applications": true
+          },
+          "output_bytes": 113,
+          "passed": true,
+          "report": {
+            "error": {
+              "code": "ACCESS_DENIED"
+            },
+            "execution_authorized": false,
+            "ok": false,
+            "schema": "keel.connector.readiness.v1"
+          },
+          "scenario": "cross_user",
+          "synthetic": true
+        },
+        {
+          "checks": {
+            "attachments_unchanged": true,
+            "bounded_output": true,
+            "execution_unauthorized": true,
+            "expected_error": true,
+            "grant_rechecked_before_output": true,
+            "input_unchanged": true,
+            "no_partial_applications": true
+          },
+          "output_bytes": 113,
+          "passed": true,
+          "report": {
+            "error": {
+              "code": "ACCESS_DENIED"
+            },
+            "execution_authorized": false,
+            "ok": false,
+            "schema": "keel.connector.readiness.v1"
+          },
+          "scenario": "revoked_grant",
+          "synthetic": true
+        },
+        {
+          "checks": {
+            "attachments_unchanged": true,
+            "bounded_output": true,
+            "current_matches_evidence": true,
+            "execution_unauthorized": true,
+            "existing_human_request": true,
+            "input_unchanged": true,
+            "one_role_accounted_for": true,
+            "qualified_count": true,
+            "successful_synthetic_report": true
+          },
+          "output_bytes": 3206,
+          "passed": true,
+          "report": {
+            "applications": [
+              {
+                "capture_review_checks_passed": false,
+                "execution_authorized": false,
+                "next_step": {
+                  "code": "REVIEW_EXISTING_APPROVAL_REQUEST",
+                  "responsibility": "human"
+                },
+                "reason_codes": [
+                  "source_records_incomplete"
+                ],
+                "scope_ref": "acbbed556013b99839fa4244e78d16a21963b51b7217c95c4df07406b060e6d4",
+                "sources": [
+                  {
+                    "component": "policy",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "b0ef962e04b1950e6c0e54b9da8b617d89859231b9d0171576fcd10f7682c5df",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "form",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "08b45753827d520291422e49273435eb401a07034d08df6dd4b90a0937cc4e52",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "answers",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "395eb3a844a61f3a82b634e25d4e81fb882985c489b54a12616cf9b68cb31ab0",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "attachments",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "6246cbc26372a634a90c7da354c3e8fb38ca4697cb041a2cf51e706aa56a70b3",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "target",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "bb7e6f38e9d1abbbafdf26c682d9c5b69be39cc7347fe80e4e0a8df087626062",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "approval",
+                    "expires_at": "2026-09-18T12:01:00+00:00",
+                    "observed_at": "2026-09-18T12:00:00+00:00",
+                    "reason_code": "human_decision_required",
+                    "responsibility": "human",
+                    "revision_sha256": null,
+                    "status": "MISSING"
+                  },
+                  {
+                    "component": "route",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "d81492c3c6423567bdc5e58cf627a9874f6b72cc6213339ea984c0d7f630e871",
+                    "status": "READY"
+                  }
+                ],
+                "state": "BLOCKED"
+              }
+            ],
+            "canonical_current": true,
+            "current": true,
+            "evaluated_at": "2026-09-18T12:00:00+00:00",
+            "execution_authorized": false,
+            "freshness_basis": "AS_OF_EVALUATED_AT",
+            "observed_at": "2026-09-18T12:00:00+00:00",
+            "ok": true,
+            "pins": {
+              "flow_sha256": "746f7e002a6fa122be20966998f01de8725a6c2dea1cead8e338f9b4c03a1b19",
+              "snapshot_sha256": "8d01395867eb1a36bf9fb72fe8e209bcb59150630340b0c340f7061e34b3103d",
+              "source_revision_sha256": "f99a0b1805e6abb6a7f0fc699979dc09132cb445f3124d55920fedf8399ae55f",
+              "source_snapshot_sha256": "1b1cd5e1d4b539406fdbc26ea16e58b238a9acfd6f59f9395177f5ad3623e043"
+            },
+            "pipeline_active": true,
+            "returned_roles": 1,
+            "schema": "keel.connector.readiness.v1",
+            "source_snapshot": {
+              "expires_at": "2026-09-18T12:01:30+00:00",
+              "observed_at": "2026-09-18T12:00:00+00:00",
+              "reason_code": null,
+              "status": "READY"
+            },
+            "synthetic": true,
+            "uncertainty": {
+              "canonical_packet_content_verified": false,
+              "factual_support_verified": false,
+              "form_readback": "NOT_RUN",
+              "operator_authenticity_verified": false,
+              "question_impact": "NOT_ASSESSED",
+              "rendered_preparation": "NOT_RUN",
+              "source_authenticity_verified": false
+            },
+            "workspace_ref": "947928760ff88610d7b3ff42fb00742a410243c858386f2d4e1ad4c26112ec25",
+            "workspace_roles": 1
+          },
+          "scenario": "pending_human",
+          "synthetic": true
+        },
+        {
+          "checks": {
+            "attachments_unchanged": true,
+            "bounded_output": true,
+            "current_matches_evidence": true,
+            "execution_unauthorized": true,
+            "input_unchanged": true,
+            "one_role_accounted_for": true,
+            "qualified_count": true,
+            "source_status_preserved": true,
+            "successful_synthetic_report": true
+          },
+          "output_bytes": 3212,
+          "passed": true,
+          "report": {
+            "applications": [
+              {
+                "capture_review_checks_passed": false,
+                "execution_authorized": false,
+                "next_step": {
+                  "code": "REFRESH_OR_REPAIR_SOURCE_EVIDENCE",
+                  "responsibility": "system"
+                },
+                "reason_codes": [
+                  "source_records_incomplete",
+                  "source_semantics:policy:source_expired"
+                ],
+                "scope_ref": "acbbed556013b99839fa4244e78d16a21963b51b7217c95c4df07406b060e6d4",
+                "sources": [
+                  {
+                    "component": "policy",
+                    "expires_at": "2026-09-18T11:59:59+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": "source_expired",
+                    "responsibility": "system",
+                    "revision_sha256": null,
+                    "status": "STALE"
+                  },
+                  {
+                    "component": "form",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "08b45753827d520291422e49273435eb401a07034d08df6dd4b90a0937cc4e52",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "answers",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "395eb3a844a61f3a82b634e25d4e81fb882985c489b54a12616cf9b68cb31ab0",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "attachments",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "6246cbc26372a634a90c7da354c3e8fb38ca4697cb041a2cf51e706aa56a70b3",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "target",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "bb7e6f38e9d1abbbafdf26c682d9c5b69be39cc7347fe80e4e0a8df087626062",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "approval",
+                    "expires_at": "2026-09-18T12:02:00+00:00",
+                    "observed_at": "2026-09-18T12:00:00+00:00",
+                    "reason_code": "approval_dependencies_unavailable",
+                    "responsibility": "system",
+                    "revision_sha256": null,
+                    "status": "INVALID"
+                  },
+                  {
+                    "component": "route",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "d81492c3c6423567bdc5e58cf627a9874f6b72cc6213339ea984c0d7f630e871",
+                    "status": "READY"
+                  }
+                ],
+                "state": "BLOCKED"
+              }
+            ],
+            "canonical_current": true,
+            "current": true,
+            "evaluated_at": "2026-09-18T12:00:00+00:00",
+            "execution_authorized": false,
+            "freshness_basis": "AS_OF_EVALUATED_AT",
+            "observed_at": "2026-09-18T12:00:00+00:00",
+            "ok": true,
+            "pins": {
+              "flow_sha256": "746f7e002a6fa122be20966998f01de8725a6c2dea1cead8e338f9b4c03a1b19",
+              "snapshot_sha256": "599bc584ec2869e04ccb844716fe6f5cd919be1a44a46a55c342bee25efd3e20",
+              "source_revision_sha256": "f99a0b1805e6abb6a7f0fc699979dc09132cb445f3124d55920fedf8399ae55f",
+              "source_snapshot_sha256": "a1e706486cd68498ee8f7993313b6c62ecf30c69577f5e9d79d1911dc32965ab"
+            },
+            "pipeline_active": true,
+            "returned_roles": 1,
+            "schema": "keel.connector.readiness.v1",
+            "source_snapshot": {
+              "expires_at": "2026-09-18T12:01:30+00:00",
+              "observed_at": "2026-09-18T12:00:00+00:00",
+              "reason_code": null,
+              "status": "READY"
+            },
+            "synthetic": true,
+            "uncertainty": {
+              "canonical_packet_content_verified": false,
+              "factual_support_verified": false,
+              "form_readback": "NOT_RUN",
+              "operator_authenticity_verified": false,
+              "question_impact": "NOT_ASSESSED",
+              "rendered_preparation": "NOT_RUN",
+              "source_authenticity_verified": false
+            },
+            "workspace_ref": "947928760ff88610d7b3ff42fb00742a410243c858386f2d4e1ad4c26112ec25",
+            "workspace_roles": 1
+          },
+          "scenario": "expired_source",
+          "synthetic": true
+        },
+        {
+          "checks": {
+            "attachments_unchanged": true,
+            "bounded_output": true,
+            "current_matches_evidence": true,
+            "execution_unauthorized": true,
+            "input_unchanged": true,
+            "one_role_accounted_for": true,
+            "qualified_count": true,
+            "source_status_preserved": true,
+            "successful_synthetic_report": true
+          },
+          "output_bytes": 3202,
+          "passed": true,
+          "report": {
+            "applications": [
+              {
+                "capture_review_checks_passed": false,
+                "execution_authorized": false,
+                "next_step": {
+                  "code": "REFRESH_OR_REPAIR_SOURCE_EVIDENCE",
+                  "responsibility": "system"
+                },
+                "reason_codes": [
+                  "source_records_incomplete"
+                ],
+                "scope_ref": "acbbed556013b99839fa4244e78d16a21963b51b7217c95c4df07406b060e6d4",
+                "sources": [
+                  {
+                    "component": "policy",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "b0ef962e04b1950e6c0e54b9da8b617d89859231b9d0171576fcd10f7682c5df",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "form",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "08b45753827d520291422e49273435eb401a07034d08df6dd4b90a0937cc4e52",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "answers",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "395eb3a844a61f3a82b634e25d4e81fb882985c489b54a12616cf9b68cb31ab0",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "attachments",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "6246cbc26372a634a90c7da354c3e8fb38ca4697cb041a2cf51e706aa56a70b3",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "target",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "bb7e6f38e9d1abbbafdf26c682d9c5b69be39cc7347fe80e4e0a8df087626062",
+                    "status": "READY"
+                  },
+                  {
+                    "component": "approval",
+                    "expires_at": "2026-09-18T12:02:00+00:00",
+                    "observed_at": "2026-09-18T12:00:00+00:00",
+                    "reason_code": "approval_revoked",
+                    "responsibility": "system",
+                    "revision_sha256": null,
+                    "status": "REVOKED"
+                  },
+                  {
+                    "component": "route",
+                    "expires_at": "2026-09-18T12:10:00+00:00",
+                    "observed_at": "2026-09-18T11:59:40+00:00",
+                    "reason_code": null,
+                    "responsibility": "none",
+                    "revision_sha256": "d81492c3c6423567bdc5e58cf627a9874f6b72cc6213339ea984c0d7f630e871",
+                    "status": "READY"
+                  }
+                ],
+                "state": "BLOCKED"
+              }
+            ],
+            "canonical_current": true,
+            "current": true,
+            "evaluated_at": "2026-09-18T12:00:00+00:00",
+            "execution_authorized": false,
+            "freshness_basis": "AS_OF_EVALUATED_AT",
+            "observed_at": "2026-09-18T12:00:00+00:00",
+            "ok": true,
+            "pins": {
+              "flow_sha256": "746f7e002a6fa122be20966998f01de8725a6c2dea1cead8e338f9b4c03a1b19",
+              "snapshot_sha256": "a67a813f48ae9804fbd445040c7d5c5d01767ab15f5272beb0184f6d44bddfa3",
+              "source_revision_sha256": "f99a0b1805e6abb6a7f0fc699979dc09132cb445f3124d55920fedf8399ae55f",
+              "source_snapshot_sha256": "949136e5724f2e948ac0c40913b8e84350f642d997ba1877eba802ca0bc68f35"
+            },
+            "pipeline_active": true,
+            "returned_roles": 1,
+            "schema": "keel.connector.readiness.v1",
+            "source_snapshot": {
+              "expires_at": "2026-09-18T12:01:30+00:00",
+              "observed_at": "2026-09-18T12:00:00+00:00",
+              "reason_code": null,
+              "status": "READY"
+            },
+            "synthetic": true,
+            "uncertainty": {
+              "canonical_packet_content_verified": false,
+              "factual_support_verified": false,
+              "form_readback": "NOT_RUN",
+              "operator_authenticity_verified": false,
+              "question_impact": "NOT_ASSESSED",
+              "rendered_preparation": "NOT_RUN",
+              "source_authenticity_verified": false
+            },
+            "workspace_ref": "947928760ff88610d7b3ff42fb00742a410243c858386f2d4e1ad4c26112ec25",
+            "workspace_roles": 1
+          },
+          "scenario": "revoked_approval",
+          "synthetic": true
+        }
+      ],
+      "schema": "keel.connector.synthetic_demo.v1",
+      "setup": "Explicit synthetic fixture writes in TemporaryDirectory; deleted after the run.",
+      "synthetic": true,
+      "verification_boundary": "Offline report behavior only; no Muse interoperability or approval established."
+    }
+  },
+  "schema": "keel.connector.qualification_evidence.v1",
+  "source_binding": {
+    "keel_connector/__init__.py": "b1ef393c7e65a2499817bc1525644d11b69d48fbabaf1008f49fa627d28db887",
+    "keel_connector/adapter.py": "00c28603f054cb3df75174b121c5909d26a863493149918e0223fa6ae6d75394",
+    "keel_connector/demo.py": "1050cbb9e618580d1d6a6ac5626416b63a1e98f3146da087106bdae0423e2a21",
+    "keel_connector/synthetic.py": "cfe7f14afe05cdc94629e5f53f633f3e2efc94b8454f03ea262670bdb86301c1",
+    "tests/test_connector_readiness.py": "0a9a58c1a8351fce3782b062367f57e44e8ea3c7289ac8e5a465aedb0b901dc3"
+  },
+  "source_binding_note": "SHA-256 binds tested source bytes; exact remote head and independent review are recorded in the draft PR.",
+  "synthetic": true,
+  "tests": {
+    "after_unittest": {
+      "KEEL_HOME": "temporary writable test directory",
+      "errors": 95,
+      "failures": 2,
+      "interpreter": "3.12.14",
+      "ran": 1639,
+      "skipped": 19
+    },
+    "baseline_failure_causes": {
+      "environment_failures": 2,
+      "readonly_default_home_errors": 12,
+      "untrusted_ancestor_owner_errors": 95
+    },
+    "baseline_unittest": {
+      "errors": 107,
+      "failures": 2,
+      "ran": 1592,
+      "skipped": 19
+    },
+    "broad_pytest": "NOT_PASSED: collection interrupted by missing baseline security.secrets package",
+    "broader_ci_before_rebase": {
+      "browser_workflow": "not run locally",
+      "completion_outcome_eval": "10 / 85 / 123 passed each interpreter",
+      "head": "ab31d330b335962ee6dc9df75df3d030775e4e90",
+      "honesty_demo": "passed",
+      "hypothesis": "252 passed,14 subtests,1 skipped absent answer bank each interpreter",
+      "matched_cache": "blocked by ancestor guard",
+      "note": "Recorded before reconciliation, not relabeled as final-head full CI.",
+      "operational_scoring_recovery": "219 / 40 / 33 passed each interpreter",
+      "optimization": "98 passed,15 subtests,31 baseline guard failures,2 guard errors",
+      "productivity_history": "10000 cycles passed",
+      "recovery_profile": "456 passed,77 subtests,1 baseline ancestor-guard failure",
+      "tailoring_audit": "90 cases,90 controls,zero false verifications",
+      "tailoring_fit_floor": "132 / 234 passed each interpreter; 420 fit-floor subtests"
+    },
+    "combined_main_added_regressions": [
+      "preparation_identity_guards",
+      "preparation_lease_immutability",
+      "prescreen_packet_immutability",
+      "prescreen_answer_authority",
+      "tray_custom_answer_reuse",
+      "input_tray_digest_guards"
+    ],
+    "connector_tests_included": 34,
+    "initial_after_unittest": {
+      "errors": 107,
+      "failures": 2,
+      "ran": 1626,
+      "skipped": 19
+    },
+    "integrated_failure_comparison": "All 97 failing identifiers match the pre-rebase temporary-home run. Initial default-home runs additionally had 12 read-only home errors. No guard changed.",
+    "offline_mcp_each_interpreter": "78 passed",
+    "python311": "643 passed, 169 subtests passed",
+    "python312": "643 passed, 169 subtests passed",
+    "regression_after": "Both combined cases and missing adapter regression pass in connector suite",
+    "regression_before": "Missing adapter: 1 failed; independent review combined cases: 2 failed",
+    "temporary_home_prerebase_unittest": {
+      "errors": 95,
+      "failures": 2,
+      "interpreter": "3.11.16",
+      "ran": 1626,
+      "skipped": 19
+    },
+    "unittest_failure_names_unchanged": true
+  }
+}
