@@ -1,10 +1,12 @@
 # Muse connector: bounded read-only account report
 
-This first slice answers: **What is blocking my applications, how current is that evidence, and what review or verification step could help next?** The outcome is a report. It does not prepare, approve, release or submit an application.
+This bounded connector answers: **What is blocking my applications, how current is that evidence, and what review or verification step could help next?** The outcome is a report. It does not prepare, approve, release or submit an application.
 
-Initial source baseline: `KeelDev-tech/keel` main commit `706ef51a81d0418a33d390105a693bddf3507a70`. The seven additive files were then reconciled onto final main `cb6a90d8aaf9b95183a7bc990ec097805dfe679e` after PR136, without duplicating or changing its fixes. Platform requirements were checked on **2026-10-08**. Local synthetic qualification and its limits are recorded below; the draft PR records the exact reviewed head.
+Current packaging source baseline: `KeelDev-tech/keel` main commit `d5f66bf487bf1d6859ebec762050d4fdf333535a`, which merged the post-read authorization correction in [PR #142](https://github.com/KeelDev-tech/keel/pull/142). Its tree matched reviewed correction head `cd71fbe92a396e62d7524205a2a5bb522b1a19f9`, and all eight main CI checks completed successfully. The correction adds authorization rechecks before post-read error responses. The reconciled source archive passes the extracted-runtime checks below on both supported interpreters; each final artifact requires its own external evidence binding.
 
-The baseline lacks the portable `keel_connector` package: `importlib.util.find_spec("keel_connector")` returned `None`, while `keel_live.surface` and `keel_live.proof` were present. This is an additive, transport-neutral contract over those existing reducers. Presence in a checkout establishes neither installed distribution nor interoperability with Muse.
+Earlier [PR #141](https://github.com/KeelDev-tech/keel/pull/141) merged as `6de159aaea28ce85c3d444392c0d49838a933ff0`; its reviewed head was `24272a49ad1b1e1fafe8df29a28293d7ff400ee9`, based on `cb6a90d8aaf9b95183a7bc990ec097805dfe679e` after PR #136. Its original source tests and measurements are retained as historical evidence below. Platform requirements were checked on **2026-10-08**.
+
+The initial pre-connector baseline `706ef51a81d0418a33d390105a693bddf3507a70` lacked `keel_connector`: `importlib.util.find_spec("keel_connector")` returned `None`, while `keel_live.surface` and `keel_live.proof` were present. PR #141 added the transport-neutral contract over those reducers. The follow-up packages its bounded runtime and synthetic demo in the existing private source ZIP. Source availability or successful extraction establishes neither a pip installation nor interoperability with Muse.
 
 ## Public platform requirements and remaining qualification
 
@@ -22,11 +24,11 @@ The [Connector Platform Terms](https://muse.ai/platform/terms) displayed a login
 | Dedicated test demo | Synthetic scenarios and commands below | Accessible reviewer account and secure credentials |
 | Organization and legal | Gaps explicitly recorded | Business verification, branding, privacy/terms, support/security contacts and maintenance owner |
 | Review and discovery | No approval claim | Submission, risk/tool review and end-to-end QA |
-| Distribution | Source changes only | Release inventory, installation and artifact qualification |
+| Source distribution | Explicit dependency allowlist; reconciled extracted ZIP passes the stdlib harness on Linux Python 3.11/3.12 | Installation channel, production host integration and public distribution authorization |
 
 ## Existing contracts remain authoritative
 
-`keel_live.surface.qualified_view` calls `keel_live.proof.build_proof`; the report must use this qualification path instead of inventing another set of readiness gates. See [LIVE_INTEGRATION.md](LIVE_INTEGRATION.md), [surface.py](../keel_live/surface.py), [proof.py](../keel_live/proof.py) and [review.py](../keel_live/review.py).
+`keel_live.surface.qualified_view` calls `keel_live.proof.build_proof`; the report must use this qualification path instead of inventing another set of readiness gates. See the [pinned Live integration reference](https://github.com/KeelDev-tech/keel/blob/6de159aaea28ce85c3d444392c0d49838a933ff0/docs/LIVE_INTEGRATION.md), [surface.py](../keel_live/surface.py), [proof.py](../keel_live/proof.py) and [review.py](../keel_live/review.py). The reference describes a broader historical subsystem; the source ZIP supports only the connector entrypoints documented here.
 
 `REVIEW_CHECKS_PASSED` describes capture-to-review checks in the supplied snapshot. It does not establish source truth, authenticated provenance, final packet correctness, rendered form values, current provider acceptance or permission to act. Every result preserves `execution_authorized: false`. Synthetic evidence stays synthetic; no test result counts as an operational application or successful submission.
 
@@ -34,7 +36,7 @@ Source and packet revisions, target and route bindings, assurance, trust, holds,
 
 Conditional question-impact counts are omitted. `keel_flow.questions.prioritize` alone does not establish current dependencies. `keel_flow.board.build` checks them against canonical gates and holds and sets `questions.current_dependencies_verified`; the Workbench projection does not preserve that flag. No response promises that answering one question creates a submission.
 
-The existing [MCP sample](../integrations/mcp-server/mcp-server/README.md) is loopback-only, unauthenticated and limited to synthetic data. Its warning against unauthenticated proxy/tunnel exposure remains intact. It is not repurposed by this adapter.
+The existing [MCP sample](https://github.com/KeelDev-tech/keel/blob/6de159aaea28ce85c3d444392c0d49838a933ff0/integrations/mcp-server/mcp-server/README.md) is loopback-only, unauthenticated and limited to synthetic data. Its warning against unauthenticated proxy/tunnel exposure remains intact. It is neither repurposed nor included by this packaging change.
 
 ## Host boundary and permission setup
 
@@ -42,7 +44,7 @@ The embedding host injects `principal_provider`, `snapshot_provider`, `workspace
 
 Every call obtains the current principal and a complete, internally consistent workspace snapshot. It checks authorization for **all** role/application scopes before invoking the full-workspace projection. A requested application is selected only after that authorization and qualification. Filtering out unauthorized rows before evaluation would invalidate graph, identity and history checks and is forbidden. A new role outside the current grant denies the report; the host must rebuild a valid export or update the actual grant.
 
-Before returning, the adapter rechecks that the host still supplies the same authorized principal. A revoked or changed grant denies the result. This check is local evidence of the host callback contract, not independent proof of identity or distributed revocation guarantees. The host must promptly update that callback on logout, revocation or reassignment and protect responses already delivered to a caller.
+Before every response after reading host state, including errors, the adapter rechecks that the host still supplies the same authorized principal and reauthorizes collected scopes. A revoked, changed or unavailable current grant returns `ACCESS_DENIED`, overriding any scope-dependent diagnostic. This check is local evidence of the host callback contract, not independent proof of identity or distributed revocation guarantees. The host must promptly update that callback on logout, revocation or reassignment and protect responses already delivered to a caller.
 
 The client cannot choose a principal, account/workspace, application identity, filesystem path, source body, attachment directory, operational/synthetic label or evaluation time. Unknown input fields are rejected. Host-provider failures are returned as bounded diagnostics without exception text or private values. Host callbacks must themselves be read-only; their implementation is outside this adapter. The host must serialize grant/account changes with response delivery, since the second check alone is not a distributed revocation protocol.
 
@@ -119,6 +121,15 @@ application report. Errors remain under 200 bytes. Exact codes are
 `EVALUATION_FAILED`. Expected malformed/binding failures use `INVALID_SNAPSHOT`;
 unexpected reducer failures use `EVALUATION_FAILED`.
 
+Those diagnostic codes apply only while the original host grant remains current.
+Every return after the host snapshot/clock read passes through the authorization
+recheck, including `HOST_UNAVAILABLE`, `NOT_FOUND`, `WORKLOAD_EXCEEDED`,
+`INVALID_SNAPSHOT`, `OUTPUT_LIMIT_EXCEEDED` and `EVALUATION_FAILED`.
+If the current principal is changed, revoked or cannot be obtained, the response
+is `ACCESS_DENIED`. Stable grants preserve the existing error codes. Request
+validation still occurs before any host read; malformed client JSON cannot use
+an error response to inspect host state.
+
 | Failure class | Required behavior | Appropriate recovery |
 | --- | --- | --- |
 | Invalid JSON, duplicate keys, wrong shape, unknown field/tool | Reject before evaluation | Correct the documented request |
@@ -157,7 +168,8 @@ Measure both incomplete-source reports and representative fully supplied synthet
 
 Exercise 31 roles, oversized byte/node/depth inputs and oversized results separately. Overload must reject predictably within the bounded error contract. Do not raise security caps, cut unauthorized rows from a canonical snapshot or omit expensive checks to manufacture headroom. A latency target failure is a failed qualification result, not proof that the entire report remains current.
 
-Measured on 2026-10-08 using CPython 3.11.16 and 3.12.14, Linux x86_64
+The following historical PR #141 checkout measurements were recorded on
+2026-10-08 using CPython 3.11.16 and 3.12.14, Linux x86_64
 6.18.44, AMD EPYC 9V74, 5 available logical CPUs and a 16 GiB cgroup memory
 limit (shared resources). Each profile has one warmup and 21 serial samples;
 p95 uses nearest rank. Timings include both host grant checks, complete-workspace
@@ -187,14 +199,16 @@ the security caps. Large attachments, adversarial maximum-size evidence, cold
 storage, concurrency, network service and actual backlog capacity are unmeasured.
 
 Full samples, environment, minimized synthetic demonstrations and source-file
-hashes are retained in [qualification.json](../keel_connector/evidence/qualification.json).
+hashes are retained unchanged in [qualification.json](../keel_connector/evidence/qualification.json).
+That file is historical PR #141 evidence. It does not certify a newly built ZIP
+or replace measurements made from its extracted source.
 
 
 ## Synthetic demo and required verification evidence
 
 The dedicated offline demo belongs under `keel_connector/`, with tests in `tests/test_connector_readiness.py`. It uses generated synthetic identities, sources and host principals only. It needs no account, paid service, live collection or scan, external model, browser or credentials.
 
-| Scenario | Required assertion | Evidence status |
+| Scenario | Required assertion | Historical PR #141 evidence |
 | --- | --- | --- |
 | Current synthetic workspace | Real qualified reducers; correct bounded report; no execution authority | Verified in synthetic tests |
 | Stale and future evidence | Original timestamps retained; refresh/unknown | Verified in synthetic tests |
@@ -225,33 +239,41 @@ cover future evidence, missing history, changed attachment bytes, pending approv
 combined with source failures, missing/expired source wrappers, and every bound.
 No paid service, external model or browser is required.
 
-The combined connector, adjacent reducer and preparation/answer regression suite
-passes **643 tests plus 169 subtests on each interpreter** against final main
-`cb6a90d` plus this additive slice. This includes all **34 connector tests**, also
+The PR #141 combined connector, adjacent reducer and preparation/answer regression suite
+passed **643 tests plus 169 subtests on each interpreter** at reviewed head
+`24272a49ad1b1e1fafe8df29a28293d7ff400ee9`. This included all **34 connector tests**, also
 collected by the existing stdlib CI discovery, and 76 preparation identity/lease,
 sealed-packet, answer-authority, tray-reuse and digest-guard tests. The unchanged
-offline MCP suite passes **78 tests on each interpreter**.
+offline MCP suite passed **78 tests on each interpreter**.
 
-The integrated full Python 3.12 stdlib run executes **1,639 tests** with **2 failures,
+The historical integrated full Python 3.12 stdlib run executed **1,639 tests** with **2 failures,
 95 errors and 19 skips**, using the documented temporary `KEEL_HOME`. All 97 failing
 identifiers match the pre-rebase temporary-home run. The initial default-home
 baseline below has 12 additional read-only-home errors. Neither full-suite run is
 a pass, and no guard was bypassed. Broader CI command results from before the
 reconciliation are retained separately in the evidence and are not relabeled as
-final-head full CI. The draft PR records final exact-head checks.
+final-head full CI. PR #141 records its exact-head checks. The merged main CI
+success is separate from these retained local environment failures.
 
 The committed evidence records source-file SHA-256 pins and log hashes; transient
 full logs are under `/tmp/keel-connector-evidence/` in the verification workspace.
 
+The later PR #142 correction raises the current connector suite to **37 tests**.
+Three new tests exercise 47 subtests covering authorization changes on post-read
+error paths and stable-grant diagnostics. At correction head `cd71fbe92a396e62d7524205a2a5bb522b1a19f9`,
+the combined source regressions passed **646 tests plus 216 subtests**, and the
+offline MCP suite passed **78 tests**, on each Python version. These corrected
+source results do not certify the newly reconciled ZIP.
+
 Failing-before evidence includes the missing portable adapter and two independent
 review findings (source repair precedence and wrapper freshness). Each was
-reproduced failing and is covered by passing regressions. The draft PR records
+reproduced failing and is covered by passing regressions. PR #141 records
 independent review and verification against its exact remote head; no later code
 edit inherits an earlier exact-head claim.
 
 ## Baseline failures, separate from connector regressions
 
-On the pinned main baseline, Python **3.12.14** with `requirements-validation.lock` installed ran `python -m unittest discover -s tests`: **1,592 tests; 2 failures; 107 errors; 19 skips**. These results are not a passing full-suite baseline.
+On the initial main baseline `706ef51a81d0418a33d390105a693bddf3507a70`, Python **3.12.14** with `requirements-validation.lock` installed ran `python -m unittest discover -s tests`: **1,592 tests; 2 failures; 107 errors; 19 skips**. These historical results are not a passing full-suite baseline.
 
 | Baseline result | Diagnosis |
 | --- | --- |
@@ -269,6 +291,135 @@ Applicable checks include the connector tests; `test_live_proof`, `test_live_sur
 
 ## Distribution and release boundary
 
-At the pinned baseline, `release-files.json`, `muse-release-files.json` and `operational-release-files.json` contain no entries under `integrations/mcp-server/`, `keel_live/`, `keel_workbench/` or `keel_sources/`. `package.sh` also omits those packages. This slice does not change release packaging. A follow-up must qualify the adapter and all actual dependencies in the appropriate inventory, installation path and artifact before claiming distribution.
+At packaging baseline `6de159aaea28ce85c3d444392c0d49838a933ff0`, the unchanged
+source builder produced a ZIP with **378 payload files plus `MANIFEST.json`
+(379 members)** and SHA-256
+`cecd8d71f8ddfbb0b5a63eaa9de52de7cc845edd69a3f89cb7840a30c6e1f647`.
+The missing connector import was reproduced from that artifact on Python 3.11
+and 3.12. This digest identifies the initial gap artifact, not the new candidate.
+
+The revised `release-files.json` adds **23 runtime/demo source files** and
+**six supporting files** to the existing `tools/package.py` source profile.
+The verified reconciled result is **407 payload files plus `MANIFEST.json`
+(408 members)**. Each fresh run checks its own manifest and records the actual
+archive digest outside the ZIP. The
+builder and its manifest/path/hash verification are unchanged.
+
+| Added group | Explicit paths |
+| --- | --- |
+| Connector (4) | `keel_connector/__init__.py`, `adapter.py`, `demo.py`, `synthetic.py` |
+| Live qualification (4) | `keel_live/__init__.py`, `proof.py`, `review.py`, `surface.py` |
+| Source records (5) | `keel_sources/__init__.py`, `capture.py`, `decisions.py`, `service.py`, `store.py` |
+| Trust (1) | `keel_trust/replay.py` |
+| Workbench dependencies (5) | `keel_workbench/__init__.py`, `api.py`, `model.py`, `service.py`, `workflows.py` |
+| Synthetic builders (4) | `tools/make_assurance_demo.py`, `tools/make_flow_demo.py`, `tools/make_source_producer_demo.py`, `tools/make_trust_demo.py` |
+| Documentation/evidence/tests (4) | `docs/MUSE_CONNECTOR.md`, `keel_connector/evidence/qualification.json`, `tests/test_connector_readiness.py`, `tests/test_connector_package.py` |
+| Retained notices (2) | `maintenance_workbench/LICENSE`, `maintenance_workbench/NOTICE` |
+
+Names following a directory-qualified entry in the same table row share that
+directory. The existing 31 dependencies complete the **54-module import set**
+for the bounded adapter, synthetic demo and proof path. This is not a complete
+distribution of every branch in historical Live, Workbench or source-producer
+modules. In particular, Live server setup, its OpenAPI endpoint, broader producer
+inventory tooling and the MCP sample are outside this packaged contract.
+`muse-release-files.json`, `operational-release-files.json` and `package.sh`
+retain their existing scopes.
+
+Optional authentication token and request-boundary modules, their tests,
+dependency requirements and authentication documentation belong to separate
+work. Those six optional-auth files are outside the explicit stdlib core
+allowlist and are not included, reviewed or qualified by this artifact, even
+if they later exist in a source checkout. The 54-module count describes only
+the advertised bounded report/demo/proof paths; it makes no dependency claim
+for an optional authentication backend.
+
+### Extracted-artifact qualification
+
+The supported verification target is **Linux with Python 3.11 or 3.12 and the
+standard library**, including SQLite and the existing POSIX no-follow file
+operations. Windows, macOS, WSL, other interpreters and full historical Live/MCP
+operation are not qualified by this connector package check. It does not install
+anything into site-packages or register a connector with Muse.
+
+Run the dedicated stdlib harness from the checkout or extracted source root:
+
+```bash
+python -S -B -m unittest discover -s tests -p test_connector_package.py
+# Optional: retain the private candidate and evidence in a new directory.
+python -S -B -m tests.test_connector_package --evidence-dir /tmp/keel-connector-check
+```
+
+CI places this check before dependency installation on both Python versions.
+It builds the real archive twice, verifies identical bytes with the same
+Python/zlib toolchain, and verifies the manifest, paths and content hashes before
+extraction. Tampered connector bytes, unsafe names, duplicate members and
+symlinks are rejected. The `-I -S -B` child excludes inherited `PYTHONPATH`,
+checkout imports and site packages, and checks every filesystem-backed module
+origin against the extraction directory or interpreter standard library.
+
+The reconciled qualification target covers all **37 current connector tests**, both read
+operations, nine demo scenarios, and 21 serial samples of each 20/30-role complete
+and missing-source profile. Counts refer to the complete authorized workspace;
+the harness must also verify 31-role rejection. Existing 2-second p95 and 256-KiB
+output budgets, synthetic attachment sizes, no-effect checks and source-binding
+hashes remain unchanged. Fixture construction writes only synthetic temporary
+files and is separate from adapter evaluation.
+
+The preserved pre-correction packaging candidate
+`ed99de9fe36493d71c41ca4ac9731296fd55abf5` passed all **three package tests on
+CPython 3.11.16 and 3.12.14**, including its extracted 34-test suite with no skips,
+nine scenarios and all four 21-sample profiles. Its 20/30-role cases met the same
+budgets; 31 roles returned bounded `WORKLOAD_EXCEEDED`. Thirteen negative probes
+checked its evaluation guard, with zero intercepted forbidden effects during
+qualification. Canonical/attachment checks passed, its extracted file/directory
+inventory stayed unchanged, and its fresh homes, temporary directory and
+unrelated working directory were empty afterward. These are historical package
+results; they do not establish a pass for the corrected adapter or new ZIP.
+
+Applying that unchanged harness to corrected main reproduced **two failures
+out of three package tests on both interpreters**: its hard-coded 34-test count
+and its assertion that the old adapter hash matched the current manifest.
+The reconciliation requires 37 current tests and distinguishes the historical
+source bindings below. Full failure logs are retained as
+`/tmp/keel-connector-package-evidence/reconcile-before-py311.log` and
+`reconcile-before-py312.log`.
+
+The reconciled archive passes all **three package tests on CPython 3.11.16 and
+3.12.14**, including all **37 extracted readiness tests with no skips**, nine
+scenarios and all four 21-sample profiles. The 20/30-role profiles meet the fixed
+budgets; 31 roles return a 117-byte `WORKLOAD_EXCEEDED` response. All thirteen
+guard probes are rejected, with zero intercepted forbidden effects during
+qualification. Canonical inputs, attachments and the complete extracted
+file/directory inventory remain unchanged; fresh homes, temporary directory and
+unrelated working directory are empty after cleanup. Each final run records its
+own archive digest, source inventory and measurements externally. Earlier
+source or archive results do not replace that execution.
+
+The guard covers Python write-open/mutation/socket/process events and named
+descriptor-write, socket-send, model, browser and service APIs. It is regression
+instrumentation, not an operating-system sandbox or a universal interceptor for
+native code, pre-opened Python file objects or arbitrary host callbacks. These
+synthetic cases hold no writable streams during evaluation. Synthetic attachment
+reads and hashes are allowed; fixture writes occur outside evaluation.
+
+For the pre-correction package candidate, the existing archive regressions
+passed 110 tests on each interpreter with one existing deferred skip. Its
+profile group passed 13 tests and 24 subtests
+per interpreter but retains one local `untrusted_ancestor_owner` failure at the
+advanced-storage check; that guard remains unchanged. This is separate from the
+passing connector archive checks and is not a full-suite pass claim.
+
+Keep each new run's artifact digest, source head, environment, exact commands,
+test counts, scenarios, samples and failures in an evidence directory **outside
+the artifact**. Do not insert a ZIP's own digest or its new measurement report
+into a file that the same ZIP contains: doing so changes the artifact being
+qualified. The included `qualification.json` remains unchanged historical
+PR #141 evidence. Of its five recorded source bindings, three still match the
+current files (`keel_connector/__init__.py`, `demo.py`, `synthetic.py`); two
+differ after the correction (`keel_connector/adapter.py` and
+`tests/test_connector_readiness.py`). Preserve and report that comparison
+explicitly. The old hashes and timings are not current qualification of those
+two files. A fresh external report binds every current shipped file through
+the actual new archive manifest and records the current test results.
 
 Endpoint selection, secure transport, authentication configuration, credential handling, live user isolation, operational retention/deletion, reviewer access, business/legal requirements, submission and approval remain separate qualification work. This report supplies evidence toward those decisions; it cannot make them.

@@ -20,6 +20,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+      - name: Verify extracted connector using only the standard library
+        run: python3 -S -B -m unittest discover -s tests -p test_connector_package.py
       - name: Install pinned validation environment
         run: pip install -r requirements-validation.lock
       - name: Run offline MCP adapter safety and tool regressions
