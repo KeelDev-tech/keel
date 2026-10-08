@@ -192,11 +192,26 @@ class ReadinessAdapter:
             principal = self._principal()
         except Exception:
             return _error("ACCESS_DENIED")
+        scopes = []
+
+        def finish(body):
+            # Errors after a host read can also disclose scope-dependent facts.
+            # Reauthorize every such return, not only successful reports.
+            try:
+                current_principal = self._principal()
+                if current_principal != principal:
+                    return _error("ACCESS_DENIED")
+                for scope in scopes:
+                    authorize(current_principal, "review:read", scope)
+            except Exception:
+                return _error("ACCESS_DENIED")
+            return body
+
         try:
             supplied = self.snapshot_provider()
             now = clock(self.clock())
         except Exception:
-            return _error("HOST_UNAVAILABLE")
+            return finish(_error("HOST_UNAVAILABLE"))
         try:
             document = _freeze(supplied)
             leads = document["flow"]["leads"]
@@ -216,7 +231,7 @@ class ReadinessAdapter:
             document = validate(document, workspace_id=self.workspace_id, synthetic=self.synthetic)
             references = {scope["role_id"]: scope_reference(scope) for scope in scopes}
             if expected and request["scope_ref"] not in references.values():
-                return _error("NOT_FOUND")
+                return finish(_error("NOT_FOUND"))
             view = qualified_view(document, attachment_root=self.attachment_root, now=now)
             report = self._report(document, view, references, now)
             if expected:
@@ -225,24 +240,16 @@ class ReadinessAdapter:
             report["returned_roles"] = len(report["applications"])
             body = _encode(report)
             if len(body) > MAX_OUTPUT_BYTES:
-                return _error("OUTPUT_LIMIT_EXCEEDED")
+                return finish(_error("OUTPUT_LIMIT_EXCEEDED"))
         except ReviewError:
-            return _error("ACCESS_DENIED")
+            return finish(_error("ACCESS_DENIED"))
         except _Limit:
-            return _error("WORKLOAD_EXCEEDED")
+            return finish(_error("WORKLOAD_EXCEEDED"))
         except (ValueError, TypeError, KeyError, IndexError, AttributeError, OverflowError, RecursionError):
-            return _error("INVALID_SNAPSHOT")
+            return finish(_error("INVALID_SNAPSHOT"))
         except Exception:
-            return _error("EVALUATION_FAILED")
-        try:
-            current_principal = self._principal()
-            if current_principal != principal:
-                return _error("ACCESS_DENIED")
-            for scope in scopes:
-                authorize(current_principal, "review:read", scope)
-        except Exception:
-            return _error("ACCESS_DENIED")
-        return body
+            return finish(_error("EVALUATION_FAILED"))
+        return finish(body)
 
     def _report(self, document, view, references, now):
         normalized = document["revision_sources"]
