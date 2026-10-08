@@ -414,25 +414,11 @@ def posting_eligibility_screen(text):
 
 
 # ---------------------------------------------------------------------------
-# Field-Requirement Protocol (FRP) packet write-back
+# Field-Requirement Protocol (FRP) construction annotations
 # ---------------------------------------------------------------------------
 
-def _frp_write_packet_back(packet):
-    """Persist a packet that FRP annotated, back to its packet file.
-
-    Atomic tmp+replace. No-op when the packet carries no role_id or the
-    packet file is gone (buffer/archived packets are out of scope).
-    """
-    role_id = packet.get("role_id")
-    if not role_id:
-        return
-    path = os.path.join(PACKET_DIR, f"{role_id}.json")
-    if not os.path.exists(path):
-        return
-    tmp = path + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(packet, f, indent=1)
-    os.replace(tmp, path)
+class PacketRebuildRequired(ValueError):
+    """Current answers require a new packet, not another applicant answer."""
 
 
 def _frp_enabled(packet):
@@ -471,16 +457,25 @@ def _frp_unmapped(question, packet, answer_bank):
     action = res.get("action")
     if action == "answered":
         d = res.get("derived") or {}
-        try:
-            packet.setdefault("frp_derived_answers", {})[question] = {
-                "bank_key": d.get("bank_key"),
-                "answer": d.get("answer"),
-                "provenance": d.get("provenance"),
-            }
-            _frp_write_packet_back(packet)
-        except Exception as e:
-            print(f"  prescreen: FRP packet write-back failed (non-fatal): {e}",
-                  file=sys.stderr)
+        annotation = {"bank_key": d.get("bank_key"),
+                      "answer": d.get("answer"),
+                      "provenance": d.get("provenance")}
+        if "launch_integrity_sha256" in packet or "integrity_sha256" in packet:
+            from safe_io import canonical
+            existing = packet.get("frp_derived_answers")
+            try:
+                matches = (isinstance(existing, dict) and question in existing
+                           and canonical(existing[question]) == canonical(annotation))
+            except (TypeError, ValueError, OverflowError, RecursionError):
+                matches = False
+            if not matches:
+                raise PacketRebuildRequired(
+                    "Packet rebuild required: the current authorized answer is not "
+                    "bound into this sealed packet.")
+        else:
+            # Only construction may add annotations. Its canonical writer seals
+            # and publishes afterward; screening must never write packet files.
+            packet.setdefault("frp_derived_answers", {})[question] = annotation
         return "answered"
     if action in ("instant-park", "park"):
         return res.get("reason")
@@ -654,6 +649,8 @@ def screen_packet(packet, answer_bank, employer_patterns=None):
     """Screen one launch packet.
 
     Returns {"verdict": "CLEAN"|"PARK", "reasons": [str, ...]}.
+    Raises PacketRebuildRequired when a sealed packet needs new annotations;
+    callers must hold/rebuild it without requesting another applicant answer.
     Every PARK reason is worded with GENUINE_PAT-recognized terms so the
     parked lead is never mistaken for verification-only by verify_retry.
     """
@@ -991,7 +988,10 @@ def scan_packets(packet_dir=None, answer_bank=None, employer_patterns=None):
                             "reasons": ["not a launch packet (no brief)"],
                             "file": fp})
             continue
-        res = screen_packet(packet, bank, patterns)
+        try:
+            res = screen_packet(packet, bank, patterns)
+        except PacketRebuildRequired as ex:
+            res = {"verdict": "ERROR", "reasons": [str(ex)]}
         res["role_id"] = packet.get("role_id", os.path.basename(fp))
         res["company"] = packet.get("company", "")
         res["file"] = fp
