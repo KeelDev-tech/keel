@@ -75,7 +75,46 @@ function renderPacket(app,body){
  const changes=section('Changes since the previous packet');if(!app.previous_packet)append(changes,el('p','small muted','No previous packet was provided. A comparison cannot be calculated.'));else if(!app.changes.length)append(changes,el('p','small muted','No displayed fields or attachment records changed. Revision bindings are checked separately.'));
  for(const change of app.changes){const box=el('div','changes');append(box,el('div','change-head',change.item_id+' · '+change.change));const compare=el('div','compare');for(const [label,item]of [['Before',change.before],['Current',change.after]]){const col=el('div');append(col,el('p','eyebrow',label),el('p','item-value',valueText(item)));if(item&&Object.hasOwn(item,'evidence_ids')){append(col,el('p','item-label',item.label+(item.required?' · required':' · optional')),el('p','hash','Evidence: '+item.evidence_ids.join(', ')));}append(compare,col);}append(box,compare);append(changes,box);}append(body,changes);
 }
-function renderEvidence(app,body){const sectionNode=section('Source references');append(sectionNode,el('p','small muted','References are shown as text. This file does not open sources or send data.'));
+function renderFitEvidence(app,body){
+ if(!Object.hasOwn(app,'fit_assessment'))return;
+ const fit=app.fit_assessment;const block=section('Fit evidence');
+ append(block,el('p','small muted','Supplied assessment only. Source authenticity and freshness are not verified. Evidence bounds are not a confidence interval and never grant approval or execution.'));
+ if(!Object.hasOwn(fit,'score_bounds')){
+  append(block,note('Fit evidence unavailable',fit.reason==='not_supplied'?'No assessment was supplied.':'The supplied assessment is unsupported, malformed, over the display limit, or bound to another application revision.',true));
+  append(body,block);return;
+ }
+ if(fit.availability==='UNAVAILABLE')append(block,note('Fit evidence unavailable','No supported evidence was supplied. Unknown evidence is not a demonstrated mismatch.',true));
+ append(block,el('p','item-value','Supplied bounds: '+fit.fit_score+'–'+fit.fit_score_upper+' / 100'),el('p','item-value','Evidence coverage: '+fit.score_coverage_percent+'%'),el('p','reference','Source role: '+fit.role_id),el('p','hash','Scoring version: '+fit.scoring_version));
+ const holds=el('div','item');append(holds,el('h4','','Assessment holds'));
+ append(holds,el('p','small muted','These are supplied scoring observations. Canonical application blockers and human decisions are checked separately in Review.'));
+ if(!fit.blocked_reasons.length)append(holds,el('p','small muted','No assessment holds supplied. This does not establish application readiness.'));
+ for(const reason of fit.blocked_reasons)append(holds,el('p','reference',reason));
+ append(block,holds);
+ for(const [component,bounds]of Object.entries(fit.score_bounds)){
+  const evidence=fit.score_evidence[component];const card=el('details','evidence-card');
+  append(card,el('summary','item-value',component.replaceAll('_',' ')+' · '+bounds.lower+'–'+bounds.upper+' points'));
+  append(card,el('p','small muted','Supported weight: '+bounds.known_weight+' points'),el('p','small muted','Method: '+evidence.method.replaceAll('_',' ')));
+  if(bounds.known_weight===0)append(card,el('p','small muted','Evidence unavailable for this component; unknown is not a mismatch.'));
+  if(evidence.method==='explicit_fact_comparison'){
+   for(const criterion of evidence.criteria){const row=el('div','item');
+    append(row,el('p','item-value',criterion.id+' · '+(criterion.mandatory?'mandatory':'optional')+' · '+criterion.status),el('p','small muted','Reason: '+criterion.reason));
+    if(Object.hasOwn(criterion,'legacy_hold'))append(row,el('p','reference','Legacy assessment hold: '+criterion.legacy_hold));
+    if(Object.hasOwn(criterion,'fact'))append(row,el('p','reference','Fact: '+criterion.fact+' · Comparison: '+criterion.operator));
+    if(criterion.fraction!==null)append(row,el('p','small muted','Supported fraction: '+criterion.credit_numerator+'/'+criterion.credit_denominator));
+    append(row,el('p','reference','Posting reference: '+(criterion.posting_source_ref===null?'Not supplied':criterion.posting_source_ref)));
+    for(const ref of criterion.profile_evidence_refs)append(row,el('p','reference','Applicant reference: '+ref));
+    append(card,row);
+   }
+  }else if(evidence.method==='human_assessment'){
+   const assessment=evidence.assessment;append(card,el('p','item-value',assessment.rationale),el('p','reference','Supplied human reviewer: '+assessment.reviewer.id),el('p','small muted','Supported fraction: '+assessment.fraction));
+   for(const ref of assessment.evidence_refs)append(card,el('p','reference','Review reference: '+ref));
+  }else if(evidence.method==='reviewed_no_requirements')append(card,el('p','reference','Posting reference: '+evidence.posting_source_ref));
+  else append(card,el('p','small muted','Reason: '+evidence.reason));
+  append(block,card);
+ }
+ append(block,el('p','hash','Assessment binding: '+fit.assessment_sha256));append(body,block);
+}
+function renderEvidence(app,body){renderFitEvidence(app,body);const sectionNode=section('Source references');append(sectionNode,el('p','small muted','References are shown as text. This file does not open sources or send data.'));
  if(!app.evidence.length)append(sectionNode,note('No source evidence supplied','Missing evidence remains visible and cannot become a verified result.',true));
  for(const source of app.evidence){const card=el('div','evidence-card');const title=el('div','section-title');append(title,el('h3','',source.label),badge(stateLabels[source.review_state],source.review_state==='VERIFIED'?'green':'amber'));append(card,title,el('div','reference',source.reference===null?'Reference not supplied':source.reference),el('p','hash','Revision: '+source.source_revision_sha256),el('p','small muted','Scope: '+source.scope_ids.join(', ')+' · Uses: '+source.permitted_uses.join(', ')),el('p','small muted','Observed: '+stamp(source.observed_at)),el('p','small muted','Expires: '+(source.valid_until===null?'Not specified':stamp(source.valid_until))));append(sectionNode,card);}append(body,sectionNode);}
 function renderTimeline(app,body){const block=section('Activity timeline');if(!app.timeline.length)append(block,el('p','small muted','No events were included for this application.'));const list=el('ol','timeline');for(const event of app.timeline){const li=el('li');append(li,el('p','time',stamp(event.at)),el('h3','',event.kind.replaceAll('_',' ')),el('p','',event.detail),badge(event.evidence_backed?'Evidence-backed record':'Unverified record',event.evidence_backed?'green':'amber'));if(event.latency_ms!==null)append(li,el('p','hash','Recorded latency: '+event.latency_ms+' ms'));append(list,li);}append(block,list);append(body,block);}

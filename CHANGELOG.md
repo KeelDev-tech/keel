@@ -15,6 +15,11 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Add opt-in v2 fit evidence to the offline review desk: supplied score bounds,
+  coverage, mandatory findings, separate assessment holds, and inert references.
+  Preserve v1 projection hashes and keep every assessment bound to the snapshot
+  and review request; no scoring, approval, execution, or live integration added.
+
 - Recognize current modern preparation packets in supply planning while
   preserving READY transitions, execution holds, and current input validation.
 

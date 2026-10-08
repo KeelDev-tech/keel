@@ -104,6 +104,74 @@ holds, questions, evidence, approval_observation
 `holds` is a list of `{code, since}` with nullable `since`; every supplied hold
 remains present. No local interaction removes it.
 
+### Optional fit evidence (v2)
+
+To display an existing assessment in the Evidence tab, explicitly select
+`keel.muse.review-snapshot.v2`. It has the same top-level fields as v1 and permits
+one optional application field, `fit_assessment`. The resulting report is
+`keel.muse.review-projection.v2`. v1 continues to reject the extra field, and its
+projection/request hashes and existing behavior are unchanged. The synthetic
+`example_snapshot()` remains v1.
+
+An adapter must explicitly supply this exact assessment envelope:
+
+```text
+schema = "keel.muse.fit-assessment.v1"
+scoring_version = "keel-evidence-fit-v1"
+role_id, application_revision_sha256,
+fit_score, fit_score_upper, score_coverage_percent,
+score_bounds, score_evidence, blocked_reasons
+```
+
+The scoring fields come from the existing [scoring contract](SCORING_CONTRACT.md).
+`blocked_reasons` is the scorer's `action_eligibility.blocked_reasons` list.
+`score_bounds` and `score_evidence` must contain all nine components and only
+their supported fields. Evidence methods are `explicit_fact_comparison`,
+`human_assessment` (the four subjective components only),
+`reviewed_no_requirements` (hard requirements only), and `unknown`. Human
+assessments must bind the envelope's role ID and their component.
+
+The caller owns the role-to-application mapping: `role_id` need not equal
+`application_id`, but the assessment's application revision must equal the
+application record's revision. This supplied binding does not authenticate the
+source or establish assessment freshness. There is no automatic scorer adapter,
+scorer call, source retrieval, or live Muse/host integration in this view. Do not
+pass a full discovery/scorer row, free posting text, or applicant profile.
+
+The view presents the supplied lower/upper bounds, coverage, component evidence,
+mandatory requirement statuses, legacy holds, human rationale, and inert source
+references. Bounds are evidence bounds, **not a confidence interval**. Unknown
+evidence is labeled unavailable rather than a demonstrated mismatch; a valid
+assessment with zero coverage retains its 0–100 bounds and observed holds.
+Assessment holds have their own section and never replace canonical holds,
+change application status, reorder questions, or grant approval/execution. Even
+100/100 with no assessment holds does not establish readiness.
+
+Display limits are 256 KiB of canonical JSON per assessment, 128 criteria per
+component, 128 unique references per record, and 2,048 characters per ordinary
+text/reference. Up to 131 unique blocked reasons of 2,078 characters are accepted
+to preserve the scorer's mandatory-requirement messages. Numeric booleans,
+invalid ranges, unknown keys/versions/methods, invalid evidence shapes, and
+revision mismatches make this optional view `UNAVAILABLE`; absent/null input
+does likewise. Valid scorer output above the display limit is also unavailable,
+not silently truncated. The view validates the presentation contract; it does
+not recompute weighted criteria, eligibility, or authenticate claims. It rejects
+obvious contradictions between methods and bounds, and totals inconsistent with
+component bounds, allowing the scorer's outward rounding precision.
+
+The whole snapshot must still satisfy the existing strict finite-JSON, depth,
+size, and required-record checks. Unsafe JSON rejects the entire snapshot. The
+exact supplied snapshot, including malformed optional input, remains in the
+report and its hash; treat that report as private source material. Only the
+validated display whitelist is embedded in HTML, which excludes the raw
+snapshot. References and rationale remain text nodes under the existing CSP;
+the view never opens them or sends data.
+
+Requests and effort observations keep their v1 envelopes and bind the complete
+v2 report/snapshot hashes. Any assessment change, including a malformed input
+change, invalidates an old request. Projection validation, evidence expiry,
+deadlines, and authenticated host ingestion requirements still apply.
+
 `packet` and `previous_packet` are null or:
 
 ```json
