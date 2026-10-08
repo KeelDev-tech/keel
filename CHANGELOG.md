@@ -15,6 +15,9 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Use the same verification history for cooldowns and scheduling so malformed
+  legacy observations cannot abort an eligible neighbor's posting check.
+
 - Recognize current modern preparation packets in supply planning while
   preserving READY transitions, execution holds, and current input validation.
 

@@ -390,6 +390,66 @@ class VerificationTransportContractTests(unittest.TestCase):
                 self.assertEqual(after[1]['verification_attempt']['signal'], 'LIVE')
                 self.assertFalse(after[1]['verification_attempt']['execution_authorized'])
 
+    def test_empty_latest_attempt_does_not_reopen_malformed_legacy_for_sorting(self):
+        for legacy in (['malformed'], 'malformed', 1):
+            for reverse in (False, True):
+                with self.subTest(legacy=legacy, reverse=reverse):
+                    target = {**queued(1), 'verification_attempt': {},
+                              'posting_verification': legacy}
+                    neighbor = queued(2)
+                    entries = [neighbor, target] if reverse else [target, neighbor]
+                    atomic_json(self.queue, entries)
+                    before = self.queue_and_ledger_bytes()
+                    reader = service.PublicBoardReader(fetcher=lambda *_: {
+                        'jobs': [{'id': 2, 'title': 'Synthetic eligible role'}]})
+                    with patch.object(socket.socket, 'connect', side_effect=AssertionError('network forbidden')):
+                        report = service.verify(self.home, reader=reader)
+                    self.assertEqual(report['selected'], 2)
+                    self.assertEqual(report['verdicts'], {'ambiguous': 1, 'live': 1})
+                    self.assertTrue(report['dry_run'])
+                    self.assertEqual(report['promoted_to_ready'], 0)
+                    self.assertFalse(report['submission_authorized'])
+                    self.assertEqual(self.queue_and_ledger_bytes(), before)
+
+    def test_empty_latest_attempt_keeps_unknown_age_priority(self):
+        target = {**queued(1, board='unobserved'), 'verification_attempt': {},
+                  'posting_verification': {'observed_at': '2026-01-02T00:00:00Z'}}
+        neighbor = {**queued(2, board='dated'),
+                    'posting_verification': {'observed_at': '2026-01-01T00:00:00Z'}}
+        atomic_json(self.queue, [target, neighbor])
+        calls = []
+        report = service.verify(self.home, limit=1, reader=service.PublicBoardReader(
+            fetcher=lambda url, _: calls.append(url) or {'jobs': []}))
+        self.assertEqual(report['selected'], 1)
+        self.assertIn('/unobserved/', calls[0])
+        self.assertEqual(read_json(self.queue), [target, neighbor])
+
+    def test_live_neighbor_progress_preserves_cooldowns_invalid_attempts_and_holds(self):
+        target = {**queued(1), 'verification_attempt': {}, 'posting_verification': ['malformed']}
+        neighbor = queued(2)
+        cooldown = {**queued(3), 'posting_verification': {
+            'next_eligible_at': (service.utc_now()+timedelta(days=1)).isoformat()}}
+        held = {**queued(4), 'holds': ['consent_required']}
+        invalid = {**queued(5), 'verification_attempt': ['malformed']}
+        for explicit_none in (False, True):
+            with self.subTest(explicit_none=explicit_none):
+                if explicit_none:
+                    cooldown['verification_attempt'] = None
+                entries = [target, neighbor, cooldown, held, invalid]
+                atomic_json(self.queue, entries)
+                report = service.verify(self.home, live=True, reader=service.PublicBoardReader(
+                    fetcher=lambda *_: {'jobs': [{'id': 2, 'title': 'Synthetic eligible role'}]}))
+                self.assertEqual(report['committed'], 2)
+                self.assertEqual(report['skipped'], {'cooldown': 1, 'held_or_active_or_terminal': 1,
+                                                   'invalid_cooldown_state': 1})
+                after = read_json(self.queue)
+                self.assertEqual(after[2:], entries[2:])
+                self.assertEqual(after[1]['verification_attempt']['signal'], 'LIVE')
+                self.assertTrue(all(row['status'] == 'PARKED-PENDING-VERIFICATION' for row in after))
+                self.assertFalse(after[1]['verification_attempt']['execution_authorized'])
+                self.assertFalse(report['submission_authorized'])
+                self.assertEqual(report['promoted_to_ready'], 0)
+
     def test_dry_run_and_supply_refuse_pending_recovery_without_writes(self):
         atomic_json(self.queue, [queued(1)])
         destination = self.home / 'data/queues/strategic-queue.json'
