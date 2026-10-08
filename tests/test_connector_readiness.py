@@ -1,5 +1,6 @@
 """Offline connector contract: no real accounts, applicant records or network."""
 from copy import deepcopy
+from contextlib import ExitStack
 from datetime import timedelta
 import builtins
 import io
@@ -158,6 +159,119 @@ class ConnectorReadinessTests(unittest.TestCase):
         self.assertTrue(self.call()["ok"])
         self.principal = self.grant(actions=set())
         self.error("ACCESS_DENIED")
+
+    def test_get_revocation_during_snapshot_hides_known_and_unknown_scope(self):
+        granted = self.principal
+        known = module.scope_reference(dict(granted.allowed_scopes[0]))
+        self.assertNotEqual(known, "f" * 64)
+        for change in ("revoked", "changed", "provider_throws"):
+            for reference in (known, "f" * 64):
+                with self.subTest(change=change, known_scope=reference == known):
+                    current = {"principal": granted}
+                    events = []
+
+                    def principal():
+                        events.append("grant")
+                        if isinstance(current["principal"], Exception):
+                            raise current["principal"]
+                        return current["principal"]
+
+                    def snapshot():
+                        events.append("snapshot")
+                        current["principal"] = (
+                            self.grant(actions=set()) if change == "revoked" else
+                            self.grant(actor="synthetic-different-reader") if change == "changed" else
+                            RuntimeError("synthetic-revoked-grant-canary"))
+                        return self.document
+
+                    with patch.object(self.adapter, "principal_provider", side_effect=principal) as grants, \
+                         patch.object(self.adapter, "snapshot_provider", side_effect=snapshot) as snapshots:
+                        result = self.call("get_application_readiness", json.dumps({"scope_ref": reference}).encode())
+                    self.assertEqual(result, {"schema": module.SCHEMA, "ok": False,
+                        "error": {"code": "ACCESS_DENIED"}, "execution_authorized": False})
+                    self.assertEqual(grants.call_count, 2)
+                    snapshots.assert_called_once_with()
+                    self.assertEqual(events, ["grant", "snapshot", "grant"])
+
+    def test_every_post_initial_grant_response_rechecks_current_authority(self):
+        outcomes = {"snapshot_error": "HOST_UNAVAILABLE", "clock_error": "HOST_UNAVAILABLE",
+                    "invalid_snapshot": "INVALID_SNAPSHOT", "workload": "WORKLOAD_EXCEEDED",
+                    "not_found": "NOT_FOUND", "output_limit": "OUTPUT_LIMIT_EXCEEDED",
+                    "evaluation_error": "EVALUATION_FAILED", "scope_denied": "ACCESS_DENIED",
+                    "success": None}
+        granted = self.principal
+        for outcome, stable_code in outcomes.items():
+            for change in ("stable", "revoked", "changed", "provider_throws"):
+                with self.subTest(outcome=outcome, grant=change):
+                    candidate = deepcopy(self.document)
+                    if outcome == "invalid_snapshot":
+                        candidate = None
+                    elif outcome == "workload":
+                        candidate["flow"]["leads"] *= module.MAX_REPORT_ROLES + 1
+                    elif outcome == "scope_denied":
+                        candidate["flow"]["leads"][0]["identity"] = "e" * 64
+                    current = {"principal": granted}
+                    events = []
+
+                    def principal():
+                        events.append("grant")
+                        if isinstance(current["principal"], Exception):
+                            raise current["principal"]
+                        return current["principal"]
+
+                    def snapshot():
+                        events.append("snapshot")
+                        if change == "revoked":
+                            current["principal"] = self.grant(actions=set())
+                        elif change == "changed":
+                            current["principal"] = self.grant(actor="synthetic-different-reader")
+                        elif change == "provider_throws":
+                            current["principal"] = RuntimeError("synthetic-revoked-grant-canary")
+                        if outcome == "snapshot_error":
+                            raise RuntimeError("synthetic-host-error-canary")
+                        return candidate
+
+                    with ExitStack() as stack:
+                        grants = stack.enter_context(patch.object(self.adapter, "principal_provider", side_effect=principal))
+                        snapshots = stack.enter_context(patch.object(self.adapter, "snapshot_provider", side_effect=snapshot))
+                        if outcome == "clock_error":
+                            stack.enter_context(patch.object(self.adapter, "clock", side_effect=RuntimeError("synthetic-clock-canary")))
+                        elif outcome == "output_limit":
+                            stack.enter_context(patch.object(module, "MAX_OUTPUT_BYTES", 256))
+                        elif outcome == "evaluation_error":
+                            stack.enter_context(patch.object(module, "qualified_view", side_effect=RuntimeError("synthetic-evaluation-canary")))
+                        operation = "get_application_readiness" if outcome == "not_found" else "list_application_blockers"
+                        arguments = json.dumps({"scope_ref": "f" * 64}).encode() if outcome == "not_found" else b"{}"
+                        result = self.call(operation, arguments)
+                    code = stable_code if change == "stable" else "ACCESS_DENIED"
+                    if code is None:
+                        self.assertTrue(result["ok"])
+                        self.assertTrue(result["applications"][0]["capture_review_checks_passed"])
+                    else:
+                        self.assertEqual(result, {"schema": module.SCHEMA, "ok": False,
+                            "error": {"code": code}, "execution_authorized": False})
+                    self.assertEqual(grants.call_count, 2)
+                    snapshots.assert_called_once_with()
+                    self.assertEqual(events, ["grant", "snapshot", "grant"])
+
+    def test_request_and_initial_authorization_failures_never_read_snapshot(self):
+        cases = [("invalid_operation", "submit", b"{}", self.principal, "INVALID_REQUEST", 0),
+                 ("invalid_arguments", "list_application_blockers", b"[]", self.principal, "INVALID_REQUEST", 0),
+                 ("denied", "list_application_blockers", b"{}", self.grant(actions=set()), "ACCESS_DENIED", 1),
+                 ("missing", "list_application_blockers", b"{}", None, "ACCESS_DENIED", 1),
+                 ("provider_throws", "list_application_blockers", b"{}", RuntimeError("synthetic-grant-canary"), "ACCESS_DENIED", 1)]
+        for name, operation, arguments, principal, code, expected_reads in cases:
+            with self.subTest(case=name):
+                behavior = {"side_effect": principal} if isinstance(principal, Exception) else {"return_value": principal}
+                with patch.object(self.adapter, "principal_provider", **behavior) as grants, \
+                     patch.object(self.adapter, "snapshot_provider") as snapshots, \
+                     patch.object(self.adapter, "clock") as clock:
+                    result = self.call(operation, arguments)
+                self.assertEqual(result, {"schema": module.SCHEMA, "ok": False,
+                    "error": {"code": code}, "execution_authorized": False})
+                self.assertEqual(grants.call_count, expected_reads)
+                snapshots.assert_not_called()
+                clock.assert_not_called()
 
     def test_host_failures_are_fixed_errors_without_fallback(self):
         self.assertTrue(self.call()["ok"])
