@@ -38,13 +38,16 @@ class PreparationIdentityGuardsTests(unittest.TestCase):
             for key, value in values.items()}}
         self.release = None
         for item in (patch.object(queue_io, '_LOCK_PATH', str(self.home / 'queue.lock')),
+                     patch.object(launch_lock, 'LOCK_DIR', str(self.home / 'launch-locks')),
                      patch.object(apply_loop, 'load_answer_bank', return_value=self.bank),
                      patch.object(apply_loop, 'load_policy', return_value={'main_fit_floor': 75}),
                      patch.object(apply_loop, '_materials_for', side_effect=lambda row, _: row['materials']),
-                     patch.object(launch_lock, 'prelaunch_guard', return_value=(True, {}))):
+                     patch.object(launch_lock, 'prelaunch_guard',
+                                  side_effect=lambda role, task, *args, **kwargs:
+                                      launch_lock.acquire(role, task))):
             item.start()
             self.addCleanup(item.stop)
-        release_patch = patch.object(launch_lock, 'release', return_value=(True, {}))
+        release_patch = patch.object(launch_lock, 'release', wraps=launch_lock.release)
         self.release = release_patch.start()
         self.addCleanup(release_patch.stop)
 
