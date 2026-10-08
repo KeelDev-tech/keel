@@ -15,6 +15,11 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Acquire the review preparation lease before changing résumé selection, and
+  recheck current queue/ledger inputs and ownership before publishing a packet.
+  Refused attempts preserve prior input and packet bytes; interrupted or fenced
+  builders never delete a prior or successor packet. No execution authority added.
+
 - Recognize current modern preparation packets in supply planning while
   preserving READY transitions, execution holds, and current input validation.
 
