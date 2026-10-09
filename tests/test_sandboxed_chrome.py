@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 from tools.sandboxed_chrome import (
-    FORBIDDEN_FLAGS, SandboxedChrome, SandboxError, _process_tree, verify_sandbox_evidence,
+    FORBIDDEN_FLAGS, SandboxedChrome, SandboxError, _proc_record, _process_tree, verify_sandbox_evidence,
 )
 
 
@@ -201,7 +201,8 @@ class AttachBoundaryTests(unittest.TestCase):
         diagnostic = {'rows': [['Seccomp-BPF sandbox', 'Yes'], ['PID namespaces', 'Yes']],
                       'text': 'DO_NOT_LOG_PAGE_TEXT'}
         processes = [{'pid': 987654321, 'ppid': 100, 'starttime': '1234', 'state': 'S',
-                      'args': ['/private/chrome', '--type=zygote', '--user-data-dir=/private/SECRET_PROFILE',
+                      'executable': runner.chrome,
+                      'args': [runner.chrome, '--type=zygote', '--user-data-dir=/private/SECRET_PROFILE',
                                'http://127.0.0.1/#token=SECRET_TOKEN'],
                       'namespaces': {'pid': 'pid:[1]', 'user': 'user:[2]', 'net': 'net:[3]'},
                       'seccomp': '2', 'seccomp_filters': '1', 'no_new_privs': '1'}]
@@ -368,14 +369,112 @@ class SandboxEvidenceTests(unittest.TestCase):
     def setUp(self):
         self.diagnostic = {'rows': [['Seccomp-BPF sandbox', 'Yes'], ['PID namespaces', 'Yes']]}
         self.processes = [
-            {'pid': 100, 'args': ['chrome'], 'namespaces': {'pid': 'pid:[1]'},
+            {'pid': 100, 'args': ['/opt/google/chrome/chrome'], 'executable': '/opt/google/chrome/chrome',
+             'namespaces': {'pid': 'pid:[1]'},
              'seccomp': '2', 'no_new_privs': '1'},
-            {'pid': 101, 'args': ['chrome', '--type=renderer'], 'namespaces': {'pid': 'pid:[2]'},
+            {'pid': 101, 'args': ['/opt/google/chrome/chrome', '--type=renderer'],
+             'executable': '/opt/google/chrome/chrome', 'namespaces': {'pid': 'pid:[2]'},
              'seccomp': '2', 'no_new_privs': '1'},
         ]
 
     def test_combined_browser_and_kernel_evidence(self):
         self.assertTrue(verify_sandbox_evidence(self.diagnostic, self.processes)['verified'])
+
+    def test_hosted_single_argument_renderer_title_is_recognized(self):
+        # Synthetic values, using the argc=1 shape observed in hosted Chrome
+        # 154 diagnostics; ownership and kernel evidence remain mandatory.
+        self.processes[1]['args'] = [
+            '/opt/google/chrome/chrome --type=renderer --enable-automation '
+            '--user-data-dir=/tmp/synthetic-profile --lang=en-US --renderer-client-id=7']
+        result = verify_sandbox_evidence(self.diagnostic, self.processes)
+        self.assertTrue(result['verified'])
+        self.assertEqual(result['renderer_pids'], [101])
+
+    def test_rewritten_title_forbidden_flag_is_not_missed_on_other_owned_process(self):
+        self.processes.append({'pid': 102, 'executable': '/opt/google/chrome/chrome',
+                               'args': ['/opt/google/chrome/chrome --type=utility --no-sandbox'],
+                               'namespaces': {'pid': 'pid:[3]'}, 'seccomp': '2', 'no_new_privs': '1'})
+        with self.assertRaisesRegex(SandboxError, 'Sandbox/security disabling flag'):
+            verify_sandbox_evidence(self.diagnostic, self.processes)
+
+    def test_all_forbidden_flags_are_rejected_in_both_argument_representations(self):
+        for flag in sorted(FORBIDDEN_FLAGS):
+            for rewritten in (False, True):
+                for suffix in ('', '=false'):
+                    processes = copy.deepcopy(self.processes)
+                    args = ['/opt/google/chrome/chrome', '--type=renderer', flag + suffix]
+                    processes[1]['args'] = [' '.join(args)] if rewritten else args
+                    with self.subTest(flag=flag, rewritten=rewritten, suffix=suffix), \
+                            self.assertRaisesRegex(SandboxError, 'Sandbox/security disabling flag'):
+                        verify_sandbox_evidence(self.diagnostic, processes)
+
+    def test_ambiguous_or_fake_renderer_markers_never_establish_sandbox_proof(self):
+        prefix = '/opt/google/chrome/chrome '
+        invalid = [
+            prefix + '--note=--type=renderer',
+            prefix + '--note="hello --type=renderer"',
+            prefix + "'--type=renderer'",
+            prefix + '--type=renderer --type=utility',
+            prefix + '--type=renderer --type=renderer',
+            prefix + '--type=renderer-helper',
+            prefix + '--type renderer',
+            prefix + '--type=',
+            prefix + '-- --type=renderer',
+            prefix + 'https://example.com/--type=renderer',
+            prefix + '--type=renderer https://example.com/',
+            prefix + '--type=renderer\t--enable-automation',
+            prefix + '--type=renderer --note=escaped\\ value',
+            '/opt/google/chrome/chrome-other --type=renderer',
+        ]
+        for title in invalid:
+            processes = copy.deepcopy(self.processes)
+            processes[1]['args'] = [title]
+            with self.subTest(title=title), self.assertRaises(SandboxError):
+                verify_sandbox_evidence(self.diagnostic, processes)
+
+    def test_nul_separated_arguments_keep_boundaries_and_reject_duplicate_type(self):
+        for tail in (['--note=hello --type=renderer'], ['--type="renderer"'],
+                     ['--type=renderer', '--type=utility'], ['--', '--type=renderer']):
+            processes = copy.deepcopy(self.processes)
+            processes[1]['args'] = ['/opt/google/chrome/chrome'] + tail
+            with self.subTest(tail=tail), self.assertRaises(SandboxError):
+                verify_sandbox_evidence(self.diagnostic, processes)
+
+    def test_renderer_executable_must_match_direct_owned_browser(self):
+        for wrong in (None, '/other/chrome'):
+            for rewritten in (False, True):
+                processes = copy.deepcopy(self.processes)
+                processes[1]['executable'] = wrong
+                if rewritten:
+                    processes[1]['args'] = [' '.join(processes[1]['args'])]
+                with self.subTest(executable=wrong, rewritten=rewritten), self.assertRaises(SandboxError):
+                    verify_sandbox_evidence(self.diagnostic, processes)
+        with self.assertRaisesRegex(SandboxError, 'direct launch'):
+            verify_sandbox_evidence(self.diagnostic, self.processes, expected_executable='/other/chrome')
+        self.processes[0].pop('executable')
+        with self.assertRaisesRegex(SandboxError, 'direct launch'):
+            verify_sandbox_evidence(self.diagnostic, self.processes)
+
+    def test_unknown_live_chrome_child_is_not_ignored_beside_verified_renderer(self):
+        for tail in ([], ['--type=unknown'], ['--type=renderer-helper']):
+            processes = copy.deepcopy(self.processes)
+            processes.append({'pid': 102, 'executable': '/opt/google/chrome/chrome',
+                              'args': ['/opt/google/chrome/chrome'] + tail,
+                              'namespaces': {'pid': 'pid:[3]'}, 'seccomp': '0', 'no_new_privs': '0'})
+            with self.subTest(tail=tail), self.assertRaisesRegex(SandboxError, 'missing or unknown'):
+                verify_sandbox_evidence(self.diagnostic, processes)
+
+    def test_proc_executable_read_failure_is_explicit_and_cannot_be_skipped(self):
+        with tempfile.TemporaryDirectory() as directory:
+            proc = Path(directory)
+            process = proc / '101'
+            process.mkdir()
+            (process / 'stat').write_text('101 (chrome) ' + ' '.join(['S', '100', '100', '100'] + ['0'] * 16))
+            (process / 'status').write_text('PPid:\t100\nSeccomp:\t2\nNoNewPrivs:\t1\n')
+            with patch('tools.sandboxed_chrome.Path', side_effect=lambda value: proc if value == '/proc' else Path(value)), \
+                    patch('tools.sandboxed_chrome.os.readlink', side_effect=PermissionError(13, 'synthetic denial')):
+                with self.assertRaisesRegex(SandboxError, 'executable identity could not be read'):
+                    _proc_record(101)
 
     def test_inherited_seccomp_alone_does_not_prove_chrome_sandbox(self):
         self.processes[1]['namespaces']['pid'] = 'pid:[1]'

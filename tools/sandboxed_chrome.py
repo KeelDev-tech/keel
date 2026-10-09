@@ -73,13 +73,59 @@ def _unsafe_flags(arguments):
     return [arg for arg in arguments if arg.split('=', 1)[0] in FORBIDDEN_FLAGS]
 
 
+def _chrome_process_arguments(process, browser_executable):
+    """Normalize only the observed, unambiguous Chrome title representation.
+
+    Linux Chrome children can rewrite cmdline into one argv[0] string. Only
+    the same /proc/exe as the owned browser may use this fallback, with an
+    exact executable prefix and unquoted --switch[=value] tokens. Never
+    discover a renderer or security flag by searching arbitrary substrings.
+    """
+    if process.get('state') == 'Z':
+        return [], 'zombie'
+    executable = process.get('executable')
+    args = process.get('args', [])
+    if not isinstance(executable, str) or not Path(executable).is_absolute():
+        raise SandboxError('Owned process executable identity is unavailable')
+    if not args or not all(isinstance(arg, str) for arg in args):
+        raise SandboxError('Owned process argument evidence is unavailable')
+    argument_format = 'argv'
+    if len(args) == 1 and args[0] != executable:
+        title = args[0]
+        prefix = executable + ' '
+        if (executable != browser_executable or not title.startswith(prefix)
+                or any(char in "\"'\\" or (char.isspace() and char != ' ') or ord(char) < 32
+                       for char in title)):
+            raise SandboxError('Owned Chrome rewritten title is ambiguous or unbound')
+        switches = title[len(prefix):].split()
+        if not switches or any(not re.fullmatch(r'--[A-Za-z][A-Za-z0-9-]*(?:=[^\s\"\'\\]*)?', switch)
+                               for switch in switches):
+            raise SandboxError('Owned Chrome rewritten title is not an unambiguous switch list')
+        args = [executable] + switches
+        argument_format = 'rewritten-title'
+    elif args[0] != executable:
+        raise SandboxError('Owned process argv is not bound to its executable')
+    if '--' in args[1:]:
+        raise SandboxError('Owned Chrome process arguments contain an ambiguous option terminator')
+    types = [arg for arg in args[1:] if arg == '--type' or arg.startswith('--type=')]
+    if len(types) > 1 or any(not re.fullmatch(r'--type=[A-Za-z0-9_-]+', arg) for arg in types):
+        raise SandboxError('Owned Chrome process type is ambiguous or malformed')
+    return args, argument_format
+
+
 def _proc_record(pid):
     base = Path('/proc') / str(pid)
     fields = (base / 'stat').read_text().rsplit(')', 1)[1].split()
     status = dict(line.split(':', 1) for line in (base / 'status').read_text().splitlines()
                   if ':' in line)
+    try:
+        executable = os.readlink(base / 'exe') if fields[0] != 'Z' else None
+    except OSError as error:
+        # Missing executable identity is not a silently skipped renderer.
+        raise SandboxError('Owned process executable identity could not be read') from error
     return {
         'pid': pid, 'ppid': int(status['PPid']), 'state': fields[0], 'starttime': fields[19],
+        'executable': executable,
         'args': (base / 'cmdline').read_bytes().decode().rstrip('\0').split('\0'),
         'seccomp': status.get('Seccomp', '').strip(),
         'seccomp_filters': status.get('Seccomp_filters', '').strip(),
@@ -117,11 +163,11 @@ def _process_tree(pid, *, diagnostics=None):
     for child in [pid] + sorted(owned - {pid}):
         try:
             records.append(_proc_record(child))
-        except OSError as error:
+        except (OSError, SandboxError) as error:
             if diagnostics is not None:
                 diagnostics['owned_read_failures'].append({
                     'pid': child, 'ppid': parents.get(child),
-                    'error_type': type(error).__name__, 'errno': error.errno})
+                    'error_type': type(error).__name__, 'errno': getattr(error, 'errno', None)})
             if child != pid and isinstance(error, FileNotFoundError):
                 continue  # Preserve the existing transient-child behavior.
             raise
@@ -131,7 +177,7 @@ def _process_tree(pid, *, diagnostics=None):
         for child in sorted(own_group - owned):
             try:
                 diagnostics['group_only_records'].append(_proc_record(child))
-            except (OSError, ValueError, IndexError) as error:
+            except (OSError, ValueError, IndexError, SandboxError) as error:
                 diagnostics['group_only_read_failures'].append({
                     'pid': child, 'ppid': parents.get(child),
                     'error_type': type(error).__name__, 'errno': getattr(error, 'errno', None)})
@@ -141,6 +187,8 @@ def _process_tree(pid, *, diagnostics=None):
 def _diagnostic_process(record):
     args = record.get('args', [])
     basename = Path(args[0]).name if args else ''
+    executable = record.get('executable')
+    executable_basename = Path(executable).name if isinstance(executable, str) else ''
     # Chrome may rewrite argv[0]. Log type markers and argument lengths to
     # diagnose representation differences without leaking URL/path values.
     result = {key: (record.get(key) if isinstance(record.get(key), (int, type(None)))
@@ -148,6 +196,9 @@ def _diagnostic_process(record):
         'pid', 'ppid', 'starttime', 'state', 'seccomp', 'seccomp_filters', 'no_new_privs')}
     result.update({
         'executable_basename': basename if re.fullmatch(r'[A-Za-z0-9_.+-]{1,80}', basename) else '<nonstandard-argv0>',
+        'proc_executable_basename': executable_basename if re.fullmatch(r'[A-Za-z0-9_.+-]{1,80}', executable_basename) else '<unavailable>',
+        'argv0_matches_executable': bool(executable and args and args[0] == executable),
+        'rewritten_prefix_matches_executable': bool(executable and len(args) == 1 and args[0].startswith(executable + ' ')),
         'argv_count': len(args), 'argv_lengths': [len(arg) for arg in args[:64]],
         'type_flags': [arg for arg in args if re.fullmatch(r'--type=[A-Za-z0-9_-]{1,40}', arg)][:16],
         'embedded_type_flags': sorted({match for arg in args for match in
@@ -160,7 +211,7 @@ def _diagnostic_process(record):
     return result
 
 
-def verify_sandbox_evidence(diagnostic, processes):
+def verify_sandbox_evidence(diagnostic, processes, *, expected_executable=None):
     """Require browser-reported sandbox AND kernel evidence from renderers."""
     rows = {re.sub(r'\s+', ' ', str(row[0])).strip().lower(): str(row[1]).strip().lower()
             for row in diagnostic.get('rows', []) if len(row) >= 2}
@@ -169,19 +220,33 @@ def verify_sandbox_evidence(diagnostic, processes):
     if not processes:
         raise SandboxError('No owned Chrome processes were observable')
     browser = processes[0]
-    renderers = [process for process in processes if '--type=renderer' in process['args']]
+    executable = browser.get('executable')
+    if (not executable or not browser.get('args') or browser['args'][0] != executable
+            or (expected_executable is not None and executable != expected_executable)):
+        raise SandboxError('Owned browser executable does not match its direct launch')
+    renderers, renderer_argument_formats = [], {}
+    for process in processes:
+        arguments, argument_format = _chrome_process_arguments(process, executable)
+        if _unsafe_flags(arguments):
+            raise SandboxError('Sandbox/security disabling flag observed in owned Chrome process')
+        if process is not browser and process.get('state') != 'Z' and process.get('executable') == executable:
+            types = [arg for arg in arguments[1:] if arg.startswith('--type=')]
+            if len(types) != 1 or types[0] not in ('--type=renderer', '--type=zygote', '--type=gpu-process', '--type=utility'):
+                raise SandboxError('Owned Chrome child process type is missing or unknown')
+        if '--type=renderer' in arguments:
+            if process.get('executable') != executable:
+                raise SandboxError('Owned renderer executable does not match the owned browser')
+            renderers.append(process)
+            renderer_argument_formats[process['pid']] = argument_format
     if not renderers:
         raise SandboxError('No owned renderer was observable for sandbox verification')
-    for process in processes:
-        if _unsafe_flags(process['args']):
-            raise SandboxError('Sandbox/security disabling flag observed in owned Chrome process')
     for renderer in renderers:
         if renderer['seccomp'] != '2' or renderer['no_new_privs'] != '1':
             raise SandboxError('Renderer lacks Seccomp filtering or NoNewPrivs')
         if renderer['namespaces']['pid'] == browser['namespaces']['pid']:
             raise SandboxError('Renderer PID namespace is not isolated from browser')
     return {'verified': True, 'renderer_pids': [p['pid'] for p in renderers],
-            'diagnostic_rows': rows}
+            'renderer_argument_formats': renderer_argument_formats, 'diagnostic_rows': rows}
 
 
 class SandboxedChrome:
@@ -361,7 +426,7 @@ class SandboxedChrome:
             processes = _process_tree(self.process.pid, diagnostics=self.metadata['process_capture'])
             self.metadata['processes'] = processes
             stage = 'sandbox-verification'
-            self.metadata['sandbox'] = verify_sandbox_evidence(diagnostic, processes)
+            self.metadata['sandbox'] = verify_sandbox_evidence(diagnostic, processes, expected_executable=self.chrome)
             stage = 'sandbox-screenshot'
             self._execute('screenshot', str(self.out / 'chrome-sandbox.png'))
             self._execute('open', 'about:blank')

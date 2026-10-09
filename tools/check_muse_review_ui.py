@@ -54,6 +54,58 @@ def number(value):
     return str(int(value)) if isinstance(value, (float, int)) and value == int(value) else str(value)
 
 
+def print_outcome(report):
+    """Expose bounded check labels in CI logs; keep payloads in the artifact."""
+    if report["status"] not in ("PASS", "FAIL", "UNAVAILABLE") or not report["checks"]:
+        return
+    checks = report["checks"]
+    failed = [row for row in checks if row["passed"] is not True]
+    print("Muse review browser acceptance: " + report["status"]
+          + "; cases_requested=" + str(len(report["cases"]))
+          + "; cases_observed=" + str(len({row["case"] for row in checks}))
+          + "; checks=" + str(len(checks))
+          + "; passed=" + str(len(checks) - len(failed)) + "; failed=" + str(len(failed)))
+    source = {}
+    for key in ("source_head", "source_tree"):
+        value = report.get(key)
+        source[key] = value if (isinstance(value, str) and len(value) == 40
+            and all(char in "0123456789abcdef" for char in value)) else "unavailable"
+    worktree = report.get("source_worktree", {})
+    dirty = worktree.get("dirty") if isinstance(worktree, dict) else None
+    source["scoped_worktree_dirty"] = dirty if type(dirty) is bool else None
+    print("Muse review source: " + json.dumps(source, sort_keys=True, separators=(",", ":")))
+
+    browser = report.get("browser", {})
+    browser = browser if isinstance(browser, dict) else {}
+    sandbox = browser.get("sandbox", {})
+    sandbox = sandbox if isinstance(sandbox, dict) else {}
+    proof = browser.get("disconnect_proof", {})
+    proof = proof if isinstance(proof, dict) else {}
+    pids, formats = sandbox.get("renderer_pids"), sandbox.get("renderer_argument_formats")
+    renderer_count = None
+    format_names = None
+    if sandbox.get("verified") is True:
+        if isinstance(pids, list) and pids and all(type(pid) is int and pid > 0 for pid in pids):
+            renderer_count = len(pids)
+        if isinstance(formats, dict) and formats and all(
+                value in ("argv", "rewritten-title") for value in formats.values()):
+            format_names = sorted(set(formats.values()))
+    safety = {"sandbox_verified": browser.get("sandbox_verified") is True,
+              "verified_renderer_count": renderer_count, "renderer_argument_formats": format_names,
+              "disconnect_proof_kind": "runtime-owned-browser-disconnect" if
+                  proof.get("kind") == "runtime-owned-browser-disconnect" else "unavailable",
+              "disconnect_proof_passed": proof.get("passed") is True,
+              "cli_attach_failed": proof.get("cli_attach_failed") is True}
+    print("Muse review safety: " + json.dumps(safety, sort_keys=True, separators=(",", ":")))
+    limit = 30
+    for row in failed[:limit]:
+        case = " ".join(str(row["case"]).split())[:32]
+        name = " ".join(str(row["name"]).split())[:180]
+        print("  FAIL [" + case + "] " + name)
+    if len(failed) > limit:
+        print("  " + str(len(failed) - limit) + " additional failed checks retained in report.json")
+
+
 def load_product():
     # Script execution needs the checkout root; importing this module is inert.
     if str(ROOT) not in sys.path:
@@ -708,6 +760,7 @@ def check(args):
                           observations=verifier.observations)
         report["artifacts"] = inventory(out)
         write_json(out / "report.json", report)
+        print_outcome(report)
 
 
 def main():
