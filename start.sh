@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
 # Inspect local state only; no initialization, HTTP reads, or queue promotions.
 set -euo pipefail
+KEEL_CALLER_DIR="$PWD"
 cd "$(dirname "$0")"
 if [ "$#" -gt 1 ]; then
   echo "usage: $0 [WORKSPACE] (or set KEEL_HOME)" >&2
   exit 2
 fi
 KEEL_WORKSPACE="${1:-${KEEL_HOME:-$PWD}}"
+case "$KEEL_WORKSPACE" in
+  /*) ;;
+  *) KEEL_WORKSPACE="$KEEL_CALLER_DIR/$KEEL_WORKSPACE" ;;
+esac
 KEEL_PYTHON="${KEEL_PYTHON:-python3}"
 
 # Missing applicant assertions are an expected first-run result. Still print
