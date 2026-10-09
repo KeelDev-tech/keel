@@ -153,6 +153,12 @@ export KEEL_HOME="$HOME/keel-workspace"
 ./start.sh                  # offline doctor, supply, and conversion reports
 ```
 
+Both wrappers accept an optional workspace argument, which takes precedence
+over `KEEL_HOME`. Relative workspace paths are resolved from the directory
+where you invoke the wrapper. Absolute paths are unchanged. If neither an
+argument nor `KEEL_HOME` is set, the existing default is the source directory;
+set a separate workspace as shown above to keep personal data outside it.
+
 On a new workspace, `start.sh` returns exit code **1** because applicant
 assertions are unknown. This is the expected fail-closed result. Example
 identity, qualifications, policy commitments, and consent are not banked as
