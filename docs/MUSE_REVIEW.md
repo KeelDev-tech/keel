@@ -337,3 +337,66 @@ Focused validation:
 ```bash
 python -B -m pytest -q -p no:cacheprovider tests/test_muse_review.py tests/test_muse_dashboard.py
 ```
+
+### Synthetic browser acceptance
+
+`tools/check_muse_review_ui.py` exercises the generated standalone `file:` HTML.
+It uses synthetic input from the real scorer and the public review projection
+and rendering APIs. Browser verification is separate from the Workbench HTTP UI
+check: a passing Workbench result does not establish fit-evidence acceptance.
+
+The verification tools require Linux, an installed Chrome or Chromium with a
+working normal sandbox, `agent-browser@0.38.2`, and `axe-core@4.10.3`. These are
+development tools; opening a review file does not require them. Use the pinned
+Python validation environment above for the focused source tests. The browser
+harness itself uses the Python standard library.
+
+```bash
+KEEL_REVIEW_CHECK_ROOT="$(mktemp -d)"
+npm install --prefix "$KEEL_REVIEW_CHECK_ROOT/tools" agent-browser@0.38.2 axe-core@4.10.3
+python -B -m unittest discover -s tests -p test_sandboxed_chrome.py
+KEEL_UI_CHROME="$(command -v google-chrome || command -v chromium)"
+python tools/check_muse_review_ui.py \
+  --browser "$KEEL_REVIEW_CHECK_ROOT/tools/node_modules/.bin/agent-browser" \
+  --chrome "$KEEL_UI_CHROME" \
+  --axe "$KEEL_REVIEW_CHECK_ROOT/tools/node_modules/axe-core/axe.min.js" \
+  --out "$KEEL_REVIEW_CHECK_ROOT/report"
+```
+
+The shared `tools/sandboxed_chrome.py` helper launches Chrome directly with its
+normal sandbox and attaches agent-browser to a fresh, isolated CDP session.
+It keeps matching CDP configuration on every invocation and restricts commands
+so a lost connection cannot fall back to a local agent-browser launch. This is
+necessary because the pinned agent-browser automatically disables Chrome's
+sandbox when `CI` is present, and bare `open` can launch locally even with a CDP
+connection. The helper preserves `CI`, rejects unsupported commands, and requires
+runtime sandbox and renderer evidence before returning a usable session. A
+missing browser, failed sandbox, lost connection, or unavailable diagnostic is a
+failure, not a passing skip. Do not change host security settings, add sandbox
+disabling flags, relax CSP, or enable cross-file access to obtain a pass.
+
+The audited agent-browser source is commit
+[`39a74c70d7759d5a6de7a22c04570bb626bbd081`](https://github.com/vercel-labs/agent-browser/tree/39a74c70d7759d5a6de7a22c04570bb626bbd081):
+see its [CI sandbox decision](https://github.com/vercel-labs/agent-browser/blob/39a74c70d7759d5a6de7a22c04570bb626bbd081/cli/src/native/cdp/chrome.rs#L1534)
+and [retained-CDP recovery branch](https://github.com/vercel-labs/agent-browser/blob/39a74c70d7759d5a6de7a22c04570bb626bbd081/cli/src/native/actions.rs#L4074).
+After UI checks, the runner terminates its own synthetic browser and requires
+both the existing daemon's stale-connection recovery and the CLI reconnect to
+fail specifically at the retained CDP endpoint. Static source review and mocked
+unit tests are recorded separately from this runtime disconnect proof.
+
+The fixture matrix covers complete, incomplete, partially matched mandatory,
+legacy, unknown, reviewed-empty, absent, null, malformed, wrong-revision and
+hostile assessments. Checks include component disclosures, separate assessment
+and canonical holds, desktop and narrow layouts, keyboard navigation, request
+bindings, actual browser-written downloads, inert text, runtime errors and
+network observations. Synthetic clocks are rebased for download validation;
+existing expired examples are not made current by changing the browser clock.
+
+Retain the report, fixture and HTML hashes, downloaded JSON, screenshots, tool
+versions, command receipts and sandbox diagnostics together. Only a completed
+passing report establishes the checks it lists. Fixture generation, unit tests,
+an available CDP connection, or loopback-only rendering do not establish
+standalone acceptance. Automated axe and focus/contrast checks do not establish
+full accessibility conformance, authenticated approval, Muse interoperability,
+submission readiness, or resolution of the separate CLI inventory baseline
+manifest blocker.

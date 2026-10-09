@@ -132,9 +132,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
-      - name: Install pinned browser verification CLI
-        run: npm install --prefix "${RUNNER_TEMP}/keel-ui-tools" agent-browser@0.38.2
+      - name: Install pinned browser verification tools
+        run: npm install --prefix "${RUNNER_TEMP}/keel-ui-tools" agent-browser@0.38.2 axe-core@4.10.3
+      - name: Verify browser launch guards without launching a browser
+        id: sandbox-tests
+        run: python3 -B -m unittest discover -s tests -p test_sandboxed_chrome.py
+      - name: Verify standalone fit evidence and review downloads
+        run: |
+          KEEL_UI_CHROME="$(command -v google-chrome || command -v chromium)"
+          python tools/check_muse_review_ui.py --browser "${RUNNER_TEMP}/keel-ui-tools/node_modules/.bin/agent-browser" --chrome "$KEEL_UI_CHROME" --axe "${RUNNER_TEMP}/keel-ui-tools/node_modules/axe-core/axe.min.js" --out "${RUNNER_TEMP}/keel-muse-review-ui-report"
       - name: Verify synthetic workbench in a sandboxed browser
+        if: ${{ !cancelled() && steps.sandbox-tests.outcome == 'success' }}
         run: |
           KEEL_UI_CHROME="$(command -v google-chrome || command -v chromium)"
           python tools/check_workbench_ui.py --browser "${RUNNER_TEMP}/keel-ui-tools/node_modules/.bin/agent-browser" --chrome "$KEEL_UI_CHROME" --out "${RUNNER_TEMP}/keel-ui-report"
@@ -144,5 +152,5 @@ jobs:
         with:
           name: workbench-ui
           path: |
-            ${{ runner.temp }}/keel-ui-report/report.json
-            ${{ runner.temp }}/keel-ui-report/*.png
+            ${{ runner.temp }}/keel-ui-report/
+            ${{ runner.temp }}/keel-muse-review-ui-report/
