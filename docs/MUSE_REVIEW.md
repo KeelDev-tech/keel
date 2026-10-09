@@ -104,6 +104,74 @@ holds, questions, evidence, approval_observation
 `holds` is a list of `{code, since}` with nullable `since`; every supplied hold
 remains present. No local interaction removes it.
 
+### Optional fit evidence (v2)
+
+To display an existing assessment in the Evidence tab, explicitly select
+`keel.muse.review-snapshot.v2`. It has the same top-level fields as v1 and permits
+one optional application field, `fit_assessment`. The resulting report is
+`keel.muse.review-projection.v2`. v1 continues to reject the extra field, and its
+projection/request hashes and existing behavior are unchanged. The synthetic
+`example_snapshot()` remains v1.
+
+An adapter must explicitly supply this exact assessment envelope:
+
+```text
+schema = "keel.muse.fit-assessment.v1"
+scoring_version = "keel-evidence-fit-v1"
+role_id, application_revision_sha256,
+fit_score, fit_score_upper, score_coverage_percent,
+score_bounds, score_evidence, blocked_reasons
+```
+
+The scoring fields come from the existing [scoring contract](SCORING_CONTRACT.md).
+`blocked_reasons` is the scorer's `action_eligibility.blocked_reasons` list.
+`score_bounds` and `score_evidence` must contain all nine components and only
+their supported fields. Evidence methods are `explicit_fact_comparison`,
+`human_assessment` (the four subjective components only),
+`reviewed_no_requirements` (hard requirements only), and `unknown`. Human
+assessments must bind the envelope's role ID and their component.
+
+The caller owns the role-to-application mapping: `role_id` need not equal
+`application_id`, but the assessment's application revision must equal the
+application record's revision. This supplied binding does not authenticate the
+source or establish assessment freshness. There is no automatic scorer adapter,
+scorer call, source retrieval, or live Muse/host integration in this view. Do not
+pass a full discovery/scorer row, free posting text, or applicant profile.
+
+The view presents the supplied lower/upper bounds, coverage, component evidence,
+mandatory requirement statuses, legacy holds, human rationale, and inert source
+references. Bounds are evidence bounds, **not a confidence interval**. Unknown
+evidence is labeled unavailable rather than a demonstrated mismatch; a valid
+assessment with zero coverage retains its 0–100 bounds and observed holds.
+Assessment holds have their own section and never replace canonical holds,
+change application status, reorder questions, or grant approval/execution. Even
+100/100 with no assessment holds does not establish readiness.
+
+Display limits are 256 KiB of canonical JSON per assessment, 128 criteria per
+component, 128 unique references per record, and 2,048 characters per ordinary
+text/reference. Up to 131 unique blocked reasons of 2,078 characters are accepted
+to preserve the scorer's mandatory-requirement messages. Numeric booleans,
+invalid ranges, unknown keys/versions/methods, invalid evidence shapes, and
+revision mismatches make this optional view `UNAVAILABLE`; absent/null input
+does likewise. Valid scorer output above the display limit is also unavailable,
+not silently truncated. The view validates the presentation contract; it does
+not recompute weighted criteria, eligibility, or authenticate claims. It rejects
+obvious contradictions between methods and bounds, and totals inconsistent with
+component bounds, allowing the scorer's outward rounding precision.
+
+The whole snapshot must still satisfy the existing strict finite-JSON, depth,
+size, and required-record checks. Unsafe JSON rejects the entire snapshot. The
+exact supplied snapshot, including malformed optional input, remains in the
+report and its hash; treat that report as private source material. Only the
+validated display whitelist is embedded in HTML, which excludes the raw
+snapshot. References and rationale remain text nodes under the existing CSP;
+the view never opens them or sends data.
+
+Requests and effort observations keep their v1 envelopes and bind the complete
+v2 report/snapshot hashes. Any assessment change, including a malformed input
+change, invalidates an old request. Projection validation, evidence expiry,
+deadlines, and authenticated host ingestion requirements still apply.
+
 `packet` and `previous_packet` are null or:
 
 ```json
@@ -269,3 +337,66 @@ Focused validation:
 ```bash
 python -B -m pytest -q -p no:cacheprovider tests/test_muse_review.py tests/test_muse_dashboard.py
 ```
+
+### Synthetic browser acceptance
+
+`tools/check_muse_review_ui.py` exercises the generated standalone `file:` HTML.
+It uses synthetic input from the real scorer and the public review projection
+and rendering APIs. Browser verification is separate from the Workbench HTTP UI
+check: a passing Workbench result does not establish fit-evidence acceptance.
+
+The verification tools require Linux, an installed Chrome or Chromium with a
+working normal sandbox, `agent-browser@0.38.2`, and `axe-core@4.10.3`. These are
+development tools; opening a review file does not require them. Use the pinned
+Python validation environment above for the focused source tests. The browser
+harness itself uses the Python standard library.
+
+```bash
+KEEL_REVIEW_CHECK_ROOT="$(mktemp -d)"
+npm install --prefix "$KEEL_REVIEW_CHECK_ROOT/tools" agent-browser@0.38.2 axe-core@4.10.3
+python -B -m unittest discover -s tests -p test_sandboxed_chrome.py
+KEEL_UI_CHROME="$(command -v google-chrome || command -v chromium)"
+python tools/check_muse_review_ui.py \
+  --browser "$KEEL_REVIEW_CHECK_ROOT/tools/node_modules/.bin/agent-browser" \
+  --chrome "$KEEL_UI_CHROME" \
+  --axe "$KEEL_REVIEW_CHECK_ROOT/tools/node_modules/axe-core/axe.min.js" \
+  --out "$KEEL_REVIEW_CHECK_ROOT/report"
+```
+
+The shared `tools/sandboxed_chrome.py` helper launches Chrome directly with its
+normal sandbox and attaches agent-browser to a fresh, isolated CDP session.
+It keeps matching CDP configuration on every invocation and restricts commands
+so a lost connection cannot fall back to a local agent-browser launch. This is
+necessary because the pinned agent-browser automatically disables Chrome's
+sandbox when `CI` is present, and bare `open` can launch locally even with a CDP
+connection. The helper preserves `CI`, rejects unsupported commands, and requires
+runtime sandbox and renderer evidence before returning a usable session. A
+missing browser, failed sandbox, lost connection, or unavailable diagnostic is a
+failure, not a passing skip. Do not change host security settings, add sandbox
+disabling flags, relax CSP, or enable cross-file access to obtain a pass.
+
+The audited agent-browser source is commit
+[`39a74c70d7759d5a6de7a22c04570bb626bbd081`](https://github.com/vercel-labs/agent-browser/tree/39a74c70d7759d5a6de7a22c04570bb626bbd081):
+see its [CI sandbox decision](https://github.com/vercel-labs/agent-browser/blob/39a74c70d7759d5a6de7a22c04570bb626bbd081/cli/src/native/cdp/chrome.rs#L1534)
+and [retained-CDP recovery branch](https://github.com/vercel-labs/agent-browser/blob/39a74c70d7759d5a6de7a22c04570bb626bbd081/cli/src/native/actions.rs#L4074).
+After UI checks, the runner terminates its own synthetic browser and requires
+both the existing daemon's stale-connection recovery and the CLI reconnect to
+fail specifically at the retained CDP endpoint. Static source review and mocked
+unit tests are recorded separately from this runtime disconnect proof.
+
+The fixture matrix covers complete, incomplete, partially matched mandatory,
+legacy, unknown, reviewed-empty, absent, null, malformed, wrong-revision and
+hostile assessments. Checks include component disclosures, separate assessment
+and canonical holds, desktop and narrow layouts, keyboard navigation, request
+bindings, actual browser-written downloads, inert text, runtime errors and
+network observations. Synthetic clocks are rebased for download validation;
+existing expired examples are not made current by changing the browser clock.
+
+Retain the report, fixture and HTML hashes, downloaded JSON, screenshots, tool
+versions, command receipts and sandbox diagnostics together. Only a completed
+passing report establishes the checks it lists. Fixture generation, unit tests,
+an available CDP connection, or loopback-only rendering do not establish
+standalone acceptance. Automated axe and focus/contrast checks do not establish
+full accessibility conformance, authenticated approval, Muse interoperability,
+submission readiness, or resolution of the separate CLI inventory baseline
+manifest blocker.

@@ -6,7 +6,6 @@ Never connects to a live workspace, imports applicant data or submits a form.
 """
 import argparse
 import json
-import os
 from pathlib import Path
 import subprocess
 import sys
@@ -18,6 +17,7 @@ from keel_workbench.demo import make_demo, NOW
 from keel_workbench.service import Workbench
 from keel_workbench.server import LocalServer
 from keel_trust.common import digest
+from tools.sandboxed_chrome import SandboxedChrome
 
 
 CONTRAST = r"""(() => {
@@ -35,9 +35,6 @@ CONTRAST = r"""(() => {
 
 def check(browser, chrome, out):
     out.mkdir(parents=True, exist_ok=True)
-    env = os.environ.copy()
-    env.setdefault('AGENT_BROWSER_SOCKET_DIR', str(out / 'browser-sockets'))
-    env.setdefault('AGENT_BROWSER_DEFAULT_TIMEOUT', '45000')
     # Retain the real timer callback for deterministic response-order checks.
     # Earlier tests still exercise its native 30-second interval unchanged.
     timer_hook = out / 'timer-hook.js'
@@ -52,31 +49,17 @@ def check(browser, chrome, out):
         return id;
       };
     })();""")
-    command = [browser, '--json', '--namespace', 'keel-ui-'+str(os.getpid()),
-               '--executable-path', chrome, '--allowed-domains', '127.0.0.1,localhost']
-    def call(*args):
-        result = subprocess.run(command + list(args), env=env, capture_output=True, text=True, timeout=60)
-        if result.returncode:
-            # Never echo the navigation URL's transient session token.
-            raise RuntimeError('browser command failed: '+args[0])
-        value = json.loads(result.stdout)
-        if value.get('success') is not True:
-            raise RuntimeError('browser command unsuccessful: '+args[0])
-        return value['data']
-    def evaluate(expression):
-        return call('eval', expression)['result']
     checks = []
     def record(name, passed):
         checks.append({'name': name, 'passed': bool(passed)})
     app = Workbench(make_demo(), workspace_id='keel-demo', synthetic=True, host_clock=lambda: NOW)
-    opened = False
-    with LocalServer(app, 0) as server:
+    with SandboxedChrome(browser, chrome, out, init_scripts=(timer_hook,)) as session, LocalServer(app, 0) as server:
+        call = session.call
+        evaluate = session.evaluate
         thread = threading.Thread(target=server.serve_forever, kwargs={'poll_interval': .05}, daemon=True)
         thread.start()
         try:
-            call('open', 'http://'+server.authority+'/#token='+server.token,
-                 '--init-script', str(timer_hook))
-            opened = True
+            call('open', 'http://'+server.authority+'/#token='+server.token)
             call('wait', '--fn', "document.querySelector('#main table') !== null")
             snapshot = call('snapshot', '-i')
             record('page renders meaningful controls', 'Overview' in snapshot['snapshot'])
@@ -342,17 +325,14 @@ def check(browser, chrome, out):
             call('screenshot', str(out / 'empty.png'))
             record('no JavaScript exceptions', call('errors')['errors'] == [])
             report = {'synthetic': True, 'execution_authorized': False,
-                      'contrast': contrast, 'checks': checks,
+                      'contrast': contrast, 'checks': checks, 'sandbox': session.metadata,
                       'status': 'PASS' if all(row['passed'] for row in checks) else 'FAIL'}
             (out / 'report.json').write_text(json.dumps(report, indent=2)+'\n')
             print(json.dumps(report))
             return 0 if report['status'] == 'PASS' else 1
         finally:
-            try:
-                if opened: call('close')
-            finally:
-                server.shutdown()
-                thread.join(timeout=5)
+            server.shutdown()
+            thread.join(timeout=5)
 
 
 def main():
