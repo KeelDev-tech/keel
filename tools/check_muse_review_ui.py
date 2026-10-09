@@ -130,6 +130,21 @@ def failure_diagnostic(row):
             r"not rendered|outside horizontal viewport|own (?:horizontal|vertical) overflow|"
             r"text exceeds (?:horizontal|vertical) box|clipped (?:horizontally|vertically) by [A-Za-z0-9_ -]+", 128)
             for issue in issues[:5]] if isinstance(issues, list) else []
+        probe = value.get("rangeProbe")
+        if isinstance(probe, dict):
+            clean = {"path": diagnostic_token(probe.get("path"),
+                r"#detail-body(?: > [a-z]+:nth-of-type\([0-9]+\)){0,8}|outside-detail-body", 320),
+                "whiteSpace": diagnostic_token(probe.get("whiteSpace"), r"[a-z-]+", 24),
+                "overflowWrap": diagnostic_token(probe.get("overflowWrap"), r"[a-z-]+", 24),
+                "scanComplete": probe.get("scanComplete") is True}
+            clean.update(numbers(probe, ("scannedUnits", "scannedRuns", "scannedTextNodes", "wholeOverflowCount")))
+            for key in ("wholeOverflowRects", "whitespaceOverflowRects", "nonWhitespaceOverflowRects"):
+                values = probe.get(key, [])
+                clean[key] = [numbers(item, ("left", "right", "top", "bottom", "width", "height"))
+                              for item in values[:3]] if isinstance(values, list) else []
+            clean.update(numbers(probe, ("whitespaceRuns", "nonWhitespaceRuns",
+                                         "whitespaceOverflowCount", "nonWhitespaceOverflowCount")))
+            result["rangeProbe"] = clean
         return result
 
     def tabs(value):
@@ -148,6 +163,47 @@ def failure_diagnostic(row):
     if name.endswith((" complete tab strip fits without hidden overflow", " selected and focused tab is visible")):
         return {"kind": "tabs", "tabs": tabs(detail)}
     return None
+
+
+def measured_diagnostic(row):
+    """Fixed browser-measured scalars, safe to log for either passing or failing checks."""
+    detail = row.get("detail")
+    if not isinstance(detail, dict):
+        return None
+    if row.get("name") == "selected queue small text has measured AA contrast":
+        return {"kind": "selected-queue-contrast", "nodes": [{
+            "selector": diagnostic_token(n.get("selector"),
+                r"\.row-employer|\.row-foot \.muted", 32),
+            "opaque": n.get("opaque") is True,
+            "foreground": diagnostic_token(n.get("foreground"), r"rgb\([0-9., ]+\)", 40),
+            "background": diagnostic_token(n.get("background"), r"rgb\([0-9., ]+\)", 40),
+            "ratio": diagnostic_number(n.get("ratio"))}
+            for n in detail.get("nodes", [])[:2] if isinstance(n, dict)]}
+    if row.get("name") not in ("390px real keyboard tabs and focus outline remain visible",
+                                "320px real keyboard tabs and focus outline remain visible"):
+        return None
+    samples = []
+    for n in detail.get("samples", [])[:7]:
+        if not isinstance(n, dict):
+            continue
+        sample = {"key": diagnostic_token(n.get("key"), r"Home|End|ArrowRight|ArrowLeft", 12)}
+        for key in ("target", "selected", "focused", "labelledby"):
+            sample[key] = diagnostic_token(n.get(key), r"tab-(?:review|packet|evidence|timeline)", 16)
+        for key in ("focusVisible", "opaque"):
+            sample[key] = n.get(key) is True
+        for key in ("innerWidth", "viewport", "selectedCount", "tabIndex", "outlineWidth",
+                    "outlineOffset", "outlineExtent", "contrast"):
+            sample[key] = diagnostic_number(n.get(key))
+        sample["outlineStyle"] = diagnostic_token(n.get("outlineStyle"), r"[a-z-]+", 16)
+        for key in ("rect", "outlineRect"):
+            rect = n.get(key, {})
+            sample[key] = {k: diagnostic_number(rect.get(k)) for k in ("left", "right", "top", "bottom")}
+        issues = n.get("issues", [])
+        sample["issues"] = [diagnostic_token(i,
+            r"not rendered|outline outside viewport|outline clipped (?:horizontally|vertically) by (?:tabs|panel|ancestor)",
+            80) for i in issues[:5]]
+        samples.append(sample)
+    return {"kind": "keyboard-outline-geometry", "samples": samples}
 
 
 def print_outcome(report):
@@ -196,6 +252,15 @@ def print_outcome(report):
     limit = 30
     diagnostic_budget = 32768
     diagnostics_omitted = 0
+    for row in checks:
+        measured = measured_diagnostic(row)
+        if measured is not None:
+            encoded = json.dumps(measured, sort_keys=True, separators=(",", ":"), allow_nan=False)
+            if len(encoded) <= min(8192, diagnostic_budget):
+                print("  MEASURED " + encoded)
+                diagnostic_budget -= len(encoded)
+            else:
+                diagnostics_omitted += 1
     for row in failed[:limit]:
         case = " ".join(str(row["case"]).split())[:32]
         name = " ".join(str(row["name"]).split())[:180]
@@ -635,10 +700,89 @@ class Acceptance:
         self.record(label + " text contrast was measured", "color-contrast" in results["passes"]
                     and not contrast_unknown, contrast_unknown)
 
+    def selected_queue_contrast(self):
+        observed = self.evaluate(r"""(() => {
+            function rgb(value){const m=value.match(/^rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)$/);
+                return m?[+m[1],+m[2],+m[3],m[4]===undefined?1:+m[4]]:null;}
+            function lum(c){const x=c.slice(0,3).map(v=>v/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);
+                return x[0]*.2126+x[1]*.7152+x[2]*.0722;}
+            return {nodes:['.row-employer','.row-foot .muted'].map(selector=>{
+                const n=document.querySelector('.queue-row[aria-current=true] '+selector);
+                if(!n)return {selector,opaque:false,ratio:null};
+                const foreground=getComputedStyle(n).color,fg=rgb(foreground);let background='',bg=null,opaque=true;
+                for(let p=n;p;p=p.parentElement){const s=getComputedStyle(p),c=rgb(s.backgroundColor);
+                    if(+s.opacity!==1||s.filter!=='none'||s.backgroundImage!=='none')opaque=false;
+                    if(!bg&&c&&c[3]!==0){background=s.backgroundColor;bg=c;if(c[3]!==1)opaque=false;}}
+                opaque=opaque&&!!fg&&fg[3]===1&&!!bg&&bg[3]===1;
+                return {selector,foreground,background,opaque,
+                    ratio:opaque?(Math.max(lum(fg),lum(bg))+.05)/(Math.min(lum(fg),lum(bg))+.05):null};})};})()""")
+        nodes = observed["nodes"]
+        self.record("selected queue small text has measured AA contrast",
+            len(nodes) == 2 and all(n["opaque"] and n["ratio"] >= 4.5 for n in nodes), observed)
+
+    def mobile_keyboard(self, width):
+        # Run while Review is selected, before fit()/expand(): rendering another
+        # tab recreates disclosures, so keyboard coverage must precede expansion.
+        self.call("focus", "#tab-review")
+        self.call("press", "Tab")
+        self.call("press", "Shift+Tab")
+        samples = []
+        for key, target in (("Home", "review"), ("ArrowRight", "packet"),
+                            ("ArrowRight", "evidence"), ("End", "timeline"),
+                            ("Home", "review"), ("ArrowLeft", "timeline"), ("Home", "review")):
+            self.call("press", key)
+            observed = self.evaluate(r"""(() => {
+                const n=document.activeElement,s=getComputedStyle(n),r=n.getBoundingClientRect();
+                const vw=document.documentElement.clientWidth,vh=document.documentElement.clientHeight;
+                const outlineWidth=parseFloat(s.outlineWidth),outlineOffset=parseFloat(s.outlineOffset);
+                const outlineExtent=Math.max(0,outlineWidth+outlineOffset),issues=[];
+                const rect={left:r.left,right:r.right,top:r.top,bottom:r.bottom};
+                const outlineRect={left:r.left-outlineExtent,right:r.right+outlineExtent,
+                    top:r.top-outlineExtent,bottom:r.bottom+outlineExtent};
+                if(!n.getClientRects().length||r.width<=0||r.height<=0||s.visibility!=='visible')issues.push('not rendered');
+                if(outlineRect.left < -1||outlineRect.right>vw+1||outlineRect.top < -1||outlineRect.bottom>vh+1)
+                    issues.push('outline outside viewport');
+                function rgb(value){const m=value.match(/^rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)$/);
+                    return m?[+m[1],+m[2],+m[3],m[4]===undefined?1:+m[4]]:null;}
+                function lum(c){const x=c.slice(0,3).map(v=>v/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);
+                    return x[0]*.2126+x[1]*.7152+x[2]*.0722;}
+                let bg=null,opaque=+s.opacity===1&&s.filter==='none'&&s.backgroundImage==='none';
+                for(let p=n.parentElement;p;p=p.parentElement){const ps=getComputedStyle(p),pr=p.getBoundingClientRect();
+                    const left=pr.left+p.clientLeft,top=pr.top+p.clientTop;
+                    const name=p.classList.contains('tabs')?'tabs':p.classList.contains('panel')?'panel':'ancestor';
+                    if(['hidden','clip','auto','scroll'].includes(ps.overflowX)&&
+                        (outlineRect.left<left-1||outlineRect.right>left+p.clientWidth+1))
+                        issues.push('outline clipped horizontally by '+name);
+                    if(['hidden','clip','auto','scroll'].includes(ps.overflowY)&&
+                        (outlineRect.top<top-1||outlineRect.bottom>top+p.clientHeight+1))
+                        issues.push('outline clipped vertically by '+name);
+                    const c=rgb(ps.backgroundColor);
+                    if(+ps.opacity!==1||ps.filter!=='none'||ps.backgroundImage!=='none')opaque=false;
+                    if(!bg&&c&&c[3]!==0){bg=c;if(c[3]!==1)opaque=false;}}
+                const fg=rgb(s.outlineColor);opaque=opaque&&!!fg&&fg[3]===1&&!!bg&&bg[3]===1;
+                const selected=document.querySelectorAll('[role=tab][aria-selected=true]');
+                return {innerWidth:window.innerWidth,viewport:vw,focused:n.id,selected:selected[0]?.id||'',
+                    selectedCount:selected.length,tabIndex:n.tabIndex,
+                    labelledby:document.querySelector('#detail-body').getAttribute('aria-labelledby'),
+                    focusVisible:n.matches(':focus-visible'),outlineStyle:s.outlineStyle,
+                    outlineWidth,outlineOffset,outlineExtent,rect,outlineRect,opaque,
+                    contrast:opaque?(Math.max(lum(fg),lum(bg))+.05)/(Math.min(lum(fg),lum(bg))+.05):null,
+                    issues:[...new Set(issues)]};})()""")
+            observed.update(key=key, target="tab-" + target)
+            samples.append(observed)
+            self.screenshot(self.case + "-keyboard-" + str(width) + "-" + str(len(samples)) + "-" + target)
+        self.record(str(width) + "px real keyboard tabs and focus outline remain visible",
+            all(n["innerWidth"] == width and 0 < n["viewport"] <= width
+                and n["focused"] == n["selected"] == n["labelledby"] == n["target"]
+                and n["selectedCount"] == 1 and n["tabIndex"] == 0
+                and n["focusVisible"] and n["outlineStyle"] not in ("none", "hidden")
+                and n["outlineWidth"] >= 2 and n["opaque"] and n["contrast"] >= 3
+                and not n["issues"] for n in samples), {"samples": samples})
+
     def layout(self, width, label="expanded"):
         self.call("set", "viewport", str(width), "900")
         self.call("focus", "#tab-review" if label == "review" else "#tab-evidence")
-        metrics = self.evaluate("""(() => {
+        metrics = self.evaluate(r"""(() => {
             const vw=document.documentElement.clientWidth,tabs=document.querySelector('.tabs');
             const selectors=['#detail-head h2','#detail-body h3','#detail-body h4',
                 '#detail-body summary','#detail-body p','#detail-body label',
@@ -648,8 +792,44 @@ class Acceptance:
             const nodes=[...document.querySelectorAll(selectors.join(','))];
             const rect=n=>{const r=n.getBoundingClientRect();return {
                 left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height};};
+            const outside=(line,r)=>line.left<r.left-1||line.right>r.right+1||line.top<r.top-1||line.bottom>r.bottom+1;
+            const rectValue=r=>({left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height});
+            function rangeProbe(n,r,s,whole){
+                const root=document.querySelector('#detail-body'),parts=[];
+                let p=n,path='outside-detail-body';
+                if(root.contains(n)){
+                    while(p!==root&&parts.length<8){let ordinal=1;
+                        for(let q=p.previousElementSibling;q;q=q.previousElementSibling)if(q.tagName===p.tagName)ordinal++;
+                        parts.unshift(p.tagName.toLowerCase()+':nth-of-type('+ordinal+')');p=p.parentElement;}
+                    if(p===root)path='#detail-body'+(parts.length?' > '+parts.join(' > '):'');
+                }
+                const result={path,whiteSpace:s.whiteSpace,overflowWrap:s.overflowWrap,
+                    wholeOverflowCount:whole.length,wholeOverflowRects:whole.slice(0,3),
+                    scanComplete:true,scannedUnits:0,scannedRuns:0,scannedTextNodes:0,
+                    whitespaceRuns:0,nonWhitespaceRuns:0,whitespaceOverflowCount:0,nonWhitespaceOverflowCount:0,
+                    whitespaceOverflowRects:[],nonWhitespaceOverflowRects:[]};
+                const walker=document.createTreeWalker(n,NodeFilter.SHOW_TEXT);let text;
+                scan:while((text=walker.nextNode())){
+                    if(result.scannedUnits>=4096||result.scannedTextNodes>=256){result.scanComplete=false;break;}
+                    result.scannedTextNodes++;
+                    const segment=text.data.slice(0,4096-result.scannedUnits);
+                    for(const match of segment.matchAll(/\s+|\S+/gu)){
+                        if(result.scannedRuns>=256){result.scanComplete=false;break scan;}
+                        result.scannedRuns++;result.scannedUnits+=match[0].length;
+                        const kind=/^\s+$/u.test(match[0])?'whitespace':'nonWhitespace';result[kind+'Runs']++;
+                        const probe=document.createRange();probe.setStart(text,match.index);
+                        probe.setEnd(text,match.index+match[0].length);
+                        for(const line of probe.getClientRects())if(outside(line,r)){
+                            result[kind+'OverflowCount']++;
+                            if(result[kind+'OverflowRects'].length<3)result[kind+'OverflowRects'].push(rectValue(line));
+                        }
+                    }
+                    if(segment.length<text.data.length){result.scanComplete=false;break;}
+                }
+                return result;
+            }
             function inspect(n){
-                const r=rect(n),s=getComputedStyle(n),issues=[];
+                const r=rect(n),s=getComputedStyle(n),issues=[],wholeOverflow=[];let probe=null;
                 if(!n.getClientRects().length||r.width<=0||r.height<=0||
                     s.display==='none'||['hidden','collapse'].includes(s.visibility))issues.push('not rendered');
                 if(r.left < -1||r.right>vw+1)issues.push('outside horizontal viewport');
@@ -660,7 +840,9 @@ class Acceptance:
                     for(const line of range.getClientRects()){
                         if(line.left<r.left-1||line.right>r.right+1)issues.push('text exceeds horizontal box');
                         if(line.top<r.top-1||line.bottom>r.bottom+1)issues.push('text exceeds vertical box');
+                        if(outside(line,r))wholeOverflow.push(rectValue(line));
                     }
+                    if(wholeOverflow.length)probe=rangeProbe(n,r,s,wholeOverflow);
                 }
                 for(let p=n.parentElement;p&&p!==document.documentElement;p=p.parentElement){
                     const ps=getComputedStyle(p),pr=p.getBoundingClientRect();
@@ -674,7 +856,7 @@ class Acceptance:
                 }
                 return {tag:n.tagName,id:n.id,class:n.className,text:n.textContent.slice(0,120),
                     rect:r,clientWidth:n.clientWidth,scrollWidth:n.scrollWidth,
-                    clientHeight:n.clientHeight,scrollHeight:n.scrollHeight,issues:[...new Set(issues)]};
+                    clientHeight:n.clientHeight,scrollHeight:n.scrollHeight,issues:[...new Set(issues)],rangeProbe:probe};
             }
             const inspected=nodes.map(inspect),selected=tabs.querySelector('[aria-selected=true]');
             return {viewport:vw,innerWidth:window.innerWidth,scrollbarWidth:window.innerWidth-vw,
@@ -777,8 +959,11 @@ class Acceptance:
             if case == "complete":
                 self.keyboard_and_selection()
                 self.axe_check("review")
+                self.selected_queue_contrast()
                 for width in (1440, 390, 320):
                     self.layout(width, "review")
+                    if width in (390, 320):
+                        self.mobile_keyboard(width)
                 self.call("set", "viewport", "1440", "1000")
             self.fit()
             if case == "complete":
