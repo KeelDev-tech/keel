@@ -10,7 +10,9 @@ from copy import deepcopy
 import hashlib
 from html.parser import HTMLParser
 import json
+import math
 from pathlib import Path
+import re
 import subprocess
 import sys
 import time
@@ -52,6 +54,100 @@ def file_record(path):
 
 def number(value):
     return str(int(value)) if isinstance(value, (float, int)) and value == int(value) else str(value)
+
+
+def diagnostic_number(value):
+    return round(value, 3) if type(value) in (int, float) and abs(value) <= 10000000 and math.isfinite(value) else None
+
+
+def diagnostic_token(value, pattern, limit):
+    return value if isinstance(value, str) and len(value) <= limit and re.fullmatch(pattern, value) else "unavailable"
+
+
+def axe_diagnostic(violations):
+    """Only rule IDs, structural selectors and contrast measurements enter logs."""
+    if not isinstance(violations, list):
+        return {"kind": "axe", "violations_total": None, "violations": []}
+    rows = []
+    for violation in violations[:8]:
+        if not isinstance(violation, dict):
+            continue
+        row = {"id": diagnostic_token(violation.get("id"), r"[a-z][a-z0-9-]*", 64), "nodes": []}
+        nodes = violation.get("nodes", [])
+        row["nodes_total"] = len(nodes) if isinstance(nodes, list) else None
+        for node in (nodes[:3] if isinstance(nodes, list) else []):
+            if not isinstance(node, dict):
+                continue
+            targets = node.get("target", [])
+            item = {"target": [diagnostic_token(target, r"[A-Za-z0-9_#.>:+*~()\[\]= -]+", 160)
+                               for target in targets[:3]] if isinstance(targets, list) else [], "contrast": []}
+            measurements = node.get("contrast")
+            if not isinstance(measurements, list):
+                measurements = [check.get("data") for group in ("any", "all", "none")
+                    for check in (node.get(group) if isinstance(node.get(group), list) else [])
+                    if isinstance(check, dict) and check.get("id") == "color-contrast"]
+            for data in measurements[:3]:
+                if not isinstance(data, dict):
+                    continue
+                contrast = {key: diagnostic_token(data.get(key), r"#[0-9A-Fa-f]{3,8}", 9)
+                            for key in ("fgColor", "bgColor")}
+                contrast["contrastRatio"] = diagnostic_number(data.get("contrastRatio"))
+                contrast["expectedContrastRatio"] = diagnostic_token(data.get("expectedContrastRatio"), r"[0-9.]+:1", 16)
+                contrast["fontSize"] = diagnostic_token(data.get("fontSize"), r"[0-9.]+(?:pt|px)(?: \([0-9.]+(?:pt|px)\))?", 40)
+                contrast["fontWeight"] = diagnostic_token(str(data.get("fontWeight")), r"normal|bold|[1-9]00", 8)
+                item["contrast"].append(contrast)
+            row["nodes"].append(item)
+        rows.append(row)
+    return {"kind": "axe", "violations_total": len(violations), "violations": rows}
+
+
+def failure_diagnostic(row):
+    """Bounded numeric layout evidence, without HTML, text or arbitrary fields."""
+    detail, name = row.get("detail"), row.get("name", "")
+    if name.endswith(" WCAG A/AA automated audit") and isinstance(detail, dict):
+        result = axe_diagnostic(detail.get("violations"))
+        result["violations_total"] = diagnostic_number(detail.get("violations_total"))
+        originals = detail.get("violations")
+        for original, logged in zip(originals if isinstance(originals, list) else [], result["violations"]):
+            if isinstance(original, dict):
+                logged["nodes_total"] = diagnostic_number(original.get("nodes_total"))
+        return result
+    if not isinstance(detail, dict):
+        return None
+
+    def numbers(value, keys):
+        value = value if isinstance(value, dict) else {}
+        return {key: diagnostic_number(value.get(key)) for key in keys}
+
+    def node(value):
+        value = value if isinstance(value, dict) else {}
+        result = {key: diagnostic_token(value.get(key, ""), r"[A-Za-z0-9_ -]*", limit)
+                  for key, limit in (("tag", 16), ("id", 64), ("class", 64))}
+        result.update(numbers(value, ("clientWidth", "scrollWidth", "clientHeight", "scrollHeight")))
+        result["rect"] = numbers(value.get("rect"), ("left", "right", "top", "bottom", "width", "height"))
+        issues = value.get("issues", [])
+        result["issues"] = [diagnostic_token(issue,
+            r"not rendered|outside horizontal viewport|own (?:horizontal|vertical) overflow|"
+            r"text exceeds (?:horizontal|vertical) box|clipped (?:horizontally|vertically) by [A-Za-z0-9_ -]+", 128)
+            for issue in issues[:5]] if isinstance(issues, list) else []
+        return result
+
+    def tabs(value):
+        value = value if isinstance(value, dict) else {}
+        result = numbers(value, ("clientWidth", "scrollWidth", "scrollLeft", "clientHeight", "scrollHeight"))
+        result.update(selected=node(value.get("selected")), focused=node(value.get("focused")))
+        return result
+
+    if name.endswith(" avoid overflow and clipping"):
+        result = numbers(detail, ("viewport", "innerWidth", "scrollbarWidth", "pageWidth", "inspected"))
+        bad = detail.get("bad", [])
+        result.update(kind="layout", bad_total=len(bad) if isinstance(bad, list) else None,
+                      bad=[node(item) for item in bad[:5]] if isinstance(bad, list) else [],
+                      tabs=tabs(detail.get("tabs")))
+        return result
+    if name.endswith((" complete tab strip fits without hidden overflow", " selected and focused tab is visible")):
+        return {"kind": "tabs", "tabs": tabs(detail)}
+    return None
 
 
 def print_outcome(report):
@@ -98,10 +194,22 @@ def print_outcome(report):
               "cli_attach_failed": proof.get("cli_attach_failed") is True}
     print("Muse review safety: " + json.dumps(safety, sort_keys=True, separators=(",", ":")))
     limit = 30
+    diagnostic_budget = 32768
+    diagnostics_omitted = 0
     for row in failed[:limit]:
         case = " ".join(str(row["case"]).split())[:32]
         name = " ".join(str(row["name"]).split())[:180]
         print("  FAIL [" + case + "] " + name)
+        diagnostic = failure_diagnostic(row)
+        if diagnostic is not None:
+            encoded = json.dumps(diagnostic, sort_keys=True, separators=(",", ":"), allow_nan=False)
+            if len(encoded) <= min(8192, diagnostic_budget):
+                print("    DETAIL " + encoded)
+                diagnostic_budget -= len(encoded)
+            else:
+                diagnostics_omitted += 1
+    if diagnostics_omitted:
+        print("  " + str(diagnostics_omitted) + " typed diagnostics retained in report.json after log size caps")
     if len(failed) > limit:
         print("  " + str(len(failed) - limit) + " additional failed checks retained in report.json")
 
@@ -522,7 +630,7 @@ class Acceptance:
         write_json(self.out / ("axe-" + self.case + "-" + label + ".json"), results)
         self.record(label + " axe version pinned", results["version"] == AXE_VERSION)
         self.record(label + " WCAG A/AA automated audit", not results["violations"],
-                    [row["id"] for row in results["violations"]])
+                    axe_diagnostic(results["violations"]))
         contrast_unknown = [row for row in results["incomplete"] if row["id"] == "color-contrast"]
         self.record(label + " text contrast was measured", "color-contrast" in results["passes"]
                     and not contrast_unknown, contrast_unknown)
@@ -569,7 +677,8 @@ class Acceptance:
                     clientHeight:n.clientHeight,scrollHeight:n.scrollHeight,issues:[...new Set(issues)]};
             }
             const inspected=nodes.map(inspect),selected=tabs.querySelector('[aria-selected=true]');
-            return {viewport:vw,pageWidth:document.documentElement.scrollWidth,inspected:inspected.length,
+            return {viewport:vw,innerWidth:window.innerWidth,scrollbarWidth:window.innerWidth-vw,
+                pageWidth:document.documentElement.scrollWidth,inspected:inspected.length,
                 bad:inspected.filter(n=>n.issues.length),tabs:{clientWidth:tabs.clientWidth,
                     scrollWidth:tabs.scrollWidth,scrollLeft:tabs.scrollLeft,clientHeight:tabs.clientHeight,
                     scrollHeight:tabs.scrollHeight,selected:inspect(selected),focused:inspect(document.activeElement)}};
