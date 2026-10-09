@@ -19,6 +19,78 @@ ROOT = Path(__file__).resolve().parents[1]
 from tools.sandboxed_chrome import (
     FORBIDDEN_FLAGS, SandboxedChrome, SandboxError, _proc_record, _process_tree, verify_sandbox_evidence,
 )
+from tools.check_muse_review_ui import Acceptance
+
+
+class MuseReviewLayoutTests(unittest.TestCase):
+    """Exercise the layout acceptance gate without starting a browser."""
+
+    def desktop_metrics(self, label='review'):
+        # Observed in hosted PR138 push 330e7a4: a 15px classic scrollbar,
+        # no page overflow or clipped nodes, and a fully visible tab strip.
+        selected = {'id': 'tab-review' if label == 'review' else 'tab-evidence', 'issues': []}
+        return {'innerWidth': 1440, 'viewport': 1425, 'pageWidth': 1425,
+                'scrollbarWidth': 15, 'bad': [],
+                'tabs': {'clientWidth': 745, 'scrollWidth': 745, 'scrollLeft': 0,
+                         'clientHeight': 46, 'scrollHeight': 46,
+                         'selected': selected, 'focused': copy.deepcopy(selected)}}
+
+    def layout_checks(self, metrics, width=1440, label='review'):
+        acceptance = Acceptance(None, Path('/synthetic-muse-layout'), {}, {}, '')
+        acceptance.case = 'complete'
+        with patch.object(acceptance, 'call'), \
+                patch.object(acceptance, 'evaluate', return_value=metrics), \
+                patch.object(acceptance, 'screenshot'):
+            acceptance.layout(width, label)
+        return [row['passed'] for row in acceptance.checks]
+
+    def test_hosted_desktop_scrollbar_does_not_fail_review_or_evidence(self):
+        for label in ('review', 'expanded'):
+            with self.subTest(label=label):
+                self.assertEqual(self.layout_checks(self.desktop_metrics(label), label=label),
+                                 [True, True, True])
+
+    def test_viewport_without_a_classic_scrollbar_remains_accepted(self):
+        metrics = self.desktop_metrics()
+        metrics.update(viewport=1440, pageWidth=1440, scrollbarWidth=0)
+        self.assertEqual(self.layout_checks(metrics), [True, True, True])
+
+    def test_page_overflow_into_scrollbar_space_still_fails(self):
+        metrics = self.desktop_metrics()
+        metrics['pageWidth'] = 1430  # Smaller than innerWidth, larger than usable width.
+        self.assertEqual(self.layout_checks(metrics), [False, True, True])
+
+    def test_wrong_window_width_or_invalid_usable_width_still_fails(self):
+        for change in ({'innerWidth': 1400, 'viewport': 1385, 'pageWidth': 1385},
+                       {'viewport': 0, 'pageWidth': 0},
+                       {'viewport': 1441, 'pageWidth': 1441}):
+            metrics = self.desktop_metrics()
+            metrics.update(change)
+            with self.subTest(change=change):
+                self.assertFalse(self.layout_checks(metrics)[0])
+
+    def test_text_range_issue_still_fails_with_equal_client_and_scroll_width(self):
+        metrics = self.desktop_metrics()
+        metrics['bad'] = [{'tag': 'P', 'class': 'item-value', 'clientWidth': 205,
+                           'scrollWidth': 205, 'issues': ['text exceeds horizontal box']}]
+        self.assertEqual(self.layout_checks(metrics), [False, True, True])
+
+    def test_real_mobile_tab_overflow_and_selected_clipping_remain_failures(self):
+        metrics = self.desktop_metrics('expanded')
+        # Hosted 320px Evidence geometry remains outside the usable 305px width.
+        selected = {'id': 'tab-evidence', 'issues': ['clipped horizontally by tabs'],
+                    'rect': {'right': 313.453}}
+        metrics.update(innerWidth=320, viewport=305, pageWidth=305, bad=[selected])
+        metrics['tabs'].update(clientWidth=275, scrollWidth=392,
+                               selected=selected, focused=copy.deepcopy(selected))
+        self.assertEqual(self.layout_checks(metrics, width=320, label='expanded'),
+                         [False, False, False])
+
+    def test_tab_strip_overflow_is_an_independent_failure(self):
+        metrics = self.desktop_metrics()
+        metrics.update(innerWidth=390, viewport=375, pageWidth=375)
+        metrics['tabs'].update(clientWidth=345, scrollWidth=392)
+        self.assertEqual(self.layout_checks(metrics, width=390), [True, False, True])
 
 
 class LauncherRegressionTests(unittest.TestCase):

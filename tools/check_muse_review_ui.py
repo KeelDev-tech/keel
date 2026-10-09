@@ -79,7 +79,7 @@ def axe_diagnostic(violations):
             if not isinstance(node, dict):
                 continue
             targets = node.get("target", [])
-            item = {"target": [diagnostic_token(target, r"[A-Za-z0-9_#.>:+*~()\[\]= -]+", 160)
+            item = {"target": [diagnostic_token(target, r"""[A-Za-z0-9_#.>:+*~()\[\]="' -]+""", 160)
                                for target in targets[:3]] if isinstance(targets, list) else [], "contrast": []}
             measurements = node.get("contrast")
             if not isinstance(measurements, list):
@@ -684,7 +684,8 @@ class Acceptance:
                     scrollHeight:tabs.scrollHeight,selected:inspect(selected),focused:inspect(document.activeElement)}};
         })()""")
         self.record(str(width) + "px page, controls and " + label + " avoid overflow and clipping",
-            metrics["viewport"] == width and metrics["pageWidth"] <= width + 1 and not metrics["bad"], metrics)
+            metrics["innerWidth"] == width and 0 < metrics["viewport"] <= metrics["innerWidth"]
+            and metrics["pageWidth"] <= metrics["viewport"] + 1 and not metrics["bad"], metrics)
         tabs = metrics["tabs"]
         self.record(str(width) + "px complete tab strip fits without hidden overflow",
             tabs["clientWidth"] > 0 and tabs["scrollWidth"] <= tabs["clientWidth"] + 1
