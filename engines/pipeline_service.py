@@ -585,14 +585,20 @@ def posting_is_current(entry, key=None, *, now=None):
     return True
 
 
+def _verification_record(entry):
+    """Select retry and ordering history identically; an empty attempt is present."""
+    observation = entry.get('verification_attempt')
+    if observation is None:
+        observation = entry.get('posting_verification') or {}
+    return observation if isinstance(observation, dict) else None
+
+
 def _next_time(entry, key):
     # Scheduling comes from the latest attempt, independently of the last
     # usable posting observation. Transport failures can pace retries without
     # destroying decisive evidence or changing a quarantine streak.
-    observation = entry.get('verification_attempt')
+    observation = _verification_record(entry)
     if observation is None:
-        observation = entry.get('posting_verification') or {}
-    if not isinstance(observation, dict):
         return 'invalid'
     # A row may be retargeted after a prior observation. Its old posting's
     # retry timestamp cannot defer verification of a different exact posting.
@@ -674,7 +680,7 @@ def verify(workspace, *, limit=100, timeout=120, live=False, reader=None,
         if posting_counts[key] != 1:
             skipped['duplicate_exact_posting'] += 1; continue
         # Oldest observation first, then stable ID: failures cool down instead of starving the tail.
-        stamp = (row.get('verification_attempt') or row.get('posting_verification') or {}).get('observed_at', '')
+        stamp = (_verification_record(row) or {}).get('observed_at', '')
         try:
             # Canonical UTC text orders instants and gives equivalent spellings
             # the same key. Keep legacy missing/malformed fallback behavior;
@@ -1030,7 +1036,7 @@ def prepare_role(workspace, role_id, resume, *, _offline_fixture=False):
     if material.suffix.lower() not in {'.pdf', '.docx', '.txt', '.md'}:
         raise ValueError('resume must be a PDF, DOCX, TXT or Markdown file')
     relative = str(material.relative_to(workspace))
-    with queue_lock(timeout=10, owner='prepare-role:select'):
+    def selection():
         documents, ledger = _documents(workspace)
         matches = [(path, row) for path, row in _all_rows(documents) if row.get('role_id') == role_id]
         if len(matches) != 1:
@@ -1049,17 +1055,36 @@ def prepare_role(workspace, role_id, resume, *, _offline_fixture=False):
             raise ValueError('fresh exact posting verification required; run verify --live')
         if observation.get('identity') != list(_key(row) or []):
             raise ValueError('posting identity changed since verification')
-        row['materials'] = {**(row.get('materials') or {}), 'resume': relative}
-        row['preparation_selection'] = {'selected_at': utc_now().isoformat(), 'scope': 'review_only'}
-        atomic_json(path, documents[path])
-        selected = copy.deepcopy(row)
+        return documents, path, row, posting
+
+    # Refused acquisition must not invalidate a previously reviewed packet.
+    # Do not recover pending queue transactions during this initial inspection.
+    with queue_lock(timeout=10, owner='prepare-role:inspect', recover=False):
+        _, original_path, row, posting = selection()
+        original = copy.deepcopy(row)
     task = 'prepare-'+uuid.uuid4().hex
-    acquired, info = launch_lock.prelaunch_guard(role_id, task, selected.get('company', ''), selected.get('title', ''),
-                                                  ledger_path=str(workspace/'data/application-ledger.json'))
-    if not acquired:
-        raise ValueError('preparation lease refused: '+str(info.get('status')))
-    packet_path = None
+    acquired = False
+
+    def require_lease():
+        lease = launch_lock.check(role_id)
+        if not lease or lease.get('task_id') != task or lease.get('role_id') != role_id:
+            raise ValueError('preparation lease lost')
+
     try:
+        acquired, info = launch_lock.prelaunch_guard(
+            role_id, task, original.get('company', ''), original.get('title', ''),
+            ledger_path=str(workspace/'data/application-ledger.json'))
+        if not acquired:
+            raise ValueError('preparation lease refused: '+str(info.get('status')))
+        with queue_lock(timeout=10, owner='prepare-role:select', recover=False):
+            documents, path, row, posting = selection()
+            if path != original_path or row != original:
+                raise ValueError('role changed during preparation lease acquisition')
+            require_lease()
+            row['materials'] = {**(row.get('materials') or {}), 'resume': relative}
+            row['preparation_selection'] = {'selected_at': utc_now().isoformat(), 'scope': 'review_only'}
+            atomic_json(path, documents[path])
+            selected = copy.deepcopy(row)
         # Preparation-only path: build the modern packet contract directly.
         # (apply_loop.build_packet emits the legacy launch-packet schema,
         # which packet_contract.validate rejects. The 0.4.0 candidate routed
@@ -1072,11 +1097,7 @@ def prepare_role(workspace, role_id, resume, *, _offline_fixture=False):
                  "source_url": packet_contract.source_url(selected)}
         packet = packet_contract.prepare(selected, bank, policy,
                                          str(workspace), materials, intel)
-        packets_dir = workspace / 'data' / 'launch-packets'
-        packets_dir.mkdir(parents=True, exist_ok=True)
-        packet_path = str(packets_dir / f"{role_id}.json")
-        atomic_json(Path(packet_path), packet)
-        with queue_lock(timeout=10, owner='prepare-role:validate'):
+        with queue_lock(timeout=10, owner='prepare-role:validate', recover=False):
             documents, ledger = _documents(workspace)
             current_rows = _all_rows(documents)
             matches = [row for _, row in current_rows if row.get('role_id') == role_id]
@@ -1087,16 +1108,19 @@ def prepare_role(workspace, role_id, resume, *, _offline_fixture=False):
                 raise ValueError('role or ledger changed during preparation')
             if not posting_is_current(matches[0], posting):
                 raise ValueError('posting verification expired during preparation')
-            packet = read_json(packet_path)
             packet_contract.validate(packet, matches[0], apply_loop.load_answer_bank(), apply_loop.load_policy(),
                                      str(workspace), apply_loop._materials_for(matches[0], 'standard'))
+            require_lease()
+            # Publish only the validated candidate. A failed or fenced builder
+            # must neither overwrite nor unlink a prior/successor packet.
+            packet_path = str(workspace / 'data' / 'launch-packets' / f"{role_id}.json")
+            atomic_json(Path(packet_path), packet)
         return {'packet': packet_path, 'status': packet['status'], 'execution_authorized': False,
                 'review_requirements': packet['review_requirements']}
-    except BaseException:
-        if packet_path and Path(packet_path).exists():
-            Path(packet_path).unlink()
-        raise
     finally:
-        ok, info = launch_lock.release(role_id, task)
-        if not ok:
-            raise RuntimeError('preparation lease release failed: '+str(info))
+        # The guard can be interrupted after it publishes our lease but before
+        # returning. Task-bound release also refuses to remove a successor's lease.
+        if acquired or (launch_lock.check(role_id) or {}).get('task_id') == task:
+            ok, info = launch_lock.release(role_id, task)
+            if not ok:
+                raise RuntimeError('preparation lease release failed: '+str(info))
