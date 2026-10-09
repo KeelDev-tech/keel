@@ -19,6 +19,7 @@ import socket
 import stat
 import struct
 import subprocess
+import sys
 import tempfile
 import time
 from urllib.parse import unquote, urlsplit
@@ -88,14 +89,17 @@ def _proc_record(pid):
     }
 
 
-def _process_tree(pid):
+def _process_tree(pid, *, diagnostics=None):
     # Enumerate ancestry through stat first; do not read unrelated cmdlines.
     parents = {}
+    own_group = set()
     for entry in Path('/proc').iterdir():
         if entry.name.isdigit():
             try:
                 tail = (entry / 'stat').read_text().rsplit(')', 1)[1].split()
                 parents[int(entry.name)] = int(tail[1])
+                if int(tail[2]) == pid and int(tail[3]) == pid:
+                    own_group.add(int(entry.name))
             except (OSError, ValueError, IndexError):
                 continue
     owned = {pid}
@@ -104,13 +108,56 @@ def _process_tree(pid):
         if expanded == owned:
             break
         owned = expanded
-    records = [_proc_record(pid)]
-    for child in sorted(owned - {pid}):
+    records = []
+    if diagnostics is not None:
+        diagnostics.update({'owned_candidates': [{'pid': child, 'ppid': parents.get(child)}
+                                                for child in sorted(owned)],
+                            'owned_read_failures': [], 'records': records,
+                            'group_only_records': [], 'group_only_read_failures': []})
+    for child in [pid] + sorted(owned - {pid}):
         try:
             records.append(_proc_record(child))
-        except FileNotFoundError:
-            continue  # A transient child exited during enumeration.
+        except OSError as error:
+            if diagnostics is not None:
+                diagnostics['owned_read_failures'].append({
+                    'pid': child, 'ppid': parents.get(child),
+                    'error_type': type(error).__name__, 'errno': error.errno})
+            if child != pid and isinstance(error, FileNotFoundError):
+                continue  # Preserve the existing transient-child behavior.
+            raise
+    if diagnostics is not None:
+        # Diagnostic-only: the launcher creates this dedicated group/session.
+        # Record reparented members, but NEVER add them to verifier evidence.
+        for child in sorted(own_group - owned):
+            try:
+                diagnostics['group_only_records'].append(_proc_record(child))
+            except (OSError, ValueError, IndexError) as error:
+                diagnostics['group_only_read_failures'].append({
+                    'pid': child, 'ppid': parents.get(child),
+                    'error_type': type(error).__name__, 'errno': getattr(error, 'errno', None)})
     return records
+
+
+def _diagnostic_process(record):
+    args = record.get('args', [])
+    basename = Path(args[0]).name if args else ''
+    # Chrome may rewrite argv[0]. Log type markers and argument lengths to
+    # diagnose representation differences without leaking URL/path values.
+    result = {key: (record.get(key) if isinstance(record.get(key), (int, type(None)))
+                    else str(record.get(key))[:80]) for key in (
+        'pid', 'ppid', 'starttime', 'state', 'seccomp', 'seccomp_filters', 'no_new_privs')}
+    result.update({
+        'executable_basename': basename if re.fullmatch(r'[A-Za-z0-9_.+-]{1,80}', basename) else '<nonstandard-argv0>',
+        'argv_count': len(args), 'argv_lengths': [len(arg) for arg in args[:64]],
+        'type_flags': [arg for arg in args if re.fullmatch(r'--type=[A-Za-z0-9_-]{1,40}', arg)][:16],
+        'embedded_type_flags': sorted({match for arg in args for match in
+                                     re.findall(r'(?:^|\s)(--type=[A-Za-z0-9_-]{1,40})(?=\s|$)', arg)})[:16],
+        'flag_names': sorted({match for arg in args for match in
+                             re.findall(r'(?:^|\s)(--[A-Za-z][A-Za-z0-9-]{0,80})(?=[=\s]|$)', arg)})[:64],
+        'namespaces': {key: str(record.get('namespaces', {}).get(key, ''))[:80]
+                       for key in ('pid', 'user', 'net')},
+    })
+    return result
 
 
 def verify_sandbox_evidence(diagnostic, processes):
@@ -158,6 +205,45 @@ class SandboxedChrome:
     def _save(self):
         self.out.mkdir(parents=True, exist_ok=True)
         (self.out / 'sandbox-evidence.json').write_text(json.dumps(self.metadata, indent=2) + '\n')
+
+    def _emit_startup_failure(self, stage, error):
+        """Bounded, field-allowlisted CI evidence; no page/URL/env values."""
+        capture = self.metadata.get('process_capture', {})
+        processes = self.metadata.get('processes', capture.get('records', []))
+        group_only = capture.get('group_only_records', [])
+        candidates = capture.get('owned_candidates', [])
+        failures = capture.get('owned_read_failures', [])
+        group_failures = capture.get('group_only_read_failures', [])
+        rows = self.metadata.get('sandbox_diagnostic', {}).get('rows', [])
+        event = {
+            'event': 'sandbox-startup-failure', 'stage': stage, 'error_type': type(error).__name__,
+            'chrome_pid': self.metadata.get('chrome_pid'),
+            'chrome_version': {key: str(self.metadata.get('chrome_version', {}).get(key, ''))[:160]
+                               for key in ('Browser', 'Protocol-Version')},
+            'sandbox_rows': [[str(cell)[:160] for cell in row[:2]] for row in rows[:32]],
+            'processes': [dict(_diagnostic_process(record), ancestry=True) for record in processes[:32]],
+            'group_only_processes': [dict(_diagnostic_process(record), ancestry=False) for record in group_only[:32]],
+            'owned_candidates': candidates[:128], 'owned_read_failures': failures[:64],
+            'group_only_read_failures': group_failures[:64],
+            'counts': {'sandbox_rows': len(rows), 'processes': len(processes), 'group_only_processes': len(group_only),
+                       'owned_candidates': len(candidates), 'owned_read_failures': len(failures),
+                       'group_only_read_failures': len(group_failures)},
+        }
+        fields = ('group_only_processes', 'processes', 'owned_candidates', 'owned_read_failures',
+                  'group_only_read_failures', 'sandbox_rows')
+        event['truncated'] = any(len(event[key]) < event['counts'][key] for key in fields)
+        encoded = json.dumps(event, separators=(',', ':'), sort_keys=True)
+        while len(encoded.encode()) > 32767:
+            for field in fields:
+                if len(event[field]) > (1 if field == 'processes' else 0):
+                    event[field].pop()
+                    break
+            else:
+                break
+            event['truncated'] = True
+            encoded = json.dumps(event, separators=(',', ':'), sort_keys=True)
+        sys.stderr.write(encoded + '\n')
+        sys.stderr.flush()
 
     def _receipt(self, kind, args, returncode=None, input_text=None):
         # Navigation fragments may contain transient Workbench tokens. Hash
@@ -214,12 +300,14 @@ class SandboxedChrome:
                                   'init_script_sha256': dict(self._init_script_hashes)}
 
     def __enter__(self):
+        stage = 'prepare'
         try:
             self._prepare()
             if os.name != 'posix' or not Path('/proc/self/status').exists():
                 raise SandboxError('Linux /proc sandbox verification is required')
             if os.geteuid() == 0:
                 raise SandboxError('Normal Chrome sandbox requires a non-root user')
+            stage = 'agent-version'
             version = subprocess.run([self.browser, '--version'], env=self.env,
                                      capture_output=True, text=True, timeout=15, check=True)
             if not re.fullmatch(r'agent-browser\s+0\.38\.2\s*', version.stdout):
@@ -237,12 +325,14 @@ class SandboxedChrome:
             self.metadata['chrome_launch'] = args
             self.metadata['ci'] = {'present': 'CI' in os.environ, 'preserved': self.env.get('CI') == os.environ.get('CI')}
             self._log = open(self.out / 'chrome-stderr.log', 'w')
+            stage = 'chrome-launch'
             self.process = subprocess.Popen(args, env=self.env, stdin=subprocess.DEVNULL,
                                             stdout=subprocess.DEVNULL, stderr=self._log,
                                             start_new_session=True, cwd=self.run_dir)
             self.metadata['chrome_pid'] = self.process.pid
             self._save()
             deadline = time.monotonic() + 20
+            stage = 'chrome-endpoint'
             port_file = self.profile / 'DevToolsActivePort'
             while not port_file.exists():
                 if self.process.poll() is not None:
@@ -260,14 +350,19 @@ class SandboxedChrome:
             if self.metadata['chrome_version'].get('webSocketDebuggerUrl') != endpoint:
                 raise SandboxError('DevTools endpoint does not match owned Chrome profile')
             self._attach_options(endpoint)
+            stage = 'sandbox-document'
             self._execute('open', 'chrome://sandbox')
             diagnostic = self._execute('eval', '--stdin', input_text="JSON.stringify({text:document.body.innerText,rows:Array.from(document.querySelectorAll('tr'),r=>Array.from(r.querySelectorAll('td,th'),c=>c.innerText))})")['result']
             if isinstance(diagnostic, str):
                 diagnostic = json.loads(diagnostic)
-            processes = _process_tree(self.process.pid)
             self.metadata['sandbox_diagnostic'] = diagnostic
+            stage = 'owned-process-capture'
+            self.metadata['process_capture'] = {}
+            processes = _process_tree(self.process.pid, diagnostics=self.metadata['process_capture'])
             self.metadata['processes'] = processes
+            stage = 'sandbox-verification'
             self.metadata['sandbox'] = verify_sandbox_evidence(diagnostic, processes)
+            stage = 'sandbox-screenshot'
             self._execute('screenshot', str(self.out / 'chrome-sandbox.png'))
             self._execute('open', 'about:blank')
             self.metadata['sandbox_verified'] = True
@@ -276,6 +371,12 @@ class SandboxedChrome:
             return self
         except Exception as error:
             self.metadata['failure'] = str(error)
+            try:
+                self._emit_startup_failure(stage, error)
+            except Exception:
+                # Failure logging must not replace the original gate failure
+                # or prevent cleanup if stderr is closed or unavailable.
+                pass
             self.close()
             raise
 

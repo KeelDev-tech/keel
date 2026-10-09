@@ -1,6 +1,8 @@
 """Launch-boundary regressions; these tests never start Chrome."""
 import ast
 import copy
+from contextlib import redirect_stderr
+import io
 import json
 import os
 from pathlib import Path
@@ -15,7 +17,7 @@ from unittest.mock import MagicMock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 from tools.sandboxed_chrome import (
-    FORBIDDEN_FLAGS, SandboxedChrome, SandboxError, verify_sandbox_evidence,
+    FORBIDDEN_FLAGS, SandboxedChrome, SandboxError, _process_tree, verify_sandbox_evidence,
 )
 
 
@@ -179,7 +181,8 @@ class AttachBoundaryTests(unittest.TestCase):
         version = subprocess.CompletedProcess([], 0, 'agent-browser 0.38.2\n', '')
         with patch('tools.sandboxed_chrome.os.geteuid', return_value=1000), \
                 patch('tools.sandboxed_chrome.subprocess.run', return_value=version) as run, \
-                patch('tools.sandboxed_chrome.subprocess.Popen', return_value=process) as spawn:
+                patch('tools.sandboxed_chrome.subprocess.Popen', return_value=process) as spawn, \
+                redirect_stderr(io.StringIO()):
             with self.assertRaisesRegex(SandboxError, 'Normal-sandbox Chrome exited'):
                 runner.__enter__()
             spawn.assert_called_once()
@@ -187,6 +190,102 @@ class AttachBoundaryTests(unittest.TestCase):
             flags = {arg.split('=', 1)[0] for arg in spawn.call_args.args[0]}
             self.assertFalse(flags & FORBIDDEN_FLAGS)
             self.assertFalse(runner.metadata['sandbox_verified'])
+
+    def test_missing_renderer_failure_emits_bounded_owned_diagnostics(self):
+        runner = SandboxedChrome('/bin/true', '/bin/true', self.out)
+        prepare = runner._prepare
+        def prepared_profile():
+            prepare()
+            (runner.profile / 'DevToolsActivePort').write_text('9222\n/devtools/browser/synthetic\n')
+            runner.metadata['private_extra'] = 'DO_NOT_LOG_PRIVATE_METADATA'
+        diagnostic = {'rows': [['Seccomp-BPF sandbox', 'Yes'], ['PID namespaces', 'Yes']],
+                      'text': 'DO_NOT_LOG_PAGE_TEXT'}
+        processes = [{'pid': 987654321, 'ppid': 100, 'starttime': '1234', 'state': 'S',
+                      'args': ['/private/chrome', '--type=zygote', '--user-data-dir=/private/SECRET_PROFILE',
+                               'http://127.0.0.1/#token=SECRET_TOKEN'],
+                      'namespaces': {'pid': 'pid:[1]', 'user': 'user:[2]', 'net': 'net:[3]'},
+                      'seccomp': '2', 'seccomp_filters': '1', 'no_new_privs': '1'}]
+        chrome_version = {'Browser': 'Chrome/150.0.0.1', 'Protocol-Version': '1.3',
+                          'webSocketDebuggerUrl': self.endpoint, 'other': 'DO_NOT_LOG_VERSION_EXTRA'}
+        opener = MagicMock()
+        opener.open.return_value = io.BytesIO(json.dumps(chrome_version).encode())
+        output = io.StringIO()
+        try:
+            with patch.object(runner, '_prepare', side_effect=prepared_profile), \
+                    patch('tools.sandboxed_chrome.os.geteuid', return_value=1000), \
+                    patch('tools.sandboxed_chrome.subprocess.run', return_value=subprocess.CompletedProcess([], 0, 'agent-browser 0.38.2\n', '')), \
+                    patch('tools.sandboxed_chrome.subprocess.Popen', return_value=SimpleNamespace(pid=987654321)), \
+                    patch('tools.sandboxed_chrome.build_opener', return_value=opener), \
+                    patch.object(runner, '_execute', side_effect=[{}, {'result': diagnostic}]) as execute, \
+                    patch('tools.sandboxed_chrome._process_tree', return_value=processes), \
+                    patch.object(runner, 'close') as close, redirect_stderr(output):
+                with self.assertRaisesRegex(SandboxError, 'No owned renderer'):
+                    runner.__enter__()
+                close.assert_called_once()
+                self.assertEqual(execute.call_count, 2)
+            self.assertTrue(output.getvalue(), 'Missing owned-process failure diagnostics in CI stderr')
+            event = json.loads(output.getvalue())
+            self.assertEqual(event['event'], 'sandbox-startup-failure')
+            self.assertEqual(event['stage'], 'sandbox-verification')
+            self.assertEqual(event['sandbox_rows'], diagnostic['rows'])
+            self.assertEqual(event['processes'][0]['type_flags'], ['--type=zygote'])
+            self.assertEqual(event['processes'][0]['ppid'], 100)
+            self.assertTrue(event['processes'][0]['ancestry'])
+            self.assertFalse(runner.metadata['sandbox_verified'])
+            for private in ('SECRET_PROFILE', 'SECRET_TOKEN', 'DO_NOT_LOG_', 'webSocketDebuggerUrl'):
+                self.assertNotIn(private, output.getvalue())
+            self.assertLessEqual(len(output.getvalue().encode()), 32768)
+        finally:
+            runner.process = None
+            runner.close()
+
+    def test_diagnostics_preserve_subtree_and_report_only_owned_group_extras(self):
+        proc = self.out / 'synthetic-proc'
+        for pid, parent, group, session in ((10, 1, 10, 10), (11, 10, 10, 10),
+                                            (12, 10, 10, 10), (13, 1, 10, 10), (99, 1, 99, 99)):
+            path = proc / str(pid)
+            path.mkdir(parents=True)
+            (path / 'stat').write_text(f'{pid} (chrome) S {parent} {group} {session}')
+        records = {pid: {'pid': pid, 'ppid': parent, 'args': ['chrome'], 'namespaces': {}}
+                   for pid, parent in ((10, 1), (11, 10), (13, 1))}
+        def read_process(pid):
+            if pid == 12:
+                raise FileNotFoundError(2, 'synthetic process exited')
+            return records[pid]
+        capture = {}
+        with patch('tools.sandboxed_chrome.Path', side_effect=lambda value: proc if value == '/proc' else Path(value)), \
+                patch('tools.sandboxed_chrome._proc_record', side_effect=read_process) as read:
+            actual = _process_tree(10, diagnostics=capture)
+        self.assertEqual(actual, [records[10], records[11]])
+        self.assertEqual(capture['group_only_records'], [records[13]])
+        self.assertEqual(capture['owned_read_failures'], [
+            {'pid': 12, 'ppid': 10, 'error_type': 'FileNotFoundError', 'errno': 2}])
+        self.assertEqual([call.args[0] for call in read.call_args_list], [10, 11, 12, 13])
+        self.runner.metadata['process_capture'] = capture
+        output = io.StringIO()
+        with redirect_stderr(output):
+            self.runner._emit_startup_failure('sandbox-verification', SandboxError('synthetic'))
+        event = json.loads(output.getvalue())
+        self.assertFalse(event['group_only_processes'][0]['ancestry'])
+        self.assertEqual(event['counts']['owned_candidates'], 3)
+        self.assertEqual(event['counts']['owned_read_failures'], 1)
+
+    def test_diagnostic_size_is_bounded_and_preserves_embedded_type_evidence(self):
+        process = {'pid': 10, 'ppid': 1, 'args': [
+            '/private/chrome --type=renderer --user-data-dir=/private/SECRET_PROFILE '
+            'http://127.0.0.1/#token=SECRET_TOKEN'] + ['--flag' + str(n) + '=SECRET_VALUE' for n in range(100)],
+            'namespaces': {'pid': 'pid:[1]'}, 'state': 'S', 'starttime': '100'}
+        self.runner.metadata['processes'] = [process] * 200
+        output = io.StringIO()
+        with redirect_stderr(output):
+            self.runner._emit_startup_failure('sandbox-verification', SandboxError('SECRET_ERROR'))
+        event = json.loads(output.getvalue())
+        self.assertLessEqual(len(output.getvalue().encode()), 32768)
+        self.assertTrue(event['truncated'])
+        self.assertEqual(event['counts']['processes'], 200)
+        self.assertEqual(event['processes'][0]['type_flags'], [])
+        self.assertEqual(event['processes'][0]['embedded_type_flags'], ['--type=renderer'])
+        self.assertNotIn('SECRET_', output.getvalue())
 
     def test_acceptance_calls_require_runtime_sandbox_proof(self):
         self.runner._active = False
