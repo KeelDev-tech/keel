@@ -15,6 +15,10 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Keep the current GEO snapshot, evidence buckets and public count surfaces
+  consistent; publish the 2026-10-11 recount (292 verified submissions:
+  264 quoted / 1 pointer / 4 URL-only / 23 unevidenced).
+
 - Acquire the review preparation lease before changing résumé selection, and
   recheck current queue/ledger inputs and ownership before publishing a packet.
   Refused attempts preserve prior input and packet bytes; interrupted or fenced
