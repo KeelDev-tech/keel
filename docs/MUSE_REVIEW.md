@@ -392,6 +392,13 @@ bindings, actual browser-written downloads, inert text, runtime errors and
 network observations. Synthetic clocks are rebased for download validation;
 existing expired examples are not made current by changing the browser clock.
 
+Layout checks retain raw text Range rectangles. A single plain U+0020 space
+advance may hang at a wrapped `pre-wrap` line end: the harness distinguishes it
+only with a complete scan, matching rectangles, contained adjacent words on
+successive lines, and no decoration, generated content, transform or selection.
+Unknown evidence and all other text, scrolling and clipping failures remain
+failures. This measurement does not establish universal glyph-ink containment.
+
 Retain the report, fixture and HTML hashes, downloaded JSON, screenshots, tool
 versions, command receipts and sandbox diagnostics together. Only a completed
 passing report establishes the checks it lists. Fixture generation, unit tests,

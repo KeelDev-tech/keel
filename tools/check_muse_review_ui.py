@@ -101,6 +101,76 @@ def axe_diagnostic(violations):
     return {"kind": "axe", "violations_total": len(violations), "violations": rows}
 
 
+def hanging_space_advance(node):
+    """Recognize one unpainted pre-wrap space advance, never visible text overflow.
+
+    CSS Text permits spaces to hang at wrapped line ends. Range rectangles
+    include their advance even when scroll/paint bounds contain all glyphs.
+    Unknown, truncated, decorated, selected, multi-node, or other overflow
+    remains a failure. Classification uses raw observer data, not log output.
+    """
+    try:
+        p = node['rangeProbe']
+        if node['issues'] != ['text exceeds horizontal box'] or any(
+                p[key] is not True for key in ('scanComplete', 'singleDirectTextNode',
+                                               'plainTextPaint', 'selectionScanComplete')):
+            return False
+        if (p['selectionIntersectsNode'] is not False or p['whiteSpace'] != 'pre-wrap'
+                or p['direction'] != 'ltr' or p['writingMode'] != 'horizontal-tb'):
+            return False
+        for key, expected in (('scannedTextNodes', 1), ('wholeOverflowCount', 1),
+                              ('whitespaceOverflowCount', 1), ('nonWhitespaceOverflowCount', 0)):
+            if type(p[key]) is not int or p[key] != expected:
+                return False
+        if p['nonWhitespaceOverflowRects'] != [] or len(p['whitespaceOverflowRuns']) != 1:
+            return False
+        run = p['whitespaceOverflowRuns'][0]
+        if (run['codePoints'] != [32] or run['codePointsTruncated'] is not False
+                or run['previousNonWhitespaceAvailable'] is not True
+                or run['nextNonWhitespaceAvailable'] is not True):
+            return False
+        if (type(run['textNodeOrdinal']) is not int or run['textNodeOrdinal'] != 1
+                or type(run['utf16Length']) is not int or run['utf16Length'] != 1
+                or type(run['utf16Start']) is not int or type(p['scannedUnits']) is not int
+                or not 0 < run['utf16Start'] < p['scannedUnits'] - 1):
+            return False
+
+        def number(value):
+            return type(value) in (int, float) and math.isfinite(value)
+
+        def rect(value):
+            return (all(number(value[k]) for k in ('left', 'right', 'top', 'bottom'))
+                    and value['right'] > value['left'] and value['bottom'] > value['top'])
+
+        box = node['rect']
+        groups = [p['wholeOverflowRects'], p['whitespaceOverflowRects'], run['overflowRects'],
+                  run['previousNonWhitespaceRects'], run['nextNonWhitespaceRects']]
+        if not rect(box) or any(len(group) != 1 or not rect(group[0]) for group in groups):
+            return False
+        space, previous, following = groups[2][0], groups[3][0], groups[4][0]
+        if any(any(abs(group[0][k] - space[k]) > .01 for k in ('left', 'right', 'top', 'bottom'))
+               for group in groups[:2]):
+            return False
+        for axis in ('Width', 'Height'):
+            client, scroll = node['client' + axis], node['scroll' + axis]
+            if not number(client) or not number(scroll) or client <= 0 or scroll > client + 1:
+                return False
+
+        def contained(r):
+            return (r['left'] >= box['left'] - 1 and r['right'] <= box['right'] + 1
+                    and r['top'] >= box['top'] - 1 and r['bottom'] <= box['bottom'] + 1)
+
+        return (contained(previous) and contained(following)
+                and space['left'] >= box['left'] - 1 and space['right'] > box['right'] + 1
+                and space['top'] >= box['top'] - 1 and space['bottom'] <= box['bottom'] + 1
+                and abs(previous['right'] - space['left']) <= .01
+                and abs(previous['top'] - space['top']) <= .01
+                and abs(previous['bottom'] - space['bottom']) <= .01
+                and following['top'] >= space['bottom'])
+    except (KeyError, TypeError, ValueError, IndexError, OverflowError):
+        return False
+
+
 def failure_diagnostic(row):
     """Bounded numeric layout evidence, without HTML, text or arbitrary fields."""
     detail, name = row.get("detail"), row.get("name", "")
@@ -137,6 +207,13 @@ def failure_diagnostic(row):
                 "whiteSpace": diagnostic_token(probe.get("whiteSpace"), r"[a-z-]+", 24),
                 "overflowWrap": diagnostic_token(probe.get("overflowWrap"), r"[a-z-]+", 24),
                 "scanComplete": probe.get("scanComplete") is True}
+            clean["computedTextDecorationLine"] = diagnostic_token(probe.get("computedTextDecorationLine"),
+                r"none|(?:underline|overline|line-through)(?: (?:underline|overline|line-through)){0,2}", 40)
+            for key in ("computedTextShadowPresent", "selectionIntersectsNode", "selectionScanComplete",
+                        "singleDirectTextNode", "plainTextPaint"):
+                clean[key] = probe.get(key) is True
+            for key in ("direction", "writingMode"):
+                clean[key] = diagnostic_token(probe.get(key), r"[a-z-]+", 24)
             clean.update(numbers(probe, ("scannedUnits", "scannedRuns", "scannedTextNodes", "wholeOverflowCount")))
             for key in ("wholeOverflowRects", "whitespaceOverflowRects", "nonWhitespaceOverflowRects"):
                 values = probe.get(key, [])
@@ -144,6 +221,23 @@ def failure_diagnostic(row):
                               for item in values[:3]] if isinstance(values, list) else []
             clean.update(numbers(probe, ("whitespaceRuns", "nonWhitespaceRuns",
                                          "whitespaceOverflowCount", "nonWhitespaceOverflowCount")))
+            clean["whitespaceOverflowRuns"] = []
+            runs = probe.get("whitespaceOverflowRuns", [])
+            for run in (runs[:3] if isinstance(runs, list) else []):
+                if not isinstance(run, dict):
+                    continue
+                item = numbers(run, ("textNodeOrdinal", "utf16Start", "utf16Length"))
+                points = run.get("codePoints", [])
+                item["codePoints"] = [point for point in points[:8] if type(point) is int and
+                    (point in (9, 10, 11, 12, 13, 32, 160, 5760, 8232, 8233, 8239, 8287, 12288, 65279)
+                     or 8192 <= point <= 8202)] if isinstance(points, list) else []
+                for key in ("codePointsTruncated", "previousNonWhitespaceAvailable", "nextNonWhitespaceAvailable"):
+                    item[key] = run.get(key) is True
+                for key in ("overflowRects", "previousNonWhitespaceRects", "nextNonWhitespaceRects"):
+                    values = run.get(key, [])
+                    item[key] = [numbers(value, ("left", "right", "top", "bottom", "width", "height"))
+                                 for value in values[:3]] if isinstance(values, list) else []
+                clean["whitespaceOverflowRuns"].append(item)
             result["rangeProbe"] = clean
         return result
 
@@ -170,6 +264,10 @@ def measured_diagnostic(row):
     detail = row.get("detail")
     if not isinstance(detail, dict):
         return None
+    if row.get("name", "").endswith(" avoid overflow and clipping") and detail.get("hangingSpaceAdvances"):
+        clean = failure_diagnostic(dict(row, detail=dict(detail, bad=detail["hangingSpaceAdvances"])))
+        return {"kind": "verified-hanging-space-advances", "nodes": clean["bad"],
+                "nodes_total": clean["bad_total"]}
     if row.get("name") == "selected queue small text has measured AA contrast":
         return {"kind": "selected-queue-contrast", "nodes": [{
             "selector": diagnostic_token(n.get("selector"),
@@ -803,11 +901,29 @@ class Acceptance:
                         parts.unshift(p.tagName.toLowerCase()+':nth-of-type('+ordinal+')');p=p.parentElement;}
                     if(p===root)path='#detail-body'+(parts.length?' > '+parts.join(' > '):'');
                 }
+                let plainTextPaint=true,ancestor=n,ancestorCount=0;
+                for(;ancestor&&ancestorCount<64;ancestor=ancestor.parentElement,ancestorCount++){
+                    const paint=getComputedStyle(ancestor);
+                    if(paint.textDecorationLine!=='none'||paint.textShadow!=='none'||paint.transform!=='none')
+                        plainTextPaint=false;
+                    for(const pseudo of ['::before','::after'])
+                        if(!['none','normal'].includes(getComputedStyle(ancestor,pseudo).content))plainTextPaint=false;
+                }
+                if(ancestor)plainTextPaint=false;
                 const result={path,whiteSpace:s.whiteSpace,overflowWrap:s.overflowWrap,
+                    direction:s.direction,writingMode:s.writingMode,plainTextPaint,
+                    singleDirectTextNode:n.childNodes.length===1&&n.firstChild.nodeType===Node.TEXT_NODE,
+                    computedTextDecorationLine:s.textDecorationLine,computedTextShadowPresent:s.textShadow!=='none',
+                    selectionIntersectsNode:false,selectionScanComplete:false,
                     wholeOverflowCount:whole.length,wholeOverflowRects:whole.slice(0,3),
                     scanComplete:true,scannedUnits:0,scannedRuns:0,scannedTextNodes:0,
                     whitespaceRuns:0,nonWhitespaceRuns:0,whitespaceOverflowCount:0,nonWhitespaceOverflowCount:0,
-                    whitespaceOverflowRects:[],nonWhitespaceOverflowRects:[]};
+                    whitespaceOverflowRects:[],nonWhitespaceOverflowRects:[],whitespaceOverflowRuns:[]};
+                const selection=window.getSelection();
+                if(selection){result.selectionScanComplete=selection.rangeCount<=8;
+                    for(let i=0;i<Math.min(8,selection.rangeCount);i++){const selected=selection.getRangeAt(i);
+                        if(!selected.collapsed&&selected.intersectsNode(n))result.selectionIntersectsNode=true;}}
+                let previousNonWhitespace=null,pending=[];
                 const walker=document.createTreeWalker(n,NodeFilter.SHOW_TEXT);let text;
                 scan:while((text=walker.nextNode())){
                     if(result.scannedUnits>=4096||result.scannedTextNodes>=256){result.scanComplete=false;break;}
@@ -819,9 +935,24 @@ class Acceptance:
                         const kind=/^\s+$/u.test(match[0])?'whitespace':'nonWhitespace';result[kind+'Runs']++;
                         const probe=document.createRange();probe.setStart(text,match.index);
                         probe.setEnd(text,match.index+match[0].length);
-                        for(const line of probe.getClientRects())if(outside(line,r)){
+                        const lines=[...probe.getClientRects()],overflow=[];
+                        for(const line of lines)if(outside(line,r)){
                             result[kind+'OverflowCount']++;
                             if(result[kind+'OverflowRects'].length<3)result[kind+'OverflowRects'].push(rectValue(line));
+                            if(overflow.length<3)overflow.push(rectValue(line));
+                        }
+                        if(kind==='nonWhitespace'){
+                            const rects=lines.slice(0,3).map(rectValue);
+                            for(const run of pending){run.nextNonWhitespaceAvailable=true;run.nextNonWhitespaceRects=rects;}
+                            pending=[];previousNonWhitespace=lines.slice(-3).map(rectValue);
+                        }else if(overflow.length&&result.whitespaceOverflowRuns.length<3){
+                            const points=[...new Set([...match[0]].map(c=>c.codePointAt(0)))];
+                            const run={textNodeOrdinal:result.scannedTextNodes,utf16Start:match.index,
+                                utf16Length:match[0].length,codePoints:points.slice(0,8),codePointsTruncated:points.length>8,
+                                overflowRects:overflow,previousNonWhitespaceAvailable:previousNonWhitespace!==null,
+                                previousNonWhitespaceRects:previousNonWhitespace||[],nextNonWhitespaceAvailable:false,
+                                nextNonWhitespaceRects:[]};
+                            result.whitespaceOverflowRuns.push(run);pending.push(run);
                         }
                     }
                     if(segment.length<text.data.length){result.scanComplete=false;break;}
@@ -865,9 +996,13 @@ class Acceptance:
                     scrollWidth:tabs.scrollWidth,scrollLeft:tabs.scrollLeft,clientHeight:tabs.clientHeight,
                     scrollHeight:tabs.scrollHeight,selected:inspect(selected),focused:inspect(document.activeElement)}};
         })()""")
+        # Preserve the raw Range findings in the report while distinguishing a
+        # fully attributed unpainted space advance from actual text overflow.
+        metrics["hangingSpaceAdvances"] = [node for node in metrics["bad"] if hanging_space_advance(node)]
+        unresolved = [node for node in metrics["bad"] if not hanging_space_advance(node)]
         self.record(str(width) + "px page, controls and " + label + " avoid overflow and clipping",
             metrics["innerWidth"] == width and 0 < metrics["viewport"] <= metrics["innerWidth"]
-            and metrics["pageWidth"] <= metrics["viewport"] + 1 and not metrics["bad"], metrics)
+            and metrics["pageWidth"] <= metrics["viewport"] + 1 and not unresolved, metrics)
         tabs = metrics["tabs"]
         self.record(str(width) + "px complete tab strip fits without hidden overflow",
             tabs["clientWidth"] > 0 and tabs["scrollWidth"] <= tabs["clientWidth"] + 1
