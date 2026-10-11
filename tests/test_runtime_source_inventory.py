@@ -1,8 +1,9 @@
-"""Real-filesystem checks for the fixed public runtime source profile.
+"""Filesystem checks and explicitly modeled snapshot-order regressions.
 
 Every filesystem mutation starts from a successful inventory. An unsupported
 ancestor owner therefore fails the test setup; it cannot masquerade as a
 successful attack rejection. No ownership checks are replaced or skipped.
+The separate admission tests model snapshot outcomes, not filesystem trust.
 """
 import hashlib
 import json
@@ -12,6 +13,7 @@ import shutil
 import stat
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from tools.runtime_source_inventory import (
     RuntimeSourceError, current_runtime_provider, parse_manifest,
@@ -205,6 +207,44 @@ class RuntimeManifestParsingTests(unittest.TestCase):
                     parse_manifest(manifest_bytes([name, *self.names[1:]]))
 
 
+class RuntimeSourceAdmissionTests(unittest.TestCase):
+    """Model callback order only; these do not establish filesystem acceptance."""
+
+    def test_changed_snapshot_never_returns_and_latches_after_restoration(self):
+        original, changed = {"sha256": "a" * 64}, {"sha256": "b" * 64}
+        frozen = object()
+        for accepted_callbacks in (0, 1):
+            with self.subTest(accepted_callbacks=accepted_callbacks), patch(
+                "tools.runtime_source_inventory._snapshot",
+                side_effect=[(original, frozen)] * (1 + accepted_callbacks)
+                            + [(changed, frozen), (original, frozen)],
+            ) as snapshot:
+                provider = current_runtime_provider(ROOT)
+                for _ in range(accepted_callbacks):
+                    self.assertEqual(provider(), original)
+                with self.assertRaisesRegex(RuntimeSourceError, "runtime_source_changed"):
+                    provider()
+                # The next modeled snapshot restores A; a tainted closure must
+                # refuse without reading it or returning the changed B pin.
+                with self.assertRaisesRegex(RuntimeSourceError, "runtime_source_changed"):
+                    provider()
+                self.assertEqual(snapshot.call_count, 2 + accepted_callbacks)
+
+    def test_failed_first_snapshot_latches_after_restoration(self):
+        original, frozen = {"sha256": "a" * 64}, object()
+        for error in (OSError("synthetic read failure"), RuntimeSourceError("synthetic refusal")):
+            with self.subTest(error=type(error).__name__), patch(
+                "tools.runtime_source_inventory._snapshot",
+                side_effect=[(original, frozen), error, (original, frozen)],
+            ) as snapshot:
+                provider = current_runtime_provider(ROOT)
+                with self.assertRaises(RuntimeSourceError):
+                    provider()
+                with self.assertRaisesRegex(RuntimeSourceError, "runtime_source_changed"):
+                    provider()
+                self.assertEqual(snapshot.call_count, 2)
+
+
 class RuntimeSourceInventoryTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="keel-runtime-inventory-")
@@ -271,37 +311,46 @@ class RuntimeSourceInventoryTests(unittest.TestCase):
         self.initial["sha256"] = "0" * 64
         self.assertEqual(self.provider(), expected)
 
-    def test_changed_python_is_observed(self):
+    def test_changed_python_is_rejected_immediately(self):
         name = "tools/sandboxed_chrome.py"
         path = self.root / name
         path.write_bytes(path.read_bytes() + b"\n# changed source\n")
-        observed = self.provider()
-        self.assertNotEqual(observed["sha256"], self.initial["sha256"])
-        self.assertEqual(observed["files"][name], sha(path.read_bytes()))
+        with self.assertRaisesRegex(RuntimeSourceError, "runtime_source_changed"):
+            self.provider()
 
-    def test_changed_javascript_is_observed(self):
+    def test_change_between_factory_and_first_callback_is_rejected(self):
+        provider = current_runtime_provider(self.root)
+        path = self.root / "VERSION"
+        original = path.read_bytes()
+        path.write_bytes(original + b"\n")
+        with self.assertRaisesRegex(RuntimeSourceError, "runtime_source_changed"):
+            provider()
+        path.write_bytes(original)
+        with self.assertRaisesRegex(RuntimeSourceError, "runtime_source_changed"):
+            provider()
+        self.assertEqual(current_runtime_provider(self.root)(), self.initial)
+
+    def test_changed_javascript_is_rejected_immediately(self):
         name = "tools/browser_worker.mjs"
         path = self.root / name
         path.write_bytes(path.read_bytes() + b"\n// changed worker\n")
-        observed = self.provider()
-        self.assertNotEqual(observed["sha256"], self.initial["sha256"])
-        self.assertEqual(observed["files"][name], sha(path.read_bytes()))
+        with self.assertRaisesRegex(RuntimeSourceError, "runtime_source_changed"):
+            self.provider()
 
-    def test_changed_resource_is_observed(self):
+    def test_changed_resource_is_rejected_immediately(self):
         name = "fixtures/grounding_eval/dataset.json"
         path = self.root / name
         path.write_bytes(path.read_bytes() + b"\n")
-        observed = self.provider()
-        self.assertNotEqual(observed["sha256"], self.initial["sha256"])
-        self.assertEqual(observed["files"][name], sha(path.read_bytes()))
+        with self.assertRaisesRegex(RuntimeSourceError, "runtime_source_changed"):
+            self.provider()
 
     def test_changed_then_restored_source_remains_quarantined(self):
         name = "keel_muse/common.py"
         path = self.root / name
         original = path.read_bytes()
         path.write_bytes(original + b"\n# transient source change\n")
-        changed = self.provider()
-        self.assertNotEqual(changed["sha256"], self.initial["sha256"])
+        with self.assertRaisesRegex(RuntimeSourceError, "runtime_source_changed"):
+            self.provider()
         self.reject()
         path.write_bytes(original)
         self.reject()
@@ -491,7 +540,7 @@ class RuntimeSourceInventoryTests(unittest.TestCase):
         shutil.copytree(original, self.root)
         self.reject()
 
-    def test_replaced_intermediate_directory_is_reopened(self):
+    def test_replaced_intermediate_directory_changed_source_is_rejected(self):
         original = self.parent / "original-package"
         package = self.root / "keel_muse"
         package.rename(original)
@@ -499,9 +548,8 @@ class RuntimeSourceInventoryTests(unittest.TestCase):
         name = "keel_muse/common.py"
         path = self.root / name
         path.write_bytes(path.read_bytes() + b"\n# replacement directory\n")
-        observed = self.provider()
-        self.assertNotEqual(observed["sha256"], self.initial["sha256"])
-        self.assertEqual(observed["files"][name], sha(path.read_bytes()))
+        with self.assertRaisesRegex(RuntimeSourceError, "runtime_source_changed"):
+            self.provider()
 
 
 if __name__ == "__main__":

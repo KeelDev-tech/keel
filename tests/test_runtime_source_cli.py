@@ -1,8 +1,11 @@
-"""Real isolated CLI checks; synthetic state, no provider patches or browser calls.
+"""Real isolated CLI checks plus explicitly modeled source-admission regressions.
 
 These require the production ownership guard to admit the test directory. An
 unsupported executor must fail visibly; it is not converted to skipped coverage.
+The separate admission class models snapshot results, not filesystem trust.
 """
+from contextlib import redirect_stdout
+import io
 import json
 import os
 from pathlib import Path
@@ -14,6 +17,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -31,6 +35,24 @@ from pathlib import Path
 sys.path.insert(0, sys.argv[1])
 from tools.runtime_source_inventory import current_runtime_provider
 print(json.dumps(current_runtime_provider(Path(sys.argv[1]))(), sort_keys=True))
+"""
+RACE_BOOTSTRAP = """import runpy, sys
+from pathlib import Path
+source, module = sys.argv[1:3]
+sys.path.insert(0, source)
+from tools.runtime_source_inventory import current_runtime_provider
+def after_factory(frame, event, result):
+    if event == 'return' and frame.f_code is current_runtime_provider.__code__:
+        sys.setprofile(None)
+        if callable(result):
+            target = Path(source) / 'VERSION'
+            target.write_bytes(target.read_bytes() + b'\\n')
+sys.argv = [module, *sys.argv[3:]]
+sys.setprofile(after_factory)
+try:
+    runpy.run_module(module, run_name='__main__', alter_sys=True)
+finally:
+    sys.setprofile(None)
 """
 RUNTIME_FIXTURE = """import json, sys, time
 from pathlib import Path
@@ -84,6 +106,83 @@ gate = {'schema': 'keel.operational.cli-gate.v1', 'workspace_id': config['worksp
 config['control_gate'] = document('gate', gate)
 print(document('runtime-config', config))
 """
+
+
+class RuntimeSourceAdmissionCLITests(unittest.TestCase):
+    """Real CLI dispatch with modeled A/B snapshots; no filesystem-trust claim."""
+
+    def test_initial_disturbance_stops_control_before_any_ledger_write(self):
+        from keel_operational import __main__ as cli
+        original, changed = {"sha256": "a" * 64}, {"sha256": "b" * 64}
+        for disturbed in (False, True):
+            with self.subTest(disturbed=disturbed), tempfile.TemporaryDirectory(
+                prefix="keel-admission-control-"
+            ) as directory:
+                home = Path(directory)
+                ledger, config, request, out = (home / name for name in
+                                                ("control", "host.json", "request.json", "report.json"))
+                config.write_text(json.dumps({"schema": "keel.operational.control-cli.v1",
+                    "workspace_id": WORKSPACE, "control_home": str(ledger)}))
+                request.write_text(json.dumps({"operation": "create", "arguments": {}}))
+                snapshots = [(original, None), (changed if disturbed else original, None),
+                             (original, None)]
+                with patch("tools.runtime_source_inventory._snapshot", side_effect=snapshots), \
+                        patch.object(cli, "_control", wraps=cli._control) as operation, \
+                        redirect_stdout(io.StringIO()):
+                    code = cli.main(["control", "--source-profile", PROFILE,
+                        "--host-config", str(config), "--input", str(request), "--out", str(out)])
+                report = json.loads(out.read_text())
+                if disturbed:
+                    self.assertFalse(ledger.exists(), "source admission failure created a durable ledger")
+                    operation.assert_not_called()
+                    self.assertEqual(code, 2)
+                    self.assertEqual(report["status"], "ERROR")
+                    self.assertEqual(report["error_type"], "RuntimeSourceError")
+                    self.assertIsNone(report["source_sha256"])
+                    self.assertIs(report["result_valid_for_source"], False)
+                else:
+                    # Positive control uses the real operation and durable DB.
+                    self.assertEqual(code, 0)
+                    operation.assert_called_once()
+                    self.assertTrue((ledger / "control.sqlite3").is_file())
+
+    def test_initial_disturbance_stops_both_muse_dispatch_routes(self):
+        from keel_muse import __main__ as cli
+        original, changed = {"sha256": "a" * 64}, {"sha256": "b" * 64}
+        for command, dispatcher, disturbed in (
+            (command, dispatcher, disturbed)
+            for command, dispatcher in (("inspect-host", "_run"), ("bridge", "_bridge"))
+            for disturbed in (False, True)
+        ):
+            with self.subTest(command=command, disturbed=disturbed), tempfile.TemporaryDirectory(
+                prefix="keel-admission-muse-"
+            ) as directory:
+                out, request = Path(directory) / "report.json", Path(directory) / "request.json"
+                request.write_text(json.dumps({"schema": "keel.muse.bridge-request.v1",
+                    "request_id": "admission-probe", "workspace_id": WORKSPACE,
+                    "operation": "capabilities.probe", "expected_source_sha256": original["sha256"],
+                    "expected_state_sha256": None, "expires_at": int(time.time()) + 300,
+                    "arguments": {}}))
+                args = [command, "--source-profile", PROFILE, "--out", str(out)]
+                if command == "bridge":
+                    args += ["--input", str(request), "--workspace-id", WORKSPACE]
+                with patch("tools.runtime_source_inventory._snapshot",
+                           side_effect=[(original, None), (changed if disturbed else original, None),
+                                        (original, None)]), \
+                        patch.object(cli, dispatcher, return_value={"status": "OBSERVED"}) as operation, \
+                        redirect_stdout(io.StringIO()):
+                    code = cli.main(args)
+                report = json.loads(out.read_text())
+                if disturbed:
+                    operation.assert_not_called()
+                    self.assertEqual(code, 2)
+                    self.assertEqual(report["error_type"], "RuntimeSourceError")
+                    self.assertIsNone(report["source_sha256"])
+                    self.assertIs(report["result_valid_for_source"], False)
+                else:
+                    operation.assert_called_once()
+                    self.assertEqual(code, 0)
+                    self.assertEqual(report["source_sha256"], original["sha256"])
 
 
 class RuntimeSourceCLITests(unittest.TestCase):
@@ -214,6 +313,24 @@ class RuntimeSourceCLITests(unittest.TestCase):
             self.assertEqual(report["result"]["canonical_delivery"], "NOT_ATTEMPTED")
             self.assert_unprivileged(report)
         self.assertEqual(before, (database.read_bytes(), database.stat().st_mtime_ns))
+
+    def test_real_change_after_factory_stops_control_before_ledger_creation(self):
+        self.inventory()  # Real ownership guard must succeed before scheduling the race.
+        home, config = self.control_config()
+        request = self.document({"operation": "create", "arguments": {}})
+        out = self.home / "admission-error.json"
+        child = self.run_child([sys.executable, "-I", "-S", "-B", "-c", RACE_BOOTSTRAP,
+            str(self.source), "keel_operational", "control", "--source-profile", PROFILE,
+            "--host-config", str(config), "--input", str(request), "--out", str(out)])
+        self.assertEqual((self.source / "VERSION").read_bytes(), (ROOT / "VERSION").read_bytes() + b"\n")
+        self.assertFalse(home.exists(), "source admission failure created a durable ledger")
+        self.assertEqual(child.returncode, 2, child.stderr + child.stdout)
+        report = json.loads(out.read_text())
+        self.assertEqual(report["status"], "ERROR")
+        self.assertEqual(report["error_type"], "RuntimeSourceError")
+        self.assertIsNone(report["source_sha256"])
+        self.assertIs(report["result_valid_for_source"], False)
+        self.assert_unprivileged(report)
 
     def test_wrong_pin_and_request_selected_profile_cannot_create_state(self):
         self.inventory()  # Positive control: rejection must reach request validation.

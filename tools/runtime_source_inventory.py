@@ -258,7 +258,7 @@ def _snapshot(root, frozen=None):
 
 
 def current_runtime_provider(root):
-    """Freeze one fixed selection; later observations may report changed bytes.
+    """Freeze one fixed selection; reject any later observed disturbance.
 
     The CLI supplies its own installation root. This function is not exposed as
     a caller-selected root, manifest, JSON argument or automatic repinning API.
@@ -287,6 +287,7 @@ def current_runtime_provider(root):
         # later callback or exception-path check. A new invocation is required.
         if report['sha256'] != initial_sha:
             tainted = True
+            raise RuntimeSourceError('runtime_source_changed')
         return report
 
     return inventory
