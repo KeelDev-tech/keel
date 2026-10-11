@@ -98,6 +98,61 @@ input or an error; 3 means blocked, incomplete or waiting; 4 means source
 quarantine. Keep the complete typed result when deciding what remains blocked.
 The CLI does not expose approval ingestion from an arbitrary JSON principal.
 
+## Source inventory profile
+
+Each subcommand accepts the optional flag
+`--source-profile current-runtime-v1`. Put it after the subcommand name:
+
+```sh
+python3 -B -m keel_muse inspect-host \
+  --source-profile current-runtime-v1 \
+  --out /existing-parent/new-current-source-inspection.json
+```
+
+Without the flag, the CLI keeps its strict historical Muse inventory. A missing
+or changed historical prerequisite remains an error; the CLI does not detect a
+different checkout and switch profiles automatically. The explicit current
+profile uses the bundled fixed list of 629 files: 553 existing Python sources,
+73 resources, the inventory provider, the inventory JSON, and
+`tools/sandboxed_chrome.py`. The added browser verification helper is explicitly
+included in the reviewed list. The provider checks current file bytes and
+exact covered membership. Missing listed files and unexpected code in
+covered locations fail closed. It never enrolls files from an external manifest,
+a caller-selected source root, request JSON, or directory discovery.
+
+The CLI selects one provider for the entire invocation. The before/after source
+checks, module callbacks and exception-path rechecks use that same provider;
+none falls back to the historical profile. An observed change or failed read
+remains a failure for that invocation even if the old bytes are restored.
+The resulting pin describes source consistency on disk. It does not authenticate
+the producer or establish which code the interpreter loaded, dependency
+integrity, or complete coverage of host-selected modules outside the fixed list.
+External host inputs and state
+remain subject to their existing evidence, permission and authority gates.
+
+Use this profile from a separate clean source installation with `python3 -B`.
+`-B` prevents new bytecode writes; it does not prevent Python from reading
+existing bytecode. The current profile therefore refuses caches, bytecode and
+native binaries in covered locations. Its descriptor-based path checks require
+trusted ancestors owned by root or the current user. An incompatible owner,
+unsafe path or unstable source read is a failure; do not change ownership,
+permissions or the guard to manufacture a passing result.
+
+CLI regression fixtures copy the complete fixed list into separate clean source
+trees and use isolated Python children with `-I -S -B`. Guard failures remain
+visible; the fixtures do not relax ownership checks or substitute cached code.
+
+Profile selection does not migrate or repin existing sessions, plans or recovery
+state. Adding the browser verification helper changes the source fingerprint
+and requires fresh qualification against the actual source and host, as any new
+source pin does. Preserve existing records and treat state bound to a different pin as
+incompatible until the existing workflow establishes otherwise. This flag grants
+no native-tool, application or submission authority.
+
+Historical compatibility evidence covers default-mode rejection on current
+source. An authentic archived release fixture is unavailable, so a successful
+historical-release CLI run remains unverified.
+
 ## How the native handoff works
 
 The ordinary Muse model can execute a CLI and separately invoke its exposed
