@@ -617,6 +617,7 @@
     "tools/run_tailoring_audit.py",
     "tools/run_tests.py",
     "tools/runtime_source_inventory.py",
+    "tools/sandboxed_chrome.py",
     "tools/selfhost_fixture.py",
     "tools/single_file_transfer.py",
     "tools/source_inventory.py",

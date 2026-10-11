@@ -67,14 +67,14 @@ class ApprovedRuntimeMembershipTests(unittest.TestCase):
 
     def test_fixed_reviewed_members_and_resource_counts(self):
         self.assertIs(type(self.names), list)
-        self.assertEqual(len(self.names), 628)
+        self.assertEqual(len(self.names), 629)
         self.assertEqual(self.names, sorted(set(self.names)))
-        self.assertEqual(sum(name.endswith(".py") for name in self.names), 554)
+        self.assertEqual(sum(name.endswith(".py") for name in self.names), 555)
         self.assertEqual(sum(not name.endswith(".py") for name in self.names), 74)
 
     def test_cli_provider_and_runtime_resources_are_required(self):
         required = {
-            ALLOWLIST, "tools/runtime_source_inventory.py",
+            ALLOWLIST, "tools/runtime_source_inventory.py", "tools/sandboxed_chrome.py",
             "keel_muse/__main__.py", "keel_operational/__main__.py",
             "security/data/dlp.py", "security/ledger/hashchain.py",
             *RESOURCES,
@@ -132,7 +132,7 @@ class RuntimeManifestParsingTests(unittest.TestCase):
                     parse_manifest(manifest_bytes(names))
 
     def test_critical_members_cannot_be_removed(self):
-        for name in (ALLOWLIST, "tools/runtime_source_inventory.py",
+        for name in (ALLOWLIST, "tools/runtime_source_inventory.py", "tools/sandboxed_chrome.py",
                      "keel_muse/__main__.py", "keel_operational/__main__.py"):
             with self.subTest(name=name):
                 with self.assertRaises(RuntimeSourceError):
@@ -214,7 +214,7 @@ class RuntimeSourceInventoryTests(unittest.TestCase):
         self.root.mkdir(mode=0o700)
         self.raw_list = (ROOT / ALLOWLIST).read_bytes()
         self.names = json.loads(self.raw_list)["files"]
-        self.assertEqual(len(self.names), 628)
+        self.assertEqual(len(self.names), 629)
         for name in self.names:
             target = self.root / name
             parent = self.root
@@ -225,7 +225,7 @@ class RuntimeSourceInventoryTests(unittest.TestCase):
             target.write_bytes((ROOT / name).read_bytes())
         self.provider = current_runtime_provider(self.root)
         self.initial = self.provider()
-        self.assertEqual(self.initial["file_count"], 628)
+        self.assertEqual(self.initial["file_count"], 629)
         self.assertEqual(set(self.initial["files"]), set(self.names))
 
     def reject(self):
@@ -272,7 +272,7 @@ class RuntimeSourceInventoryTests(unittest.TestCase):
         self.assertEqual(self.provider(), expected)
 
     def test_changed_python_is_observed(self):
-        name = "keel_muse/common.py"
+        name = "tools/sandboxed_chrome.py"
         path = self.root / name
         path.write_bytes(path.read_bytes() + b"\n# changed source\n")
         observed = self.provider()
