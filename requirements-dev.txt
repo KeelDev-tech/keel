@@ -1,5 +1,6 @@
 # Free, local test tools only. The application runtime uses Python stdlib.
 pytest==9.0.3
+pypdf==6.20.1
 hypothesis==6.168.3
 iniconfig==2.3.0
 packaging==26.3
