@@ -41,7 +41,7 @@ ACCENT = HexColor("#1a1a1a")
 
 def styles():
     return {
-        "name": ParagraphStyle("name", fontName="Helvetica-Bold", fontSize=20,
+        "name": ParagraphStyle("name", fontName="Helvetica-Bold", fontSize=20, leading=24,
                                alignment=TA_CENTER, spaceAfter=2),
         "contact": ParagraphStyle("contact", fontName="Helvetica", fontSize=9,
                                   alignment=TA_CENTER, spaceAfter=8,
@@ -99,7 +99,7 @@ def build(profile, role, out_path):
                             topMargin=0.6 * inch, bottomMargin=0.6 * inch)
     story = []
     contact = profile.get("contact", {})
-    contact_line = " &nbsp;|&nbsp; ".join(
+    contact_line = " | ".join(
         x for x in [contact.get("phone"), contact.get("email"),
                     contact.get("location"), contact.get("linkedin")]
         if x)
