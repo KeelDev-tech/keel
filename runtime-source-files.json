@@ -565,6 +565,7 @@
     "tools/check_live_http.py",
     "tools/check_local_browser.py",
     "tools/check_local_models.py",
+    "tools/check_muse_review_ui.py",
     "tools/check_packet_metadata.cjs",
     "tools/check_score_card_layout.cjs",
     "tools/check_source_host.py",

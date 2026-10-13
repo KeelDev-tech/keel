@@ -1,22 +1,25 @@
 """Filesystem checks and explicitly modeled snapshot-order regressions.
 
-Every filesystem mutation starts from a successful inventory. An unsupported
-ancestor owner therefore fails the test setup; it cannot masquerade as a
-successful attack rejection. No ownership checks are replaced or skipped.
-The separate admission tests model snapshot outcomes, not filesystem trust.
+Full-provider mutations start from a successful inventory. An unsupported
+ancestor owner therefore blocks their setup; it cannot masquerade as a
+successful attack rejection. Composition component mutations start from real
+enumeration only and make no ancestor-trust claim. No ownership checks are
+replaced or skipped. Admission tests model snapshots, not filesystem trust.
 """
 import hashlib
+from contextlib import ExitStack
 import json
 import os
 from pathlib import Path, PurePosixPath
 import shutil
 import stat
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
 
 from tools.runtime_source_inventory import (
-    RuntimeSourceError, current_runtime_provider, parse_manifest,
+    RuntimeSourceError, _enumerate, current_runtime_provider, parse_manifest,
 )
 
 
@@ -69,14 +72,15 @@ class ApprovedRuntimeMembershipTests(unittest.TestCase):
 
     def test_fixed_reviewed_members_and_resource_counts(self):
         self.assertIs(type(self.names), list)
-        self.assertEqual(len(self.names), 629)
+        self.assertEqual(len(self.names), 630)
         self.assertEqual(self.names, sorted(set(self.names)))
-        self.assertEqual(sum(name.endswith(".py") for name in self.names), 555)
+        self.assertEqual(sum(name.endswith(".py") for name in self.names), 556)
         self.assertEqual(sum(not name.endswith(".py") for name in self.names), 74)
 
     def test_cli_provider_and_runtime_resources_are_required(self):
         required = {
             ALLOWLIST, "tools/runtime_source_inventory.py", "tools/sandboxed_chrome.py",
+            "tools/check_muse_review_ui.py",
             "keel_muse/__main__.py", "keel_operational/__main__.py",
             "security/data/dlp.py", "security/ledger/hashchain.py",
             *RESOURCES,
@@ -135,6 +139,7 @@ class RuntimeManifestParsingTests(unittest.TestCase):
 
     def test_critical_members_cannot_be_removed(self):
         for name in (ALLOWLIST, "tools/runtime_source_inventory.py", "tools/sandboxed_chrome.py",
+                     "tools/check_muse_review_ui.py",
                      "keel_muse/__main__.py", "keel_operational/__main__.py"):
             with self.subTest(name=name):
                 with self.assertRaises(RuntimeSourceError):
@@ -245,6 +250,135 @@ class RuntimeSourceAdmissionTests(unittest.TestCase):
                 self.assertEqual(snapshot.call_count, 2)
 
 
+class ComposedRuntimeTreeTests(unittest.TestCase):
+    """Copy all tracked public source, independently of inventory membership.
+
+    Git supplies test-fixture membership only; production has no Git discovery.
+    Working-tree bytes (including a reviewed uncommitted change) are copied from
+    indexed paths. Untracked caches/private files are never included. Component
+    checks exercise the real parser/enumerator, not ancestor trust or full read
+    stability. The separate full-provider test keeps every production guard.
+    """
+
+    checker = "tools/check_muse_review_ui.py"
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix="keel-composed-source-")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name) / "source"
+        self.root.mkdir(mode=0o700)
+        listing = subprocess.run(
+            ["git", "-C", str(ROOT), "ls-files", "--cached", "--stage", "-z"],
+            capture_output=True, check=True, timeout=10,
+        ).stdout
+        rows = listing.rstrip(b"\0").split(b"\0")
+        self.assertLessEqual(len(rows), 4096, "bounded full tracked-tree fixture")
+        self.tracked = set()
+        total = 0
+        for row in rows:
+            metadata, raw_name = row.split(b"\t", 1)
+            mode, _blob, stage = metadata.decode("ascii").split()
+            self.assertEqual(stage, "0", "unresolved index cannot define a fixture")
+            self.assertIn(mode, {"100644", "100755"}, "no symlinks or gitlinks")
+            name = raw_name.decode("utf-8")
+            path = PurePosixPath(name)
+            self.assertEqual(str(path), name)
+            self.assertFalse(path.is_absolute())
+            self.assertNotIn("..", path.parts)
+            self.assertNotIn("\\", name)
+            self.assertNotIn(name, self.tracked)
+            self.tracked.add(name)
+            original = ROOT / name
+            for relative in (path, *path.parents):
+                self.assertFalse((ROOT / relative).is_symlink())
+            info = original.lstat()
+            self.assertTrue(stat.S_ISREG(info.st_mode), name)
+            self.assertLessEqual(info.st_size, 16 * 1024 * 1024)
+            total += info.st_size
+            self.assertLessEqual(total, 128 * 1024 * 1024)
+            target = self.root / name
+            target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            shutil.copyfile(original, target)
+            target.chmod(stat.S_IMODE(info.st_mode))
+        # This requirement is independent of the list under test: a missing
+        # enrollment must not silently remove the checker from the fixture.
+        self.assertIn(self.checker, self.tracked)
+        self.assertEqual((self.root / self.checker).read_bytes(),
+                         (ROOT / self.checker).read_bytes())
+        self.raw = (self.root / ALLOWLIST).read_bytes()
+        self.names = parse_manifest(self.raw)
+
+    def enumerate_component(self):
+        """No _root call: this result makes no ancestor-trust claim."""
+        names = parse_manifest((self.root / ALLOWLIST).read_bytes())
+        directories = {str(parent) for name in names
+                       for parent in PurePosixPath(name).parents if str(parent) != "."}
+        flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+        with ExitStack() as stack:
+            descriptor = os.open(self.root, flags)
+            stack.callback(os.close, descriptor)
+            descriptors = {"": descriptor}
+            for name in sorted(directories, key=lambda value: (value.count("/"), value)):
+                path = PurePosixPath(name)
+                parent = str(path.parent) if str(path.parent) != "." else ""
+                child = os.open(path.name, flags, dir_fd=descriptors[parent])
+                stack.callback(os.close, child)
+                descriptors[name] = child
+            return _enumerate(descriptors, set(names), directories)
+
+    def test_complete_tracked_composition_enumerates_added_checker(self):
+        entries = self.enumerate_component()
+        self.assertIn(self.checker, entries)
+        self.assertIn(self.checker, self.names)
+
+    def test_checker_file_omission_is_rejected(self):
+        self.enumerate_component()
+        (self.root / self.checker).unlink()
+        with self.assertRaisesRegex(RuntimeSourceError, "runtime_source_missing_member"):
+            self.enumerate_component()
+
+    def test_checker_manifest_omission_cannot_redefine_policy(self):
+        self.enumerate_component()
+        names = [name for name in self.names if name != self.checker]
+        self.assertEqual(len(names), len(self.names) - 1)
+        with self.assertRaisesRegex(RuntimeSourceError, "runtime_source_manifest_membership"):
+            parse_manifest(manifest_bytes(names))
+
+    def test_same_count_checker_substitution_cannot_redefine_policy(self):
+        self.enumerate_component()
+        names = sorted((set(self.names) - {self.checker}) | {"tools/replacement_check.py"})
+        self.assertEqual(len(names), len(self.names))
+        with self.assertRaisesRegex(RuntimeSourceError, "runtime_source_manifest_membership"):
+            parse_manifest(manifest_bytes(names))
+
+    def test_unlisted_source_and_extensionless_executable_remain_rejected(self):
+        self.enumerate_component()
+        for name, mode in (("unreviewed.py", 0o600), ("unreviewed_check", 0o700)):
+            with self.subTest(name=name):
+                target = self.root / "tools" / name
+                target.write_bytes(b"# synthetic negative fixture; never executed\n")
+                target.chmod(mode)
+                try:
+                    with self.assertRaisesRegex(RuntimeSourceError, "runtime_source_unexpected_source"):
+                        self.enumerate_component()
+                finally:
+                    target.unlink()
+
+    def test_full_provider_binds_checker_and_latches_its_disturbance(self):
+        provider = current_runtime_provider(self.root)
+        report = provider()
+        checker = self.root / self.checker
+        original = checker.read_bytes()
+        self.assertEqual(report["files"][self.checker], sha(original))
+        self.assertEqual(set(report["files"]), set(self.names))
+        checker.write_bytes(original + b"\n# synthetic observed disturbance\n")
+        with self.assertRaisesRegex(RuntimeSourceError, "runtime_source_changed"):
+            provider()
+        checker.write_bytes(original)
+        with self.assertRaisesRegex(RuntimeSourceError, "runtime_source_changed"):
+            provider()
+
+
 class RuntimeSourceInventoryTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="keel-runtime-inventory-")
@@ -254,7 +388,7 @@ class RuntimeSourceInventoryTests(unittest.TestCase):
         self.root.mkdir(mode=0o700)
         self.raw_list = (ROOT / ALLOWLIST).read_bytes()
         self.names = json.loads(self.raw_list)["files"]
-        self.assertEqual(len(self.names), 629)
+        self.assertEqual(len(self.names), 630)
         for name in self.names:
             target = self.root / name
             parent = self.root
@@ -265,7 +399,7 @@ class RuntimeSourceInventoryTests(unittest.TestCase):
             target.write_bytes((ROOT / name).read_bytes())
         self.provider = current_runtime_provider(self.root)
         self.initial = self.provider()
-        self.assertEqual(self.initial["file_count"], 629)
+        self.assertEqual(self.initial["file_count"], 630)
         self.assertEqual(set(self.initial["files"]), set(self.names))
 
     def reject(self):

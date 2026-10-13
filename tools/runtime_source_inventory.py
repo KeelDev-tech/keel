@@ -15,7 +15,7 @@ import stat
 PROFILE = 'current-runtime-v1'
 SCHEMA = 'keel.runtime-source-files.v1'
 MANIFEST_NAME = 'runtime-source-files.json'
-EXPECTED_NAMES_SHA256 = '38606f8ada1dd99dc39a9e0a311810652a4385da3d3e6a7a50e0ac961ba999d1'
+EXPECTED_NAMES_SHA256 = '94c401e64f5030a069417c565ec68b0312103fb980f340666253663191d18840'
 MAX_MANIFEST_BYTES = 256 * 1024
 MAX_FILE_BYTES = 8 * 1024 * 1024
 MAX_TOTAL_BYTES = 32 * 1024 * 1024
@@ -105,7 +105,7 @@ def parse_manifest(raw):
                  and '\\' not in name and not any(ord(c) < 32 or ord(c) == 127 for c in name),
                  'member_path')
     _require(names == sorted(set(names)), 'manifest_order')
-    _require(len(names) == 629 and _sha(_canonical(names)) == EXPECTED_NAMES_SHA256,
+    _require(len(names) == 630 and _sha(_canonical(names)) == EXPECTED_NAMES_SHA256,
              'manifest_membership')
     return tuple(names)
 

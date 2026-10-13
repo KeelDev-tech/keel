@@ -196,8 +196,9 @@ class RuntimeSourceCLITests(unittest.TestCase):
         # The profile supplies the complete reviewed byte set; it is not reduced
         # to the imports exercised by one happy-path command.
         self.profile_names = set(json.loads((ROOT / "runtime-source-files.json").read_text())["files"])
-        self.assertEqual(len(self.profile_names), 629)
+        self.assertEqual(len(self.profile_names), 630)
         self.assertIn("tools/sandboxed_chrome.py", self.profile_names)
+        self.assertIn("tools/check_muse_review_ui.py", self.profile_names)
         names = set(self.profile_names)
         names.update((".gitignore", "muse-base-manifest.json", "muse-release-files.json",
                       "operational-base-manifest.json", "operational-release-files.json"))
@@ -223,7 +224,7 @@ class RuntimeSourceCLITests(unittest.TestCase):
         self.assertEqual(child.returncode, 0, child.stderr + child.stdout)
         result = json.loads(child.stdout)
         self.assertEqual(result["profile"], PROFILE)
-        self.assertEqual(result["file_count"], 629)
+        self.assertEqual(result["file_count"], 630)
         self.assertRegex(result["sha256"], r"^[0-9a-f]{64}$")
         self.assertEqual(set(result["files"]), self.profile_names)
         return result

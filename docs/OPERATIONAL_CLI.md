@@ -79,9 +79,9 @@ python3 -B -m keel_operational qualification \
 Omitting this flag preserves the strict historical operational inventory. A
 historical manifest mismatch remains a failure. There is no automatic profile
 detection, fallback, migration or repinning. The current profile has a bundled,
-fixed 629-file list: 553 existing Python sources, 73 resources, the inventory
-provider, the inventory JSON, and `tools/sandboxed_chrome.py`. The added browser
-verification helper is explicitly included in the reviewed list.
+fixed 630-file list: 556 Python sources and 74 other resource/policy files.
+The inventory provider, inventory JSON, `tools/sandboxed_chrome.py` and
+`tools/check_muse_review_ui.py` are explicitly included in the reviewed list.
 It checks source bytes and covered membership; missing listed files and
 unexpected code fail closed. Request JSON, external manifests and caller-selected
 roots cannot change that coverage.
@@ -103,12 +103,18 @@ fail closed. Do not change permissions or ownership, or relax the guard, to make
 an incompatible environment pass.
 
 CLI regression fixtures copy the complete fixed list into separate clean source
-trees and use isolated Python children with `-I -S -B`. Guard failures remain
-visible; the fixtures do not relax ownership checks or substitute cached code.
+trees and use isolated Python children with `-I -S -B`. A separate composition
+regression copies all tracked public files from the reviewed checkout, independently
+of the inventory, so an unenrolled checker cannot disappear from its fixture.
+Git supplies only this test fixture's paths; production does not discover or
+enroll files through Git. Component tests cover parser/enumeration behavior only;
+the full-provider test retains ancestor trust and source-stability checks.
+Guard failures remain visible; no fixture relaxes ownership checks or substitutes
+cached code.
 
 Qualification plans, reports, sessions and recovery inventories bind their
 source pins. Selecting this profile does not make historical and current pins
-interchangeable. Adding the browser verification helper changes the source
+interchangeable. Enrolling the Muse review checker changes the source
 fingerprint and requires fresh qualification for the new source and host through
 the existing workflow; preserve prior state and do not rewrite its pins. A successful
 inventory check alone grants no execution or submission authority.

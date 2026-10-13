@@ -112,9 +112,9 @@ python3 -B -m keel_muse inspect-host \
 Without the flag, the CLI keeps its strict historical Muse inventory. A missing
 or changed historical prerequisite remains an error; the CLI does not detect a
 different checkout and switch profiles automatically. The explicit current
-profile uses the bundled fixed list of 629 files: 553 existing Python sources,
-73 resources, the inventory provider, the inventory JSON, and
-`tools/sandboxed_chrome.py`. The added browser verification helper is explicitly
+profile uses the bundled fixed list of 630 files: 556 Python sources and
+74 other resource/policy files. The inventory provider, inventory JSON,
+`tools/sandboxed_chrome.py` and `tools/check_muse_review_ui.py` are explicitly
 included in the reviewed list. The provider checks current file bytes and
 exact covered membership. Missing listed files and unexpected code in
 covered locations fail closed. It never enrolls files from an external manifest,
@@ -139,11 +139,17 @@ unsafe path or unstable source read is a failure; do not change ownership,
 permissions or the guard to manufacture a passing result.
 
 CLI regression fixtures copy the complete fixed list into separate clean source
-trees and use isolated Python children with `-I -S -B`. Guard failures remain
-visible; the fixtures do not relax ownership checks or substitute cached code.
+trees and use isolated Python children with `-I -S -B`. A separate composition
+regression copies all tracked public files from the reviewed checkout, independently
+of the inventory, so an unenrolled checker cannot disappear from its fixture.
+Git supplies only this test fixture's paths; production does not discover or
+enroll files through Git. Component tests cover parser/enumeration behavior only;
+the full-provider test retains ancestor trust and source-stability checks.
+Guard failures remain visible; no fixture relaxes ownership checks or substitutes
+cached code.
 
 Profile selection does not migrate or repin existing sessions, plans or recovery
-state. Adding the browser verification helper changes the source fingerprint
+state. Enrolling the Muse review checker changes the source fingerprint
 and requires fresh qualification against the actual source and host, as any new
 source pin does. Preserve existing records and treat state bound to a different pin as
 incompatible until the existing workflow establishes otherwise. This flag grants

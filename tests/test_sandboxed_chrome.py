@@ -19,6 +19,240 @@ ROOT = Path(__file__).resolve().parents[1]
 from tools.sandboxed_chrome import (
     FORBIDDEN_FLAGS, SandboxedChrome, SandboxError, _proc_record, _process_tree, verify_sandbox_evidence,
 )
+from tools.check_muse_review_ui import Acceptance, failure_diagnostic, measured_diagnostic
+
+
+class MuseReviewLayoutTests(unittest.TestCase):
+    """Exercise the layout acceptance gate without starting a browser."""
+
+    def desktop_metrics(self, label='review'):
+        # Observed in hosted PR138 push 330e7a4: a 15px classic scrollbar,
+        # no page overflow or clipped nodes, and a fully visible tab strip.
+        selected = {'id': 'tab-review' if label == 'review' else 'tab-evidence', 'issues': []}
+        return {'innerWidth': 1440, 'viewport': 1425, 'pageWidth': 1425,
+                'scrollbarWidth': 15, 'bad': [],
+                'tabs': {'clientWidth': 745, 'scrollWidth': 745, 'scrollLeft': 0,
+                         'clientHeight': 46, 'scrollHeight': 46,
+                         'selected': selected, 'focused': copy.deepcopy(selected)}}
+
+    def layout_checks(self, metrics, width=1440, label='review'):
+        acceptance = Acceptance(None, Path('/synthetic-muse-layout'), {}, {}, '')
+        acceptance.case = 'complete'
+        with patch.object(acceptance, 'call'), \
+                patch.object(acceptance, 'evaluate', return_value=metrics), \
+                patch.object(acceptance, 'screenshot'):
+            acceptance.layout(width, label)
+        return [row['passed'] for row in acceptance.checks]
+
+    def test_hosted_desktop_scrollbar_does_not_fail_review_or_evidence(self):
+        for label in ('review', 'expanded'):
+            with self.subTest(label=label):
+                self.assertEqual(self.layout_checks(self.desktop_metrics(label), label=label),
+                                 [True, True, True])
+
+    def test_viewport_without_a_classic_scrollbar_remains_accepted(self):
+        metrics = self.desktop_metrics()
+        metrics.update(viewport=1440, pageWidth=1440, scrollbarWidth=0)
+        self.assertEqual(self.layout_checks(metrics), [True, True, True])
+
+    def test_page_overflow_into_scrollbar_space_still_fails(self):
+        metrics = self.desktop_metrics()
+        metrics['pageWidth'] = 1430  # Smaller than innerWidth, larger than usable width.
+        self.assertEqual(self.layout_checks(metrics), [False, True, True])
+
+    def test_wrong_window_width_or_invalid_usable_width_still_fails(self):
+        for change in ({'innerWidth': 1400, 'viewport': 1385, 'pageWidth': 1385},
+                       {'viewport': 0, 'pageWidth': 0},
+                       {'viewport': 1441, 'pageWidth': 1441}):
+            metrics = self.desktop_metrics()
+            metrics.update(change)
+            with self.subTest(change=change):
+                self.assertFalse(self.layout_checks(metrics)[0])
+
+    def test_text_range_issue_still_fails_with_equal_client_and_scroll_width(self):
+        metrics = self.desktop_metrics()
+        metrics['bad'] = [{'tag': 'P', 'class': 'item-value', 'clientWidth': 205,
+                           'scrollWidth': 205, 'issues': ['text exceeds horizontal box']}]
+        self.assertEqual(self.layout_checks(metrics), [False, True, True])
+
+    def test_real_mobile_tab_overflow_and_selected_clipping_remain_failures(self):
+        metrics = self.desktop_metrics('expanded')
+        # Hosted 320px Evidence geometry remains outside the usable 305px width.
+        selected = {'id': 'tab-evidence', 'issues': ['clipped horizontally by tabs'],
+                    'rect': {'right': 313.453}}
+        metrics.update(innerWidth=320, viewport=305, pageWidth=305, bad=[selected])
+        metrics['tabs'].update(clientWidth=275, scrollWidth=392,
+                               selected=selected, focused=copy.deepcopy(selected))
+        self.assertEqual(self.layout_checks(metrics, width=320, label='expanded'),
+                         [False, False, False])
+
+    def test_tab_strip_overflow_is_an_independent_failure(self):
+        metrics = self.desktop_metrics()
+        metrics.update(innerWidth=390, viewport=375, pageWidth=375)
+        metrics['tabs'].update(clientWidth=345, scrollWidth=392)
+        self.assertEqual(self.layout_checks(metrics, width=390), [True, False, True])
+
+    def hanging_space_metrics(self):
+        # Synthetic observer data: the former whole-Range check rejects a space
+        # advance at a wrapped line end even though every visible word fits.
+        def rect(left, right, top, bottom):
+            return dict(left=left, right=right, top=top, bottom=bottom,
+                        width=right-left, height=bottom-top)
+        space = rect(254.891, 258.719, 3, 17)
+        run = dict(textNodeOrdinal=1, utf16Start=32, utf16Length=1, codePoints=[32],
+                   codePointsTruncated=False, overflowRects=[space],
+                   previousNonWhitespaceAvailable=True, nextNonWhitespaceAvailable=True,
+                   previousNonWhitespaceRects=[rect(190, 254.891, 3, 17)],
+                   nextNonWhitespaceRects=[rect(50, 110, 23.4, 37.4)])
+        probe = dict(whiteSpace='pre-wrap', direction='ltr', writingMode='horizontal-tb',
+                     singleDirectTextNode=True, plainTextPaint=True, scanComplete=True,
+                     selectionScanComplete=True, selectionIntersectsNode=False,
+                     scannedTextNodes=1, scannedUnits=43, wholeOverflowCount=1,
+                     whitespaceOverflowCount=1, nonWhitespaceOverflowCount=0,
+                     wholeOverflowRects=[space], whitespaceOverflowRects=[space],
+                     nonWhitespaceOverflowRects=[], whitespaceOverflowRuns=[run])
+        metrics = self.desktop_metrics()
+        metrics.update(innerWidth=320, viewport=305, pageWidth=305)
+        metrics['bad'] = [dict(rect=rect(50, 255, 0, 40.8), clientWidth=205, scrollWidth=205,
+                              clientHeight=41, scrollHeight=41, rangeProbe=probe,
+                              issues=['text exceeds horizontal box'])]
+        return metrics
+
+    def test_verified_single_hanging_space_advance_is_not_visible_overflow(self):
+        self.assertEqual(self.layout_checks(self.hanging_space_metrics(), width=320),
+                         [True, True, True])
+
+    def test_hanging_space_correction_requires_complete_plain_text_evidence(self):
+        changes = [dict(scanComplete=False), dict(singleDirectTextNode=False),
+                   dict(plainTextPaint=False), dict(selectionScanComplete=False),
+                   dict(selectionIntersectsNode=True), dict(direction='rtl'),
+                   dict(writingMode='vertical-rl'), dict(whiteSpace='break-spaces'),
+                   dict(nonWhitespaceOverflowCount=1), dict(wholeOverflowCount=2),
+                   dict(whitespaceOverflowCount=True), dict(scannedTextNodes=2)]
+        for change in changes:
+            metrics = self.hanging_space_metrics()
+            metrics['bad'][0]['rangeProbe'].update(change)
+            with self.subTest(change=change):
+                self.assertFalse(self.layout_checks(metrics, width=320)[0])
+        for key in ('scanComplete', 'plainTextPaint', 'selectionIntersectsNode'):
+            metrics = self.hanging_space_metrics()
+            del metrics['bad'][0]['rangeProbe'][key]
+            with self.subTest(missing=key):
+                self.assertFalse(self.layout_checks(metrics, width=320)[0])
+
+    def test_hanging_space_correction_preserves_glyph_line_and_clip_failures(self):
+        for change in ('nbsp', 'letter', 'truncated', 'missing-next', 'same-line',
+                       'previous-outside', 'unmatched-rect', 'nonfinite', 'vertical',
+                       'ancestor', 'own-scroll', 'page-scroll'):
+            metrics = self.hanging_space_metrics()
+            node = metrics['bad'][0]
+            probe = node['rangeProbe']
+            run = probe['whitespaceOverflowRuns'][0]
+            if change == 'nbsp': run['codePoints'] = [160]
+            elif change == 'letter': run['codePoints'] = [65]
+            elif change == 'truncated': run['codePointsTruncated'] = True
+            elif change == 'missing-next': run['nextNonWhitespaceAvailable'] = False
+            elif change == 'same-line': run['nextNonWhitespaceRects'][0].update(top=3, bottom=17)
+            elif change == 'previous-outside': run['previousNonWhitespaceRects'][0]['left'] = 40
+            elif change == 'unmatched-rect': probe['wholeOverflowRects'] = [dict(run['overflowRects'][0], right=260)]
+            elif change == 'nonfinite': node['rect']['right'] = float('nan')
+            elif change == 'vertical': node['issues'].append('text exceeds vertical box')
+            elif change == 'ancestor': node['issues'].append('clipped horizontally by panel')
+            elif change == 'own-scroll': node['scrollWidth'] = 210
+            elif change == 'page-scroll': metrics['pageWidth'] = 310
+            with self.subTest(change=change):
+                self.assertFalse(self.layout_checks(metrics, width=320)[0])
+
+
+class MuseReviewMeasuredEvidenceTests(unittest.TestCase):
+    def keyboard_samples(self, width):
+        return [{'innerWidth': width, 'viewport': width - 15, 'focused': 'tab-' + target,
+                 'selected': 'tab-' + target, 'labelledby': 'tab-' + target, 'selectedCount': 1,
+                 'tabIndex': 0, 'focusVisible': True, 'outlineStyle': 'solid', 'outlineWidth': 3,
+                 'outlineOffset': 4, 'outlineExtent': 7, 'opaque': True, 'contrast': 3.4, 'issues': []}
+                for target in ('review', 'packet', 'evidence', 'timeline', 'review', 'timeline', 'review')]
+
+    def keyboard_check(self, samples, width=320):
+        acceptance = Acceptance(None, Path('/synthetic-muse-keyboard'), {}, {}, '')
+        acceptance.case = 'complete'
+        with patch.object(acceptance, 'call') as call, \
+                patch.object(acceptance, 'evaluate', side_effect=samples), \
+                patch.object(acceptance, 'screenshot') as screenshot:
+            acceptance.mobile_keyboard(width)
+        self.assertEqual(call.call_args_list[-1].args, ('press', 'Home'))
+        self.assertEqual(screenshot.call_count, 7)
+        self.assertEqual(acceptance.checks[0]['detail']['samples'][-1]['target'], 'tab-review')
+        return acceptance.checks[0]
+
+    def test_real_key_sequence_checks_each_sample_and_finishes_on_review(self):
+        for width in (390, 320):
+            with self.subTest(width=width):
+                self.assertTrue(self.keyboard_check(self.keyboard_samples(width), width)['passed'])
+
+    def test_outline_clipping_wrong_binding_or_invisible_indicator_cannot_pass(self):
+        for change in ({'issues': ['outline clipped vertically by tabs']}, {'focused': 'tab-review'},
+                       {'labelledby': 'tab-review'}, {'focusVisible': False}, {'contrast': 2.9},
+                       {'opaque': False}, {'outlineWidth': 0}, {'selectedCount': 2}):
+            samples = self.keyboard_samples(320)
+            samples[2].update(change)
+            with self.subTest(change=change):
+                self.assertFalse(self.keyboard_check(samples)['passed'])
+
+    def test_selected_queue_observed_contrast_requires_both_opaque_passing_nodes(self):
+        for ratio, opaque, expected in ((4.46, True, False), (4.7, True, True), (4.7, False, False)):
+            acceptance = Acceptance(None, Path('/synthetic-muse-contrast'), {}, {}, '')
+            observed = {'nodes': [{'opaque': True, 'ratio': 4.7}, {'opaque': opaque, 'ratio': ratio}]}
+            with self.subTest(ratio=ratio, opaque=opaque), \
+                    patch.object(acceptance, 'evaluate', return_value=observed):
+                acceptance.selected_queue_contrast()
+                self.assertEqual(acceptance.checks[0]['passed'], expected)
+
+    def test_range_logging_caps_rects_and_omits_text(self):
+        rect = {'left': 1, 'right': 8, 'top': 3, 'bottom': 4, 'width': 7, 'height': 1, 'text': 'secret'}
+        probe = {'path': '#detail-body > section:nth-of-type(1) > p:nth-of-type(2)',
+                 'whiteSpace': 'pre-wrap', 'overflowWrap': 'anywhere', 'scanComplete': False,
+                 'scannedUnits': 4096, 'scannedRuns': 256, 'scannedTextNodes': 1,
+                 'wholeOverflowRects': [rect] * 9, 'whitespaceOverflowRects': [rect] * 9,
+                 'nonWhitespaceOverflowRects': [], 'rawText': 'secret'}
+        row = {'name': '320px page, controls and expanded avoid overflow and clipping',
+               'detail': {'bad': [{'tag': 'P', 'class': 'item-value', 'rangeProbe': probe, 'text': 'secret'}]}}
+        clean = failure_diagnostic(row)
+        self.assertNotIn('secret', json.dumps(clean))
+        result = clean['bad'][0]['rangeProbe']
+        self.assertEqual(len(result['wholeOverflowRects']), 3)
+        self.assertEqual(len(result['whitespaceOverflowRects']), 3)
+        self.assertFalse(result['scanComplete'])
+
+    def test_whitespace_attribution_log_has_only_bounded_numeric_whitespace_data(self):
+        rect = {'left': 250, 'right': 258.719, 'top': 3, 'bottom': 4, 'text': 'secret'}
+        run = {'textNodeOrdinal': 1, 'utf16Start': 20, 'utf16Length': 1,
+               'codePoints': [32, 97, True, 10, 8202, 9999999, 160, 9, 13],
+               'codePointsTruncated': True, 'previousNonWhitespaceAvailable': True,
+               'nextNonWhitespaceAvailable': True, 'overflowRects': [rect] * 9,
+               'previousNonWhitespaceRects': [rect] * 9, 'nextNonWhitespaceRects': [rect] * 9,
+               'rawText': 'secret'}
+        probe = {'whitespaceOverflowRuns': [run] * 9, 'computedTextDecorationLine': 'none',
+                 'computedTextShadowPresent': False, 'selectionIntersectsNode': False,
+                 'selectionScanComplete': True}
+        row = {'name': '320px page, controls and expanded avoid overflow and clipping',
+               'detail': {'bad': [{'rangeProbe': probe}]}}
+        clean = failure_diagnostic(row)['bad'][0]['rangeProbe']
+        self.assertEqual(len(clean['whitespaceOverflowRuns']), 3)
+        logged = clean['whitespaceOverflowRuns'][0]
+        self.assertEqual(logged['codePoints'], [32, 10, 8202, 160, 9])
+        self.assertEqual(logged['utf16Start'], 20)
+        self.assertEqual(logged['utf16Length'], 1)
+        for key in ('overflowRects', 'previousNonWhitespaceRects', 'nextNonWhitespaceRects'):
+            self.assertEqual(len(logged[key]), 3)
+        self.assertNotIn('secret', json.dumps(clean))
+
+    def test_positive_keyboard_log_omits_arbitrary_fields_and_caps_samples(self):
+        row = self.keyboard_check(self.keyboard_samples(320))
+        row['detail']['samples'][0].update(rawText='secret', url='https://secret', rect={'left': 0})
+        row['detail']['samples'] *= 3
+        clean = measured_diagnostic(row)
+        self.assertEqual(len(clean['samples']), 7)
+        self.assertNotIn('secret', json.dumps(clean))
 
 
 class LauncherRegressionTests(unittest.TestCase):
@@ -30,6 +264,7 @@ class LauncherRegressionTests(unittest.TestCase):
                           and item.value == '--executable-path' for item in node.elts)]
         self.assertEqual(unsafe, [], 'agent-browser local launch injects --no-sandbox when CI exists')
         self.assertIn('SandboxedChrome(', source)
+
 
     def test_workbench_requires_disconnect_proof_before_report(self):
         tree = ast.parse((ROOT / 'tools/check_workbench_ui.py').read_text())
@@ -80,7 +315,6 @@ class LauncherRegressionTests(unittest.TestCase):
                         self.assertEqual(result, 0 if outcome == 'pass' else 1)
                         self.assertEqual(report['status'], 'PASS' if outcome == 'pass' else 'FAIL')
                 self.assertEqual(events, ['ui-errors', 'disconnect-proof'])
-
 
 class AttachBoundaryTests(unittest.TestCase):
     def setUp(self):
