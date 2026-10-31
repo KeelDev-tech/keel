@@ -21,6 +21,8 @@ anywhere in these tests (the module performs none by design).
 import dataclasses
 import os
 import sys
+from copy import deepcopy
+from unittest.mock import patch
 
 import pytest
 
@@ -267,6 +269,99 @@ def test_evidence_carries_no_answer_values(samsara_session):
 
 
 # ------------------------------------------------------- session hardening
+
+def _assert_answer_snapshot(record, field, replacement, expected_status):
+    """Caller-owned records cannot change an existing session's authority."""
+    original = deepcopy(record)
+    bank = {"synthetic_fact": record}
+    fake = _counting_registry({"Example Alpha", "Example Beta"})
+    with patch.object(aur, "_known_employers", fake):
+        sess = aur.ReuseSession(bank, employer="Example Beta",
+                                role_context={"company": "Example Beta"})
+        before = sess.reuse("synthetic_fact")
+        assert before.status == expected_status
+        assert sess.reuse("synthetic_fact") == before
+        bank["synthetic_fact"][field] = replacement
+        after = sess.reuse("synthetic_fact")
+        assert after == before
+        assert fake.calls["n"] == 1
+        assert sess.cost_report()["reuses"] == 3
+        assert len(sess.evidence()) == 3
+        assert all(e.source == before.source for e in sess.evidence())
+        control = aur.ReuseSession({"synthetic_fact": original},
+                                   employer="Example Beta",
+                                   role_context={"company": "Example Beta"})
+        assert control.reuse("synthetic_fact") == before
+        assert fake.calls["n"] == 2
+
+
+def test_answer_snapshot_scope_mutation():
+    _assert_answer_snapshot(
+        {"value": "Yes", "scope": "employer:Example Alpha"},
+        "scope", "global", ar.STATUS_ABSTAIN)
+
+
+def test_answer_snapshot_value_mutation():
+    _assert_answer_snapshot(
+        {"value": "Yes", "scope": "global"},
+        "value", "No", ar.STATUS_RESOLVED)
+
+
+def test_answer_snapshot_provenance_mutation():
+    _assert_answer_snapshot(
+        {"value": "Yes", "scope": "global",
+         "provenance": "original synthetic authority"},
+        "provenance", "changed synthetic authority", ar.STATUS_RESOLVED)
+
+
+def test_answer_snapshot_expiry_mutation():
+    _assert_answer_snapshot(
+        {"value": "Yes", "scope": "global",
+         "expires": "2000-01-01T00:00:00Z"},
+        "expires", "2999-01-01T00:00:00Z", ar.STATUS_ABSTAIN)
+
+
+def test_answer_snapshot_copy_failure_abstains():
+    class Uncopyable(dict):
+        def __deepcopy__(self, memo):
+            raise ValueError("synthetic copy failure")
+
+    fake = _counting_registry(set())
+    with patch.object(aur, "_known_employers", fake):
+        sess = aur.ReuseSession({"synthetic_fact": Uncopyable(
+            value="Yes", scope="global")})
+        res = sess.reuse("synthetic_fact")
+    assert res.status == ar.STATUS_ABSTAIN
+    assert res.value == ""
+    assert sess.evidence()[0].status == ar.STATUS_ABSTAIN
+    assert sess.cost_report()["abstained"] == 1
+    assert fake.calls["n"] == 1
+
+
+def test_answer_snapshot_returned_resolution_mutation():
+    record = {"value": "Yes", "scope": "global",
+              "provenance": "original synthetic authority",
+              "expires": "2999-01-01T00:00:00Z"}
+    fake = _counting_registry(set())
+    with patch.object(aur, "_known_employers", fake):
+        sess = aur.ReuseSession({"synthetic_fact": record})
+        res = sess.reuse("synthetic_fact")
+        original = deepcopy(res)
+        assert res.status == ar.STATUS_RESOLVED
+        evidence = sess.evidence()
+        res.value = "No"
+        res.scope = "ambiguous"
+        res.source = "changed synthetic authority"
+        res.expiry = "2000-01-01T00:00:00Z"
+        assert sess.reuse("synthetic_fact") == original
+    assert sess.evidence()[0] == evidence[0]
+    assert sess.evidence()[1].source == original.source
+    assert record["value"] == original.value
+    assert record["scope"] == original.scope
+    assert record["provenance"] == original.source
+    assert record["expires"] == original.expiry
+    assert fake.calls["n"] == 1
+
 
 def test_binding_snapshot_toctou(samsara_session):
     """Mutating the caller's role_context after construction cannot change
