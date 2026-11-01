@@ -1169,7 +1169,7 @@ def refresh_buffer(tagged=None, now=None):
                 print(f"BUFFER-HOLD {role_id}: prescreen unconfirmed; cannot proceed")
                 continue
             if verdict["verdict"] == "PARK":
-                res = prescreen.park_lead(role_id, verdict["reasons"])
+                res = _park_packet_for_input(role_id, verdict["reasons"])
                 _release_launch_lock(role_id, task_id)
                 os.path.exists(path) and os.remove(path)
                 print(f"BUFFER-PARK {role_id}: "
