@@ -24,6 +24,21 @@ jobs:
         run: python3 -S -B -m unittest discover -s tests -p test_connector_package.py
       - name: Install pinned validation environment
         run: pip install -r requirements-validation.lock
+      # Explicitly collect all 66 real-source tests and 199 CLI/release regressions.
+      # Runtime fixtures copy only the fixed source inventory and use -I -S -B;
+      # cache refusal stays enabled, including during later unittest discovery.
+      - name: Test current runtime source profiles and historical CLI compatibility
+        env:
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: >-
+          python3 -B -m pytest -q --import-mode=importlib -p no:cacheprovider
+          tests/test_runtime_source_inventory.py
+          tests/test_runtime_source_cli.py
+          tests/test_muse_cli.py
+          tests/test_operational_cli.py
+          tests/test_muse_release.py
+          tests/test_operational_release.py
       - name: Run offline MCP adapter safety and tool regressions
         run: python3 -m pytest -q --import-mode=importlib integrations/mcp-server/tests
       - name: Test operational safety and machine contracts
@@ -134,15 +149,15 @@ jobs:
           node-version: "24"
       - name: Install pinned browser verification CLI
         run: npm install --prefix "${RUNNER_TEMP}/keel-ui-tools" agent-browser@0.38.2
+      - name: Verify browser launch guards without launching a browser
+        run: python3 -B -m unittest discover -s tests -p test_sandboxed_chrome.py
       - name: Verify synthetic workbench in a sandboxed browser
         run: |
           KEEL_UI_CHROME="$(command -v google-chrome || command -v chromium)"
-          python tools/check_workbench_ui.py --browser "${RUNNER_TEMP}/keel-ui-tools/node_modules/.bin/agent-browser" --chrome "$KEEL_UI_CHROME" --out "${RUNNER_TEMP}/keel-ui-report"
+          python3 -B tools/check_workbench_ui.py --browser "${RUNNER_TEMP}/keel-ui-tools/node_modules/.bin/agent-browser" --chrome "$KEEL_UI_CHROME" --out "${RUNNER_TEMP}/keel-ui-report"
       - name: Retain synthetic UI verification
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: workbench-ui
-          path: |
-            ${{ runner.temp }}/keel-ui-report/report.json
-            ${{ runner.temp }}/keel-ui-report/*.png
+          path: ${{ runner.temp }}/keel-ui-report/

@@ -63,6 +63,60 @@ python -c 'import sys; from keel_loki.common import load_json,atomic_json,digest
 A hash proves consistency of bytes. It does not authenticate Muse, a human
 approval, the capture adapter or a canonical system.
 
+## Select a source inventory profile
+
+Every subcommand accepts `--source-profile current-runtime-v1` after its name.
+For example, an explicitly selected current-source qualification invocation is:
+
+```sh
+python3 -B -m keel_operational qualification \
+  --source-profile current-runtime-v1 \
+  --host-config /private/keel/qualification-config.json \
+  --input /private/keel/qualification-request.json \
+  --out /private/keel/new-current-source-qualification.json
+```
+
+Omitting this flag preserves the strict historical operational inventory. A
+historical manifest mismatch remains a failure. There is no automatic profile
+detection, fallback, migration or repinning. The current profile has a bundled,
+fixed 629-file list: 553 existing Python sources, 73 resources, the inventory
+provider, the inventory JSON, and `tools/sandboxed_chrome.py`. The added browser
+verification helper is explicitly included in the reviewed list.
+It checks source bytes and covered membership; missing listed files and
+unexpected code fail closed. Request JSON, external manifests and caller-selected
+roots cannot change that coverage.
+
+The selected provider is frozen for the invocation and is shared by the initial
+check, runtime callbacks, final check and exception-path rechecks. An observed
+change or failed read remains a failure even if the old bytes are restored.
+The pin proves consistency of the covered files on disk. It does not authenticate
+their origin, prove the interpreter loaded those bytes, or cover external
+host-selected code, the interpreter or installed dependencies. External state and host inputs still
+pass through the existing qualification, permission and evidence checks.
+
+Run from a separate clean source installation with `python3 -B`. This suppresses
+new bytecode writes but does not stop Python from reading existing bytecode.
+Caches, bytecode and native binaries in covered locations are refused. Source
+paths are checked through directory descriptors, including trusted ancestors
+owned by root or the current user. Unsafe paths, ownership or changing reads
+fail closed. Do not change permissions or ownership, or relax the guard, to make
+an incompatible environment pass.
+
+CLI regression fixtures copy the complete fixed list into separate clean source
+trees and use isolated Python children with `-I -S -B`. Guard failures remain
+visible; the fixtures do not relax ownership checks or substitute cached code.
+
+Qualification plans, reports, sessions and recovery inventories bind their
+source pins. Selecting this profile does not make historical and current pins
+interchangeable. Adding the browser verification helper changes the source
+fingerprint and requires fresh qualification for the new source and host through
+the existing workflow; preserve prior state and do not rewrite its pins. A successful
+inventory check alone grants no execution or submission authority.
+
+Historical compatibility evidence covers default-mode rejection on current
+source. An authentic archived release fixture is unavailable, so a successful
+historical-release CLI run remains unverified.
+
 ## Shared stop ledger
 
 The `control` configuration is exact:
