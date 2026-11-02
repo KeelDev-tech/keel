@@ -246,3 +246,66 @@ def test_invalid_host_evidence_never_authorizes(home, change):
     class InvalidHost(Host):
         def observe(self, request): return {**super().observe(request), **change}
     assert bridge.observe(InvalidHost(), request)['scope'] == 'UNOBSERVED'
+
+
+def modern_preparation(home):
+    import packet_contract
+    now = utc_now()
+    item = row(materials={'resume': 'resume.txt'}, posting_verification={
+        'identity': ['greenhouse', 'fixture', '1'], 'verdict': 'live',
+        'observed_at': now.isoformat()})
+    bank = {'answers': {'first_name': 'Synthetic', 'last_name': 'Applicant',
+                        'email': 'synthetic@fixture.invalid'}}
+    bank['_provenance'] = {key: packet_contract.answer_receipt(value, 'synthetic fixture', now=now)
+                           for key, value in bank['answers'].items()}
+    policy = {'main_fit_floor': 75}
+    atomic_json(home/'data/answer_bank.json', bank)
+    atomic_json(home/'data/policy.json', policy)
+    (home/'resume.txt').write_text('Synthetic review material')
+    put(home, [item, row(2)])
+    packet = packet_contract.prepare(item, bank, policy, home, item['materials'],
+                                     {'questions': []}, now=now)
+    assert packet_contract.validate(packet, item, bank, policy, home, item['materials'], now=now)
+    path = home/'data/launch-packets/role-1.json'
+    atomic_json(path, packet)
+    return item, packet, path, now
+
+
+def test_modern_preparation_is_counted_without_ready_or_execution(home):
+    item, packet, path, now = modern_preparation(home)
+    before = {p: p.read_bytes() for p in (home/'data').rglob('*') if p.is_file()}
+    result = recovery.plan(home, now=now)
+    records = {r['role_id']: r for r in result['records']}
+    assert records['role-1']['stage'] == 'prepared'
+    assert result['prepared_artifacts'] == 1
+    assert [r['role_id'] for r in result['selected']] == ['role-2']
+    assert result['promoted_to_ready'] == 0 and result['launchable_ready'] is None
+    assert not result['execution_authorized'] and not result['submission_authorized']
+    assert packet['execution_authorized'] is False
+    assert all(p.read_bytes() == body for p, body in before.items())
+
+
+@pytest.mark.parametrize('changed', ['source', 'attachment', 'policy', 'bank', 'profile',
+                                     'packet', 'expiry', 'expiry_overflow', 'entry'])
+def test_invalid_modern_preparation_does_not_block_verification_neighbor(home, changed):
+    item, packet, path, now = modern_preparation(home)
+    if changed == 'source': (home/'resume.txt').write_text('Changed synthetic material')
+    elif changed == 'attachment': Path(packet['upload_files'][0]).write_text('Changed copy')
+    elif changed == 'policy': atomic_json(home/'data/policy.json', {'main_fit_floor': 75, 'changed': True})
+    elif changed == 'bank': atomic_json(home/'data/answer_bank.json', {'answers': {}})
+    elif changed == 'profile': atomic_json(home/'data/applicant_profile.json', {'changed': True})
+    elif changed == 'entry': put(home, [{**item, 'title': 'Changed title'}, row(2)])
+    else:
+        if changed == 'packet': packet['brief'] = 'Tampered brief'
+        else:
+            packet['expires_at'] = ('9999-12-31T23:59:59-23:59' if changed == 'expiry_overflow'
+                                    else (now-timedelta(seconds=1)).isoformat())
+            packet['integrity_sha256'] = digest({k:v for k,v in packet.items() if k != 'integrity_sha256'})
+        atomic_json(path, packet)
+    before = {p: p.read_bytes() for p in (home/'data').rglob('*') if p.is_file()}
+    result = recovery.plan(home, now=now)
+    assert result['records'][0]['stage'] == 'materials'
+    assert result['prepared_artifacts'] == 0
+    assert [r['role_id'] for r in result['selected']] == ['role-2']
+    assert result['promoted_to_ready'] == 0 and not result['execution_authorized']
+    assert all(p.read_bytes() == body for p, body in before.items())

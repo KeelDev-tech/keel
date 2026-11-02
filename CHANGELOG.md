@@ -15,6 +15,29 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Acquire the review preparation lease before changing résumé selection, and
+  recheck current queue/ledger inputs and ownership before publishing a packet.
+  Refused attempts preserve prior input and packet bytes; interrupted or fenced
+  builders never delete a prior or successor packet. No execution authority added.
+
+- Preserve sealed packets during prescreen rechecks; require rebuilding when
+  current answers need new annotations, and leave publication to the builder.
+
+- Use the same verification history for cooldowns and scheduling so malformed
+  legacy observations cannot abort an eligible neighbor's posting check.
+
+- Reuse receipt-validated tray custom answers for their exact captured questions
+  and variants while preserving scope, expiry, consent, and no-AI holds.
+
+- Recognize current modern preparation packets in supply planning while
+  preserving READY transitions, execution holds, and current input validation.
+
+- Keep LinkedIn URL questions held when banked quotations are negative
+  statements or non-profile URLs; preserve scoped factual reuse and conflicts.
+
+- Keep full Workbench refreshes authoritative over timer-only updates, and
+  discard obsolete refresh errors alongside obsolete responses.
+
 - Discard superseded Workbench refresh responses so delayed automatic or
   manual requests cannot replace a newer snapshot or rebuild its review view.
 

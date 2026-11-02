@@ -38,6 +38,20 @@ def check(browser, chrome, out):
     env = os.environ.copy()
     env.setdefault('AGENT_BROWSER_SOCKET_DIR', str(out / 'browser-sockets'))
     env.setdefault('AGENT_BROWSER_DEFAULT_TIMEOUT', '45000')
+    # Retain the real timer callback for deterministic response-order checks.
+    # Earlier tests still exercise its native 30-second interval unchanged.
+    timer_hook = out / 'timer-hook.js'
+    timer_hook.write_text("""(() => {
+      const original = window.setInterval.bind(window);
+      window.setInterval = (callback, delay, ...args) => {
+        const id = original(callback, delay, ...args);
+        if (delay === 30000) {
+          window.workbenchRefresh = () => callback(...args);
+          window.workbenchInterval = id;
+        }
+        return id;
+      };
+    })();""")
     command = [browser, '--json', '--namespace', 'keel-ui-'+str(os.getpid()),
                '--executable-path', chrome, '--allowed-domains', '127.0.0.1,localhost']
     def call(*args):
@@ -60,7 +74,8 @@ def check(browser, chrome, out):
         thread = threading.Thread(target=server.serve_forever, kwargs={'poll_interval': .05}, daemon=True)
         thread.start()
         try:
-            call('open', 'http://'+server.authority+'/#token='+server.token)
+            call('open', 'http://'+server.authority+'/#token='+server.token,
+                 '--init-script', str(timer_hook))
             opened = True
             call('wait', '--fn', "document.querySelector('#main table') !== null")
             snapshot = call('snapshot', '-i')
@@ -215,6 +230,105 @@ def check(browser, chrome, out):
             record('discarded refresh does not report success over newer failure', evaluate(
                 "document.querySelector('#toast').textContent === 'Synthetic interrupted refresh'"))
             evaluate("window.fetch=window.refreshFetch; true")
+
+            # Control the real timer callback from here; no wall-clock race
+            # can interleave with the intentionally delayed full responses.
+            evaluate("clearInterval(window.workbenchInterval); true")
+            for page, control, options in [('workflows', '#scope', '#scope'),
+                                           ('twin', '#delay', '#invalidate')]:
+                call('click', '#refresh')
+                call('wait', '--fn', 'state.view.snapshot_sha256 === '+json.dumps(digest(updated)))
+                evaluate("state.workflow='source-repair'; go("+json.dumps(page)+"); true")
+                previous_sha256 = digest(updated)
+                updated['labels'][0]['title'] = 'Full refresh '+page+' fixture'
+                app.replace(updated, previous_sha256=previous_sha256)
+                evaluate("""(() => {
+                  window.fullReleases=[]; window.fullPaths=new Set();
+                  window.fetch=async (...args) => {
+                    const response=await refreshFetch(...args);
+                    if(!['/api/v1/overview','/api/v1/workflows','/api/v1/history'].includes(args[0])
+                       || fullPaths.has(args[0])) return response;
+                    fullPaths.add(args[0]);
+                    await new Promise(resolve=>fullReleases.push(resolve));
+                    return response;
+                  }; return true;
+                })()""")
+                call('click', '#refresh')
+                call('wait', '--fn', 'window.fullReleases.length === 3')
+                evaluate("toast('Awaiting full refresh'); true")
+                call('focus', control)
+                evaluate('window.pendingControl=document.querySelector('+json.dumps(control)+'); true')
+                evaluate('window.workbenchRefresh().then(()=>true)')
+                record(page+' timer cannot supersede a pending full refresh', evaluate(
+                    'state.view.snapshot_sha256 === '+json.dumps(previous_sha256)))
+                record(page+' pending form keeps focus during timer tick', evaluate(
+                    'pendingControl.isConnected && document.activeElement === pendingControl'))
+                evaluate('fullReleases.forEach(resolve=>resolve()); new Promise(resolve=>setTimeout(()=>resolve(true),0))')
+                record(page+' full refresh updates the visible role options', evaluate(
+                    'state.view.snapshot_sha256 === '+json.dumps(digest(updated))+
+                    ' && document.querySelector('+json.dumps(options)+').textContent.includes('+
+                    json.dumps(updated['labels'][0]['title'])+')'))
+                record(page+' full refresh reports completion', evaluate(
+                    "document.querySelector('#toast').textContent === 'Workspace refreshed.'"))
+                evaluate('window.fetch=window.refreshFetch; true')
+
+            # A superseded manual failure must not overwrite newer success.
+            evaluate("""(() => {
+              window.oldFailureHeld=false;
+              window.fetch=async (...args) => {
+                const response=await refreshFetch(...args);
+                if(args[0] !== '/api/v1/overview' || oldFailureHeld) return response;
+                window.oldFailureHeld=true;
+                await new Promise((resolve,reject)=>{window.rejectOldRefresh=reject;});
+                return response;
+              }; return true;
+            })()""")
+            call('click', '#refresh')
+            call('wait', '--fn', 'window.oldFailureHeld')
+            evaluate("toast('Awaiting newer refresh'); true")
+            call('click', '#refresh')
+            call('wait', '--fn', "document.querySelector('#toast').textContent === 'Workspace refreshed.'")
+            evaluate("rejectOldRefresh(new Error('Obsolete manual failure')); new Promise(resolve=>setTimeout(()=>resolve(true),0))")
+            record('superseded manual failure cannot overwrite newer success', evaluate(
+                "document.querySelector('#toast').textContent === 'Workspace refreshed.'"))
+            evaluate('window.fetch=window.refreshFetch; true')
+
+            # The same error ordering applies to an older automatic request.
+            evaluate("""(() => {
+              window.oldFailureHeld=false;
+              window.fetch=async (...args) => {
+                const response=await refreshFetch(...args);
+                if(args[0] !== '/api/v1/overview' || oldFailureHeld) return response;
+                window.oldFailureHeld=true;
+                await new Promise((resolve,reject)=>{window.rejectOldRefresh=reject;});
+                return response;
+              };
+              window.oldTimer=window.workbenchRefresh(); return true;
+            })()""")
+            call('wait', '--fn', 'window.oldFailureHeld')
+            evaluate("toast('Awaiting newer refresh'); true")
+            call('click', '#refresh')
+            call('wait', '--fn', "document.querySelector('#toast').textContent === 'Workspace refreshed.'")
+            evaluate("rejectOldRefresh(new Error('Obsolete timer failure')); oldTimer.then(()=>true)")
+            record('superseded timer failure cannot overwrite newer success', evaluate(
+                "document.querySelector('#toast').textContent === 'Workspace refreshed.'"))
+            evaluate('window.fetch=window.refreshFetch; true')
+
+            # A current failure releases full-refresh authority so later
+            # timer ticks still fetch and render normally.
+            evaluate("window.fetch=(...args)=>args[0]==='/api/v1/overview' ? Promise.reject(new Error('Current refresh failure')) : refreshFetch(...args); true")
+            call('click', '#refresh')
+            call('wait', '--fn', "document.querySelector('#toast').textContent === 'Current refresh failure'")
+            previous_sha256 = digest(updated)
+            updated['labels'][0]['title'] = 'Timer resumed synthetic opportunity'
+            app.replace(updated, previous_sha256=previous_sha256)
+            evaluate("window.fetch=window.refreshFetch; go('pipeline'); true")
+            call('focus', '#search')
+            evaluate('window.workbenchRefresh().then(()=>true)')
+            record('timer resumes normally after current full refresh failure', evaluate(
+                'state.view.snapshot_sha256 === '+json.dumps(digest(updated))+
+                " && document.querySelector('.opportunity-title').textContent === 'Timer resumed synthetic opportunity'"+
+                " && document.activeElement === document.querySelector('#search')"))
 
             # Change only the browser's synthetic view, never canonical state.
             evaluate("go('pipeline'); state.query='NO_SYNTHETIC_ROLE_MATCH'; updatePipeline(); true")

@@ -9,7 +9,7 @@ const titles = {overview:"Overview",pipeline:"Opportunities",evidence:"Evidence"
 const state = {token:new URLSearchParams(location.hash.slice(1)).get("token") || "", page:"overview", view:null,
   catalog:[], history:[], query:"", lane:"All lanes", filter:"All roles", workflow:"source-repair", scope:"", report:null, busy:false};
 if (location.hash.includes("token=")) history.replaceState(null, "", location.pathname);
-let toastTimer, refreshGeneration = 0;
+let toastTimer, refreshGeneration = 0, fullRefreshGeneration = null;
 function toast(message, error = false) {
   const node = $("#toast"); node.textContent = message; node.classList.toggle("error", error); node.hidden = false;
   clearTimeout(toastTimer); toastTimer = setTimeout(() => { node.hidden = true; }, 7000);
@@ -68,12 +68,20 @@ function freshness() {
 async function load() {
   if(!state.token) return showLogin();
   const generation = ++refreshGeneration;
-  const [view,catalog,history] = await Promise.all([api("/api/v1/overview"),api("/api/v1/workflows"),api("/api/v1/history")]);
-  // Automatic and manual refreshes share one ordering boundary. A newer
-  // request supersedes an older one even if the newer request later fails.
-  if(generation !== refreshGeneration || !state.token) return false;
-  state.view=view; state.catalog=catalog.workflows; state.history=history.runs; freshness(); render();
-  return true;
+  fullRefreshGeneration = generation;
+  try {
+    const [view,catalog,history] = await Promise.all([api("/api/v1/overview"),api("/api/v1/workflows"),api("/api/v1/history")]);
+    // A newer full request supersedes both results and errors, even if it
+    // fails. Partial timer updates cannot replace this complete page load.
+    if(generation !== refreshGeneration || !state.token) return false;
+    state.view=view; state.catalog=catalog.workflows; state.history=history.runs; freshness(); render();
+    return true;
+  } catch(error) {
+    if(generation !== refreshGeneration) return false;
+    throw error;
+  } finally {
+    if(fullRefreshGeneration === generation) fullRefreshGeneration = null;
+  }
 }
 function roleTable(roles, total=roles.length) {
   if(!roles.length) return `<div class="empty">${total ? 'No opportunities match these filters. Try a different lane or search.' : 'No opportunities in this export.'}</div>`;
@@ -233,13 +241,13 @@ function refreshVisibleView() {
   }
 }
 setInterval(async()=>{
-  if(!state.token || !state.view || state.busy || document.hidden) return;
+  if(!state.token || !state.view || state.busy || document.hidden || fullRefreshGeneration !== null) return;
   const generation = ++refreshGeneration;
   try {
     const view=await api("/api/v1/overview");
     if(generation !== refreshGeneration || !state.token) return;
     state.view=view; freshness();
     refreshVisibleView();
-  } catch(error) {toast(error.message,true);}
+  } catch(error) {if(generation === refreshGeneration)toast(error.message,true);}
 },30000);
 load().catch(error=>showLogin(error.message));

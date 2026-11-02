@@ -14,6 +14,10 @@ export KEEL_HOME="$HOME/keel-workspace"
 ```
 
 You can also pass the workspace explicitly: `./setup.sh /path/to/workspace`.
+An explicit workspace argument takes precedence over `KEEL_HOME`. Both
+`setup.sh` and `start.sh` resolve a relative workspace path from your invocation
+directory, even when the script is elsewhere. With neither setting, they retain
+the source-directory default; use a separate workspace for private data.
 The wrapper uses `keel.py init`. It creates only missing files and validates
 existing JSON instead of overwriting it. Applicant answers, personal policy
 commitments, experience, and consent start unknown. Setup does not connect an

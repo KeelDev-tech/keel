@@ -12,17 +12,19 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import stat
 import subprocess
 import sys
+from urllib.parse import unquote, urlsplit
 
 import queue_io
 from qresolve_corpus import Corpus
-from qresolve_semantics import canonical_fingerprint, classify
+from qresolve_semantics import canonical_fingerprint, classify, fact_key
 import qresolve_schedule
 from qresolve_policy import fit_admission, validate_min_fit
 
-POLICY_VERSION = 'qresolve.v2'
+POLICY_VERSION = 'qresolve.v3'
 MAX_BYTES = 16 * 1024 * 1024
 
 
@@ -118,6 +120,29 @@ def _fresh(hit, today):
         return False
 
 
+def _linkedin_url_quote(value):
+    """Shape only: never infer a URL, ownership, liveness or answer authority."""
+    if (not isinstance(value, str) or not value
+            or any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in value)):
+        return False
+    try:
+        parsed = urlsplit(value)
+        # Browsers normalize dot segments, including encoded dots. Reject
+        # ambiguous separators too; never normalize or rewrite the quotation.
+        segments = [unquote(part, errors='strict') for part in parsed.path.split('/')]
+        if any(part in {'.', '..'} or '/' in part or '\\' in part
+               or any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in part)
+               for part in segments):
+            return False
+        return bool(parsed.scheme in {'http', 'https'}
+                    and parsed.hostname in {'linkedin.com', 'www.linkedin.com'}
+                    and parsed.username is None and parsed.password is None
+                    and parsed.port is None
+                    and re.fullmatch(r'/(?:in|pub)/[^/]+(?:/[^/]+)*/?', parsed.path))
+    except ValueError:
+        return False
+
+
 def plan_card(card, contexts, corpus, config, *, pending=False, today=None):
     """Plan from canonical inputs. No file writes, inferred answers or network."""
     floor = validate_min_fit()
@@ -158,7 +183,13 @@ def plan_card(card, contexts, corpus, config, *, pending=False, today=None):
             hit = next((item for item in exact if item.get('eligible')), exact[0])
             allowed = (label['class'] in {'FACT', 'JUDGMENT'} or
                        (label['class'] == 'TRENT-ONLY' and hit.get('approved_verbatim') is True))
-            if allowed:
+            if allowed and fact_key(question) == 'linkedin' and not _linkedin_url_quote(hit['answer']):
+                # A verified negative statement is not a URL. Keep this exact
+                # obligation visible; do not substitute profile text or weaken
+                # the preceding conflict check to choose another quotation.
+                decision.update(evidence=[hit], route='held_answer_shape',
+                                rationale='saved quotation is not a LinkedIn profile URL')
+            elif allowed:
                 decision.update(answer=hit['answer'], bank_key=hit.get('bank_key'),
                                 evidence=[hit], action='draft', confidence=0.80,
                                 rationale='quoted scoped answer; human approval remains required')

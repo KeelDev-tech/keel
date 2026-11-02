@@ -145,7 +145,11 @@ def doctor(workspace, capabilities=False):
             continue
         try:
             source_url(entry)
-            material = entry.get('materials') or {}
+            material = entry.get('materials')
+            if material is None:
+                material = {}
+            elif not isinstance(material, dict):
+                raise ValueError('materials must be an object')
             resume = material.get('resume') or ('data/resumes/' + entry['resume_version'] if origin == 'strategic' and entry.get('resume_version') else None)
             if not resume:
                 raise ValueError('resume missing')

@@ -81,6 +81,7 @@ require separately configured sources and network access.
 | Worker resource enforcement | `python3 -m security.execution.resource_limits --help` | Delegated cgroup and reviewed isolation configuration |
 | Implementation trace checks | `python3 -m keel_eval trace-check --help` | Real canonical authority history and instrumented handler paths |
 | Statistical improvement controller | `python3 -m keel_learning capabilities` | Frozen experiments, authentic outcomes, fresh host attestations |
+| Bounded read-only account report | `python -S -B -m keel_connector.demo` | Authenticated host principal and complete workspace; production Muse integration remains separate |
 
 Detailed contracts are in `docs/NEXT_SYSTEM.md`, `docs/PERSISTENT_MEMORY.md`,
 `docs/IDENTITY_INDEX.md`, `docs/RELIABILITY_LAB.md`, `docs/BROWSER_LAB.md`,
@@ -110,6 +111,124 @@ launch a browser, authenticate a producer, constrain a worker, or establish
 statistical improvement. The runtime and benchmark inventory entries report
 code availability without opening their stores or running a workload. Module
 presence is never live-operation evidence.
+
+## Bounded connector source package
+
+The current packaging baseline is main `d5f66bf487bf1d6859ebec762050d4fdf333535a`,
+which merged [PR #142](https://github.com/KeelDev-tech/keel/pull/142)'s post-read
+authorization correction. Its tree matched the reviewed correction head
+`cd71fbe92a396e62d7524205a2a5bb522b1a19f9`, and all eight main CI checks passed.
+The original connector merged through [PR #141](https://github.com/KeelDev-tech/keel/pull/141)
+at `6de159aaea28ce85c3d444392c0d49838a933ff0`. Its source evidence stays historical;
+the reconciled archive passes separate extracted-runtime verification below.
+This follow-up includes the two read-only `ReadinessAdapter.call` operations,
+their existing qualification reducers and the synthetic connector demo in the
+private source ZIP. Read [MUSE_CONNECTOR.md](MUSE_CONNECTOR.md) for permissions,
+input/output/error contracts, freshness, data minimization and remaining gaps.
+
+The original `6de159aa` gap artifact contained 379 members including `MANIFEST.json`; its
+SHA-256 was
+`cecd8d71f8ddfbb0b5a63eaa9de52de7cc845edd69a3f89cb7840a30c6e1f647`.
+Extraction reproduced the missing connector import on Python 3.11 and 3.12.
+That is the initial failure artifact, not a digest for the revised candidate.
+
+The allowlist adds 23 runtime/demo files and six supporting files: the connector
+documentation, historical qualification evidence, existing connector tests,
+the new package test, and `maintenance_workbench/LICENSE` and `NOTICE`.
+Together with the 31 already included dependencies, these provide the 54-module
+import set for the bounded entrypoints. The verified reconciled ZIP contains
+**407 payload files plus `MANIFEST.json` (408 members)**. Each fresh run verifies
+its own manifest and records its actual artifact digest in an external report.
+
+The extracted-runtime qualification target is **Linux, Python 3.11/3.12 and
+the standard library**. This statement applies to the bounded connector only;
+it does not expand the platform qualification of the other subsystems above.
+SQLite and existing POSIX no-follow file operations remain prerequisites.
+There is no pip installation, site-packages environment, hosted endpoint,
+authentication setup or public publication in this source-package workflow.
+The full historical Live/Workbench/source-producer APIs and the MCP sample are
+not supported distribution entrypoints. Historical integration references link
+to pinned repository files rather than imply that those complete products ship.
+Optional authentication token/request-boundary modules and their associated
+tests, dependency requirements and documentation are separate work. Those six
+optional-auth files are outside the explicit core allowlist; this source ZIP
+does not include, review or qualify that backend. The 54-module count applies
+only to the bounded report/demo/proof paths, with no optional-auth dependency
+or installation claim.
+
+From the extracted directory, the bounded entrypoints are:
+
+```bash
+python -S -B -m keel_connector.demo
+python -S -B -m keel_connector.demo --benchmark --samples 21
+python -S -B -m unittest discover -s tests -p test_connector_readiness.py
+```
+
+To qualify the real packaged source from the checkout or extracted root:
+
+```bash
+python -S -B -m unittest discover -s tests -p test_connector_package.py
+# Optional: retain the private candidate and evidence in a new directory.
+python -S -B -m tests.test_connector_package --evidence-dir /tmp/keel-connector-check
+```
+
+CI runs this dedicated stdlib check before installing development dependencies
+on both Python versions. It uses the real builder and verifier, checks identical
+archive bytes for the same Python/zlib toolchain, extracts only after integrity
+verification, and starts an isolated `-I -S -B` interpreter. Every module origin
+must be inside the extraction root or interpreter standard library; inherited
+checkout paths and site packages are excluded. Current coverage must include all 37
+connector tests, both operations, nine synthetic scenarios, and 21 serial
+samples for each complete/missing-source profile at 20 and 30 applications,
+plus predictable rejection at 31. These are complete authorized workspace
+sizes, not pages selected from a larger graph. The 2-second p95 and 256-KiB
+output budgets stay fixed. Fixture writes are temporary and separate from
+read-only report execution; no browser, model or outbound service is required.
+
+The preserved pre-correction candidate `ed99de9fe36493d71c41ca4ac9731296fd55abf5`
+passed all three package tests on CPython 3.11.16 and 3.12.14, including its 34
+extracted connector tests with no skips, nine scenarios, all four 21-sample
+profiles and 31-role rejection. Its thirteen guard probes were rejected, with
+zero intercepted forbidden effects during qualification; source bytes and
+directory inventory remained identical and temporary state was cleaned up.
+These are historical package results. The old harness then failed two of its
+three tests on corrected main under both interpreters: it still expected 34
+tests and equality with the original adapter hash. The current target is 37
+tests, including post-read error authorization. Every response after a host
+read must recheck the grant: changed, revoked or unavailable current authority
+yields `ACCESS_DENIED`; stable grants retain their earlier diagnostic codes.
+
+The reconciled package passes all three package tests on CPython 3.11.16 and
+3.12.14, including all 37 extracted readiness tests with no skips, nine scenarios,
+four 21-sample profiles within the fixed budgets and a 117-byte rejection at
+31 roles. All thirteen guard probes are rejected; qualification records zero
+intercepted forbidden effects. The full extracted file/directory inventory is
+unchanged and fresh homes, temporary directory and working directory are empty
+after cleanup. Each final artifact requires its own external evidence binding;
+the historical package pass and corrected source-test results do not certify it.
+The guards are Python regression
+instrumentation, not an OS sandbox or universal protection against native code,
+pre-opened Python file objects or arbitrary host callbacks. Local attachment
+reads and hashes remain allowed during evaluation.
+
+The earlier separate profile regression group retained its known local advanced-storage
+ancestor-owner failure; no storage guard is relaxed. See `MUSE_CONNECTOR.md`
+for that limitation and the archive regression counts.
+
+Keep actual counts, timing
+samples, environment, commands, source head, archive digest and failures in an
+evidence directory outside the ZIP. The included
+`keel_connector/evidence/qualification.json` stays unchanged as historical
+PR #141 source evidence. It does not certify the new artifact. Adding the new
+archive digest or measurement report to its own payload would change that
+archive; bind it from an external report instead. Compare its five historical
+source hashes honestly: `keel_connector/__init__.py`, `demo.py` and `synthetic.py`
+remain matching; `keel_connector/adapter.py` and
+`tests/test_connector_readiness.py` differ after PR #142. Do not alter the old
+record or present its two superseded hashes as current qualification. Fresh
+evidence must bind the actual current manifest and its 37-test execution.
+The existing manifest still
+provides exact member sizes and hashes, and `publication_authorized` stays false.
 
 ## Build and verify a private candidate
 
