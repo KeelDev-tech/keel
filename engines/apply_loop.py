@@ -893,6 +893,14 @@ def _buffer_lock():
     return fh
 
 
+def _identified_queue_entries(tagged):
+    """Reject invalid identities before hashing; never coerce or deduplicate."""
+    return [(entry, origin) for entry, origin in tagged
+            if isinstance(entry, dict)
+            and isinstance(entry.get("role_id"), str)
+            and entry["role_id"].strip()]
+
+
 def _buffer_fresh_count(state, now=None, tagged=None, bank=None):
     """Number of buffer-state entries that are fresh: packet file present
     AND age <= BUFFER_MAX_AGE_HOURS. Fail-open per entry: a malformed or
@@ -902,6 +910,7 @@ def _buffer_fresh_count(state, now=None, tagged=None, bank=None):
         tagged = tagged if tagged is not None else (
             [(e, "standard") for e in load_queue()] +
             [(e, "strategic") for e in load_strategic_queue()])
+        tagged = _identified_queue_entries(tagged)
         id_counts = Counter(e.get("role_id") for e, _origin in tagged)
         by_id = {e.get("role_id"): (e, origin) for e, origin in tagged
                  if id_counts[e.get("role_id")] == 1}
@@ -1042,6 +1051,7 @@ def refresh_buffer(tagged=None, now=None):
         if tagged is None:
             tagged = ([(e, "standard") for e in load_queue()]
                       + [(e, "strategic") for e in load_strategic_queue()])
+        tagged = _identified_queue_entries(tagged)
         state = load_buffer_state()
         bank = load_answer_bank()
 
@@ -1451,6 +1461,7 @@ def main():
     items = load_queue()
     sitems = load_strategic_queue()
     tagged = [(e, "standard") for e in items] + [(e, "strategic") for e in sitems]
+    tagged = _identified_queue_entries(tagged)
     if "--refresh" in sys.argv:
         fresh = refresh_buffer(tagged)
         print(f"Buffer refresh done: {fresh} fresh packet(s) on hand.")
