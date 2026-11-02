@@ -11,7 +11,7 @@ static checks; the preflight is the deep guard.
 After the 2026-09-16 purge the file sat EMPTY with no writer, so the 10:00
 fire flow had nothing to fire. This script restores the writer:
 
-  stage:   standard-queue READY + fresh parseable packet (<=12h) + no
+  stage:   standard-queue READY / READY-FOR-BROWSER + fresh packet (<=12h) + no
            SUBMITTED ledger row + not in needs_input + employer not on the
            blocklist + not already staged + shared fit/hold/question gates +
            current scoped packet manifest and material bytes
@@ -204,7 +204,8 @@ def build_plan():
         raise ValueError("invalid staged entries")
 
     ready = [e for e in std if isinstance(e, dict)
-             and e.get("status") == "READY"]
+             and isinstance(e.get("status"), str)
+             and e["status"] in ready_gate.READY_STATES]
     ready_by_id = {e.get("role_id"): e for e in ready if e.get("role_id")}
     duplicates = {e.get("role_id") for e in ready
                   if sum(other.get("role_id") == e.get("role_id") for other in all_rows) != 1}
