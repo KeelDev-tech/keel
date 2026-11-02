@@ -15,6 +15,15 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Render résumé contact separators as ordinary text and give the name adequate
+  line spacing. Generated-PDF tests preserve supplied values, escaping and
+  reading order; parseability remains advisory and grants no applicant authority.
+
+- Add opt-in v2 fit evidence to the offline review desk: supplied score bounds,
+  coverage, mandatory findings, separate assessment holds, and inert references.
+  Preserve v1 projection hashes and keep every assessment bound to the snapshot
+  and review request; no scoring, approval, execution, or live integration added.
+
 - Acquire the review preparation lease before changing résumé selection, and
   recheck current queue/ledger inputs and ownership before publishing a packet.
   Refused attempts preserve prior input and packet bytes; interrupted or fenced
