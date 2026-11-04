@@ -80,7 +80,7 @@ What it does:
 No packet prepared here authorizes external execution or changes READY status.
 
 Usage:
-    python3 apply_loop.py            # process one lead (highest fit)
+    python3 apply_loop.py            # prepare one packet or successfully park one lead
     python3 apply_loop.py --all      # prepare every eligible lead, one packet each
     python3 apply_loop.py --refresh  # refill the packet buffer only, no claims
 
@@ -893,6 +893,14 @@ def _buffer_lock():
     return fh
 
 
+def _identified_queue_entries(tagged):
+    """Reject invalid identities before hashing; never coerce or deduplicate."""
+    return [(entry, origin) for entry, origin in tagged
+            if isinstance(entry, dict)
+            and isinstance(entry.get("role_id"), str)
+            and entry["role_id"].strip()]
+
+
 def _buffer_fresh_count(state, now=None, tagged=None, bank=None):
     """Number of buffer-state entries that are fresh: packet file present
     AND age <= BUFFER_MAX_AGE_HOURS. Fail-open per entry: a malformed or
@@ -902,6 +910,7 @@ def _buffer_fresh_count(state, now=None, tagged=None, bank=None):
         tagged = tagged if tagged is not None else (
             [(e, "standard") for e in load_queue()] +
             [(e, "strategic") for e in load_strategic_queue()])
+        tagged = _identified_queue_entries(tagged)
         id_counts = Counter(e.get("role_id") for e, _origin in tagged)
         by_id = {e.get("role_id"): (e, origin) for e, origin in tagged
                  if id_counts[e.get("role_id")] == 1}
@@ -1042,6 +1051,7 @@ def refresh_buffer(tagged=None, now=None):
         if tagged is None:
             tagged = ([(e, "standard") for e in load_queue()]
                       + [(e, "strategic") for e in load_strategic_queue()])
+        tagged = _identified_queue_entries(tagged)
         state = load_buffer_state()
         bank = load_answer_bank()
 
@@ -1451,6 +1461,7 @@ def main():
     items = load_queue()
     sitems = load_strategic_queue()
     tagged = [(e, "standard") for e in items] + [(e, "strategic") for e in sitems]
+    tagged = _identified_queue_entries(tagged)
     if "--refresh" in sys.argv:
         fresh = refresh_buffer(tagged)
         print(f"Buffer refresh done: {fresh} fresh packet(s) on hand.")
@@ -1526,8 +1537,10 @@ def main():
                     print(f"PRESCREEN-PARK {role_id}: {first}")
                 else:
                     print(f"PRESCREEN-PARK-FAILED {role_id}: {parked.get('error')}")
-                made += 1
-                if "--all" not in sys.argv:
+                # A refused move neither prepares a packet nor completes this
+                # invocation. Visit the next snapshot candidate once, as for
+                # other preparation failures; never retry or approve this row.
+                if parked.get("ok") and "--all" not in sys.argv:
                     break
                 continue
             except Exception as ex:
@@ -1556,16 +1569,17 @@ def main():
             print(f"PRESCREEN-HOLD {role_id}: prescreen unconfirmed; cannot proceed")
             continue
         if verdict["verdict"] == "PARK":
-            res = prescreen.park_lead(role_id, verdict["reasons"])
-            _archive_packet(path)
-            _release_launch_lock(role_id, task_id)
+            res = _park_packet_for_input(role_id, verdict["reasons"])
+            try:
+                _archive_packet(path)
+            finally:
+                _release_launch_lock(role_id, task_id)
             if res.get("ok"):
                 first = verdict["reasons"][0] if verdict["reasons"] else "blocked"
                 print(f"PRESCREEN-PARK {role_id}: {first}")
             else:
                 print(f"PRESCREEN-PARK-FAILED {role_id}: {res.get('error')}")
-            made += 1
-            if "--all" not in sys.argv:
+            if res.get("ok") and "--all" not in sys.argv:
                 break
             continue
         log_event.log(
