@@ -46,6 +46,7 @@ Fail-closed: any exception inside reuse() yields an ABSTAIN Resolution
 """
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -87,11 +88,11 @@ class ReuseSession:
     """
 
     def __init__(self, answers, employer=None, role_context=None):
-        # TOCTOU-hardened bindings: snapshot to plain strings at entry,
-        # mirroring answer_resolver.resolve(). Caller-side mutation of the
-        # inputs after construction cannot alter any reuse in the session.
+        # Snapshot the bank's nested records as well as the outer mapping.
+        # Caller-side mutations must not change this session's authority.
+        # Employer/role bindings are separately snapshotted to plain strings.
         try:
-            self._answers = dict(answers or {})
+            self._answers = deepcopy(dict(answers or {}))
         except Exception:
             self._answers = {}
         self._employer = str(employer or "")

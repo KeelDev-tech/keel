@@ -19,7 +19,7 @@ from .common import (FLAGS, MuseError, atomic_json, digest, load_json,
 ROOT = Path(__file__).resolve().parents[1]
 NATIVE_GATE = 'NATIVE_TOOL_ENFORCES_PERMISSION'
 TRUSTED_ARGUMENTS = {
-    'now', 'source_sha256', 'workspace_id', 'home', 'runtime_home', 'backup_home',
+    'source_profile', 'now', 'source_sha256', 'workspace_id', 'home', 'runtime_home', 'backup_home',
     'destination', 'root', 'source_root', 'source_provider', 'state_provider',
     'source_head_provider', 'memory', 'transports', 'handler', 'handlers',
     'operations', 'clock', 'principal', 'host_snapshot', 'host_approvals',
@@ -138,7 +138,7 @@ def _forms(arguments, options):
     return build_plan(**arguments, approvals=_file(options.approvals, 'approvals'), now=_now())
 
 
-def _bridge(options, request):
+def _bridge(options, request, source_provider):
     from .bridge import CommandBridge, ReadOperation
     from .capabilities import probe_host
     from .review import project_review
@@ -160,7 +160,7 @@ def _bridge(options, request):
         'capabilities.probe': ReadOperation(probe),
         'forms.build_plan': ReadOperation(forms),
         'review.project': ReadOperation(review),
-    }, source_provider=lambda: _source_inventory()['sha256'], clock=_now)
+    }, source_provider=lambda: source_provider()['sha256'], clock=_now)
     return bridge.invoke(request)
 
 
@@ -350,6 +350,8 @@ def parser():
     }
     for name, description in descriptions.items():
         command = commands.add_parser(name, help=description, description=description)
+        command.add_argument('--source-profile', choices=['current-runtime-v1'],
+                             help='Explicit current installation consistency; default preserves historical verification.')
         command.add_argument('--out', required=True, help='New private JSON report outside the code tree.')
         if name not in {'inspect-host', 'demo'}:
             command.add_argument('--input', required=True, help='Strict bounded JSON request file.')
@@ -383,6 +385,7 @@ def main(argv=None):
     options = parser().parse_args(argv)
     output = None
     before = None
+    source_provider = _source_inventory
     operation = options.command
     report = None
     status, code = 'ERROR', 2
@@ -393,18 +396,21 @@ def main(argv=None):
             options.html = _new_output(options.html)
             if output == options.html:
                 raise MuseError('output_paths_must_differ')
-        before = _source_inventory()
+        if options.source_profile is not None:
+            from tools.runtime_source_inventory import current_runtime_provider
+            source_provider = current_runtime_provider(ROOT)
+        before = source_provider()
         source = require_hash(before['sha256'])
         if options.command == 'bridge':
             request = load_json(options.input)
             operation = request.get('operation', 'bridge') if type(request) is dict else 'bridge'
-            result = _bridge(options, request)
+            result = _bridge(options, request, source_provider)
         else:
             arguments = {}
             if hasattr(options, 'input'):
                 operation, arguments = _request(load_json(options.input), source)
             result = _run(options, operation, arguments, source)
-        after = _source_inventory()
+        after = source_provider()
         unchanged = source == require_hash(after['sha256'])
         status, code = _outcome(result) if unchanged else ('QUARANTINED', 4)
         report = {'schema': 'keel.muse.command.v1', 'command': options.command,
@@ -418,7 +424,7 @@ def main(argv=None):
         changed = False
         if before is not None:
             try:
-                changed = before['sha256'] != _source_inventory()['sha256']
+                changed = before['sha256'] != source_provider()['sha256']
             except Exception:
                 changed = True
         mapping_codes = {'HOST_MAPPING_REQUIRED', 'HOST_MAPPING_REQUIRED_native_permission_gate',
