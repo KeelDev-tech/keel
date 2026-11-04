@@ -24,6 +24,10 @@ jobs:
         run: python3 -S -B -m unittest discover -s tests -p test_connector_package.py
       - name: Install pinned validation environment
         run: pip install -r requirements-validation.lock
+      - name: Verify installed PDF parser and synthetic PDF regressions
+        env:
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+        run: python3 -m pytest -q -s --import-mode=importlib tests/test_resume_tailor_pdf.py
       # Explicitly collect runtime/composition tests and historical CLI/release regressions.
       # CLI fixtures use the fixed inventory and -I -S -B; composition fixtures
       # independently copy every tracked public file. Cache refusal stays enabled.
@@ -121,7 +125,7 @@ jobs:
       - name: Run offline Hypothesis prescreen properties
         env:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
-        run: python3 -m pytest -q --import-mode=importlib tests/hypothesis_prescreen_properties.py tests/test_bank_scope.py tests/test_prescreen.py tests/test_prescreen_noai_gates3733_3799.py tests/test_ready_admission.py tests/test_extended_regressions.py tests/test_legacy_rescreen_standard.py tests/test_promotion_evidence_journey.py
+        run: python3 -m pytest -q --import-mode=importlib tests/hypothesis_prescreen_properties.py tests/test_bank_scope.py tests/test_answer_reuse.py tests/test_prescreen.py tests/test_prescreen_noai_gates3733_3799.py tests/test_ready_admission.py tests/test_extended_regressions.py tests/test_legacy_rescreen_standard.py tests/test_promotion_evidence_journey.py
       - name: Run optimization and security regressions
         run: >-
           python3 -m pytest -q

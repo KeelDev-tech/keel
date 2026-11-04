@@ -1,6 +1,7 @@
 """Synthetic final-PDF regressions; parsing never grants applicant authority."""
 import copy
 import io
+from importlib.metadata import version
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -42,6 +43,19 @@ def synthetic_profile():
 
 
 class ResumePdfTests(unittest.TestCase):
+    def test_pdf_parser_matches_declared_validation_version(self):
+        root = Path(__file__).resolve().parents[1]
+        pins = []
+        for filename in ("requirements-dev.txt", "requirements-validation.lock"):
+            declarations = [line.split("==", 1)[1] for line in
+                            (root / filename).read_text().splitlines()
+                            if line.startswith("pypdf==")]
+            self.assertEqual(len(declarations), 1, filename)
+            pins.append(declarations[0])
+        self.assertEqual(pins[0], pins[1])
+        self.assertEqual(version("pypdf"), pins[0])
+        print(f"Validated installed pypdf {version('pypdf')}")
+
     def render_pdf(self, profile):
         role = {"headline": "Synthetic Operations Analyst", "hard_requirements": []}
         before = copy.deepcopy((profile, role))
