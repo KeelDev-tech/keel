@@ -80,7 +80,7 @@ What it does:
 No packet prepared here authorizes external execution or changes READY status.
 
 Usage:
-    python3 apply_loop.py            # process one lead (highest fit)
+    python3 apply_loop.py            # prepare one packet or successfully park one lead
     python3 apply_loop.py --all      # prepare every eligible lead, one packet each
     python3 apply_loop.py --refresh  # refill the packet buffer only, no claims
 
@@ -1537,8 +1537,10 @@ def main():
                     print(f"PRESCREEN-PARK {role_id}: {first}")
                 else:
                     print(f"PRESCREEN-PARK-FAILED {role_id}: {parked.get('error')}")
-                made += 1
-                if "--all" not in sys.argv:
+                # A refused move neither prepares a packet nor completes this
+                # invocation. Visit the next snapshot candidate once, as for
+                # other preparation failures; never retry or approve this row.
+                if parked.get("ok") and "--all" not in sys.argv:
                     break
                 continue
             except Exception as ex:
@@ -1567,16 +1569,17 @@ def main():
             print(f"PRESCREEN-HOLD {role_id}: prescreen unconfirmed; cannot proceed")
             continue
         if verdict["verdict"] == "PARK":
-            res = prescreen.park_lead(role_id, verdict["reasons"])
-            _archive_packet(path)
-            _release_launch_lock(role_id, task_id)
+            res = _park_packet_for_input(role_id, verdict["reasons"])
+            try:
+                _archive_packet(path)
+            finally:
+                _release_launch_lock(role_id, task_id)
             if res.get("ok"):
                 first = verdict["reasons"][0] if verdict["reasons"] else "blocked"
                 print(f"PRESCREEN-PARK {role_id}: {first}")
             else:
                 print(f"PRESCREEN-PARK-FAILED {role_id}: {res.get('error')}")
-            made += 1
-            if "--all" not in sys.argv:
+            if res.get("ok") and "--all" not in sys.argv:
                 break
             continue
         log_event.log(
