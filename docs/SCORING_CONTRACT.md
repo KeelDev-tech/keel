@@ -12,7 +12,7 @@ MCP pipeline accepts an explicit profile and advances eligible roles to a
 A score is a preparation recommendation, not authorization to apply.
 Canonical policy, holds, posting verification, attempt history, packet
 revisions and a fresh human approval still control execution. Every output
-has `execution_authorized=false`, `status="PARKED"` and
+has `execution_authorized=false`, `submission_authorized=false`, `status="PARKED"` and
 `approval_valid=false`, overriding operational claims in input. Never write
 the entire scoring output over an existing canonical queue row: selectively
 merge assessment fields through the queue's existing guarded write path.
@@ -181,6 +181,10 @@ serialized JSON each, 128 facts/criteria/reviews per collection, and 2048
 characters per reference/string. The CLI requires the profile file rather
 than silently substituting an empty profile. It evaluates the entire batch
 before opening the output file. CLI batches are limited to 10,000 roles.
+The CLI rejects duplicate JSON object keys at every nesting level in both
+role and profile files, even when the repeated values agree. Ambiguous
+inputs cannot silently overwrite facts or provenance, and rejection leaves
+an existing output file unchanged.
 
 ## No-cost wording default
 

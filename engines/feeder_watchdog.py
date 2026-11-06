@@ -206,10 +206,22 @@ def _gate_event_recent(gate, role_id, within_hours):
 
 
 def inflight_ts(e):
-    """Marking-time of an IN-FLIGHT entry: status_updated first, then the
-    in_flight_at stamp the orchestrator writes at marking time (ARM 22)."""
-    return (parse_updated(e.get("status_updated"))
-            or parse_updated(e.get("in_flight_at")))
+    """Keep the newest aware ownership evidence, preserving unknown holds.
+
+    Older writers mislabeled winter local status_updated stamps as PDT.
+    That label must not hide a fresher UTC in_flight_at, nor may an older
+    marking time hide a newer heartbeat. Preserve the existing fallback
+    and naive-primary behavior: unageable ownership stays possibly busy.
+    """
+    updated = parse_updated(e.get("status_updated"))
+    marked = parse_updated(e.get("in_flight_at"))
+    if updated is None:
+        return marked
+    if updated.tzinfo is None:
+        return updated
+    if marked is not None and marked.tzinfo is not None:
+        return max(updated, marked)
+    return updated
 
 
 def is_inflight_status(status):
