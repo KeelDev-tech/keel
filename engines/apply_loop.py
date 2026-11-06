@@ -822,6 +822,25 @@ def _maybe_plateau_park(entry, unmapped):
 # Packet buffer (prefetch)
 # ---------------------------------------------------------------------------
 
+def _valid_buffer_rows(state):
+    """Keep cache records safe to inspect, without granting packet authority.
+
+    Reject malformed identities/paths before hashing, stat, or cleanup. In
+    particular, JSON numbers/bools must never become file descriptors. Keep
+    valid records unchanged; timestamp, queue, packet and owner checks remain
+    with their existing consumers. An invalid record cannot identify a lease
+    or artifact to release/archive.
+    """
+    if not isinstance(state, list):
+        return []
+    return [row for row in state
+            if isinstance(row, dict)
+            and all(isinstance(row.get(key), str) and row[key].strip()
+                    for key in ("role_id", "packet_path"))
+            and all(row.get(key) is None or isinstance(row[key], str)
+                    for key in ("launch_task_id", "origin"))]
+
+
 def load_buffer_state():
     """Buffer state: list of {role_id, packet_path, built_at, fit_score,
     origin, launch_task_id}. Missing/corrupt file -> empty buffer
@@ -829,8 +848,8 @@ def load_buffer_state():
     try:
         with open(BUFFER_STATE) as f:
             d = json.load(f)
-        return d if isinstance(d, list) else []
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return _valid_buffer_rows(d)
+    except (FileNotFoundError, json.JSONDecodeError, UnicodeDecodeError, OSError):
         return []
 
 
@@ -918,7 +937,7 @@ def _buffer_fresh_count(state, now=None, tagged=None, bank=None):
     except (ValueError, OSError, SystemExit):
         return 0
     n = 0
-    for s in state or []:
+    for s in _valid_buffer_rows(state):
         pkt = s.get("packet_path")
         if not (pkt and os.path.isfile(pkt)):
             continue
