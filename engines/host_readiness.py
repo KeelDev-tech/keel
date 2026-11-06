@@ -176,13 +176,73 @@ def _history(root, now):
     return state, detail
 
 
+class _BudgetSetupMissing(ValueError):
+    """Fixed diagnostic only; never carry filesystem or applicant values."""
+
+    def __init__(self, reason):
+        self.reason = reason
+        super().__init__(reason)
+
+
+def _budget_path_absent(path):
+    """Observe absence only through real directory ancestors, without following links."""
+    current = Path(path.anchor)
+    for part in path.parts[1:]:
+        current = current / part
+        try:
+            info = current.lstat()
+        except FileNotFoundError:
+            return True
+        if stat.S_ISLNK(info.st_mode) or (current != path and not stat.S_ISDIR(info.st_mode)):
+            return False
+    return False
+
+
+def _with_onboarding(report):
+    """Explain observation boundaries, without granting another readiness signal."""
+    resource = next((item for item in report['checks'] if item['id'] == 'resource_ledger'), None)
+    reason = resource['reason'] if resource else 'not_assessed'
+    budget_actions = {
+        'budget_configuration_not_supplied': 'Supply both budget options for an existing operator-approved ledger and scope; inspection creates no allowance.',
+        'budget_configuration_incomplete': 'Supply both --budget-ledger and --budget-scope; inspection creates no allowance.',
+        'budget_ledger_not_found': 'Confirm the intended ledger location with the operator; do not substitute a new ledger for existing shared accounting.',
+    }
+    budget_action = budget_actions.get(reason)
+    if resource and resource['status'] == 'BLOCKED' and budget_action is None:
+        budget_action = 'Have the operator inspect existing ledger integrity, path safety and scope configuration; do not replace or reset accounting to clear a refusal.'
+    discovery_blockers = []
+    if not report['local_checks_passed']:
+        discovery_blockers.append('local_preflight_not_passed')
+    if report['supply'] is None:
+        discovery_blockers.append('sources_not_assessed')
+    elif report['supply']['registered_sources'] == 0:
+        discovery_blockers.append('no_enabled_sources')
+    report['onboarding'] = {
+        'advisory_only': True,
+        'preparation': {'status': 'NOT_ASSESSED',
+                        'next_step': 'Run doctor on this workspace and review applicant assertions and per-role materials; host-preflight does not assess preparation.'},
+        'discovery': {'status': 'NOT_QUALIFIED', 'local_blockers': discovery_blockers,
+                      'network_qualification': 'UNKNOWN',
+                      'next_step': 'Resolve local blockers and have the operator qualify supported sources, network access and shared limits before any separately authorized trial.'},
+        'submission': {'status': 'NOT_AUTHORIZED',
+                       'next_step': 'Keep human application approval and qualified private executor/provider receipt requirements; this report cannot authorize submission.'},
+        'budget_next_step': budget_action,
+    }
+    return report
+
+
 def _budget(root, ledger_path, scope_id, estimate=DEFAULT_ESTIMATE):
-    _require(ledger_path is not None and scope_id is not None)
+    if ledger_path is None and scope_id is None:
+        raise _BudgetSetupMissing('budget_configuration_not_supplied')
+    if ledger_path is None or scope_id is None:
+        raise _BudgetSetupMissing('budget_configuration_incomplete')
     raw = os.fspath(ledger_path.path if isinstance(ledger_path, ResourceLedger) else ledger_path)
     _require(type(raw) is str and raw and '\x00' not in raw and '..' not in Path(raw).parts)
     path = Path(raw)
     if not path.is_absolute():
         path = root / path
+    if _budget_path_absent(path):
+        raise _BudgetSetupMissing('budget_ledger_not_found')
     _require(path.resolve(strict=True) == path and stat.S_ISREG(path.lstat().st_mode)
              and path.lstat().st_nlink == 1)
     ledger = ResourceLedger.open_readonly(path)
@@ -240,8 +300,9 @@ def inspect(workspace, *, budget_ledger=None, budget_scope=None, target_verified
     def check(name, callback, reason):
         try:
             result = callback()
-        except Exception:
-            report['checks'].append({'id': name, 'status': 'BLOCKED', 'reason': reason})
+        except Exception as exc:
+            diagnostic = exc.reason if name == 'resource_ledger' and isinstance(exc, _BudgetSetupMissing) else reason
+            report['checks'].append({'id': name, 'status': 'BLOCKED', 'reason': diagnostic})
             return None
         report['checks'].append({'id': name, 'status': 'PASS', 'reason': 'observed_valid'})
         return result
@@ -255,16 +316,16 @@ def inspect(workspace, *, budget_ledger=None, budget_scope=None, target_verified
 
     requested = check('requested_policy', requested_policy, 'requested_policy_or_limits_invalid')
     if requested is None:
-        return report
+        return _with_onboarding(report)
     policy, estimate = requested
     report['policy'] = dict(policy)
     report['cycle_limits'] = {'max_requests': max_requests, 'timeout': timeout}
     root = check('workspace', lambda: _root(workspace), 'workspace_missing_or_not_real')
     if root is None:
-        return report
+        return _with_onboarding(report)
     now = check('clock', lambda: productivity._stamp(clock), 'clock_invalid')
     if now is None:
-        return report
+        return _with_onboarding(report)
     check('runtime_binding', lambda: productivity._bound_workspace(root), 'runtime_workspace_binding_mismatch')
     check('data_directory', lambda: _path(root, 'data', directory=True), 'data_directory_missing_or_unsafe')
     check('demo_boundary', lambda: _require(not (root / 'DEMO_ONLY.json').exists()
@@ -309,4 +370,4 @@ def inspect(workspace, *, budget_ledger=None, budget_scope=None, target_verified
             report['suggested_stage']['scheduler_global_cooldown_active'] = schedule['cooldown_until'] > now
     report['local_checks_passed'] = all(row['status'] == 'PASS' for row in report['checks'])
     report['status'] = 'PASS' if report['local_checks_passed'] else 'BLOCKED'
-    return report
+    return _with_onboarding(report)

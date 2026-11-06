@@ -53,6 +53,33 @@ writers and provider authentication. These reads are not a coherent snapshot
 across all stores; conditions may change immediately after inspection. Live
 commands must recheck their own gates and reserve the actual shared allowance.
 
+### First-run diagnostics and onboarding boundaries
+
+`init` creates empty workspace documents; it does not establish an existing
+shared allowance, register sources, or supply reviewed applicant assertions.
+Preflight reports `budget_configuration_not_supplied` when both budget options
+are absent, `budget_configuration_incomplete` when only one is supplied, and
+`budget_ledger_not_found` only when absence is observed through real directory
+ancestors. Unsafe paths, corrupt or incompatible databases and invalid scopes
+retain a generic sanitized refusal. Ask the operator to inspect existing state;
+do not replace a ledger or reset a scope to clear a refusal.
+
+The additive `onboarding` section is advisory, not another admission gate:
+
+- **Preparation: NOT_ASSESSED.** Run `python3 keel.py --home /path/to/workspace doctor`
+  and review applicant assertions and per-role materials. Empty valid documents
+  passing host preflight do not establish preparation readiness.
+- **Discovery: NOT_QUALIFIED.** Local blockers distinguish a failed preflight from
+  no enabled sources or unassessed sources. Even with no local blockers, network
+  access remains UNKNOWN; neither source registration nor this offline command
+  establishes that the host's egress supports the reader. Do not bypass egress
+  restrictions to obtain a pass.
+- **Submission: NOT_AUTHORIZED.** Private executor/provider qualification and
+  human application approval remain separate requirements.
+
+Existing PASS/exit-code semantics are unchanged. No suggested action is run by
+inspection, and no budget, source, profile, material or approval is invented.
+
 An absent, unrelated or old-schema budget ledger is never initialized or
 migrated by inspection. Have the host operator validate the existing ledger
 and its backup before any explicit writable migration. Do not replace it with
