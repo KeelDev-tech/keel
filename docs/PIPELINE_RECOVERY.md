@@ -159,35 +159,26 @@ path; it is not the maintained dependency closure for the current local CLI.
 The extracted-profile test uses a new workspace, removes inherited source
 imports, disables third-party site packages with `-S`, and exercises real local
 initialization, assertions, source service fixtures, packet preparation,
-read-only status, and the offline demo. For broader development tests, install
-the free tools from `requirements-dev.txt` in a disposable development
-interpreter; optional material/browser tools have separate requirements.
+read-only status, and the offline demo.
 
-The clean candidate includes `requirements-dev.txt`, the maintained workflow
-`.github/workflows/recovery-profile.yml`, all eleven test modules named in that
-workflow, and their source dependencies. For the same local regression set:
+For the maintained recovery regression set, follow the exact commands and
+settings in the [recovery workflow](../.github/workflows/recovery-profile.yml)
+rather than a copied module list. Use the separate development environment in
+[the root contributor guide](../CONTRIBUTING.md#dev-setup), with
+`requirements-validation.lock`. Match the workflow's
+`PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` and use temporary `KEEL_HOME` and
+`RUNNER_TEMP` directories, never live applicant state. Optional material/browser
+tools retain their separate prerequisites.
 
-```bash
-python3 -m pip install -r requirements-dev.txt
-python3 -m pytest -q --import-mode=importlib \
-  tests/test_queue_transactions.py \
-  tests/test_task_liveness_repair.py \
-  tests/test_verification_transport_contract.py \
-  tests/test_ready_admission.py \
-  tests/test_staged_admission_recovery.py \
-  tests/test_pipeline_recovery_contract.py \
-  tests/test_preparation_identity_guards.py \
-  tests/test_verify_retry_scan_apply_port.py \
-  tests/test_export_adapter_v11.py \
-  tests/test_run_tests_profiles.py \
-  tests/test_release_profile.py
-```
-
-The workflow is configured to run that set on Python 3.11 and 3.12, then build
-and verify the ZIP. Configuration is not proof that CI ran or passed. The
-extracted-profile check verifies the packaged dependency closure. The full
-checkout contains additional development tooling and optional suites beyond
-the clean candidate.
+The workflow is configured for Python 3.11 and 3.12. Its selected pytest
+regressions, offline supply acceptance, and source-package build/verification
+are distinct checks; a pytest pass alone does not establish that the acceptance
+or package checks passed. Configuration is not proof that CI ran or passed.
+The extracted-profile check verifies the packaged dependency closure. This
+recovery set is not the complete repository suite; see the
+[CI workflow](../.github/workflows/ci.yml) for additional configured checks.
+Report skips, unavailable suites, and failed checks separately. Direct workflow
+commands do not establish verified audit-hook isolation.
 
 The fresh checkout does not contain `tools/test_guard/sitecustomize.py`.
 The broader runner refuses suites requiring that missing guard unless you
