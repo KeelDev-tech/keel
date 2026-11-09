@@ -44,7 +44,9 @@ for capability limits and [the current validation report](docs/VERIFICATION_READ
 for measured results and retained failures. This candidate includes source and per-file hashes;
 it contains no live Muse state, credential environment, or production deployment.
 
-The candidate includes pinned free development tools and the eleven regression
-modules selected by `.github/workflows/recovery-profile.yml`, with their source
-dependencies. The recovery guide gives the exact local test command. CI is
-configured for Python 3.11 and 3.12; configuration alone is not a passing result.
+Use the [recovery workflow](.github/workflows/recovery-profile.yml) as the
+canonical source for its selected regression modules, pinned validation setup,
+and environment settings. The [recovery guide](docs/PIPELINE_RECOVERY.md)
+explains local validation and its scope. The workflow separately runs offline
+supply acceptance and source-package build/verification checks on Python 3.11
+and 3.12; configuration alone is not a passing result.
