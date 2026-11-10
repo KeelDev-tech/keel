@@ -295,17 +295,15 @@ def normalize_employer(name) -> str:
 def employers_match(a, b) -> bool:
     """Conservative employer-name equality (fail-closed on ambiguity).
 
-    Matches on normalized-token equality or a strict word-boundary prefix
-    (so "Samsara Inc." matches "Samsara" but "Code" never matches
-    "CodePath").
+    Matches only on existing normalized-token equality: legal suffixes and
+    formatting remain normalized, but an arbitrary extra word is not
+    authority ("Atlas Robotics" must not inherit "Atlas" answers).
     """
     try:
         x, y = normalize_employer(a), normalize_employer(b)
         if not x or not y or len(x) < 2 or len(y) < 2:
             return False
-        if x == y:
-            return True
-        return x.startswith(y + " ") or y.startswith(x + " ")
+        return x == y
     except Exception:
         return False
 
