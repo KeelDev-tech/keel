@@ -106,6 +106,12 @@ def fetch_board(slug, http_get):
 
 def normalize(raw, slug, employer):
     """Map one raw offer dict to the contract shape."""
+    # Reject malformed feed values inside sweep's existing ValueError boundary.
+    # Stringifying them would invent a title; letting them through aborts the
+    # whole sweep when shared title normalization calls .strip().
+    title = raw.get("title")
+    if title is not None and not isinstance(title, str):
+        raise ValueError("invalid offer title type")
     offer_slug = raw.get("slug") or ""
     careers_url = raw.get("careers_url") or ""
     if careers_url:
@@ -143,7 +149,7 @@ def normalize(raw, slug, employer):
         "slug": slug,
         "employer": employer,
         "company": employer,  # feed carries no company field; employer is the best name
-        "title": raw.get("title") or "",
+        "title": title or "",
         "location": {
             "raw": raw_loc,
             "city": city,

@@ -102,6 +102,11 @@ def _compensation(item):
 
 def normalize(raw, slug, employer):
     """Normalize one feed item into the canonical lead shape."""
+    # Reject malformed feed values inside the sweep adapter-error boundary.
+    title = raw.get("title")
+    if title is not None and not isinstance(title, str):
+        raise ValueError("invalid posting title type")
+
     loc = raw.get("location") or {}
     if not isinstance(loc, dict):
         loc = {}
@@ -139,7 +144,7 @@ def normalize(raw, slug, employer):
         "slug": slug,
         "employer": employer,
         "company": employer,
-        "title": raw.get("title") or "",
+        "title": title or "",
         "location": {
             "raw": location_raw,
             "city": str(loc.get("city") or "").strip(),
