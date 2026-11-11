@@ -82,6 +82,42 @@ class EmployerPrefixScopeTests(unittest.TestCase):
             with self.subTest(extra=extra):
                 self.assertEqual(self.resolve("Atlas", "Atlas", **extra).status, resolver.STATUS_ABSTAIN)
 
+    def test_descriptive_words_remain_part_of_employer_identity(self):
+        for word in ("Labs", "Laboratories", "Technologies", "Technology", "Group", "Holdings", "Holding"):
+            for distinct in ("Atlas " + word, word + " Atlas", "Atlas " + word + " Research"):
+                base = "Atlas Research" if distinct.endswith("Research") else "Atlas"
+                for scoped, requesting in ((base, distinct), (distinct, base)):
+                    with self.subTest(scoped=scoped, requesting=requesting):
+                        self.assertEqual(self.resolve(scoped, requesting).status, resolver.STATUS_ABSTAIN)
+
+    def test_legal_form_tokens_only_normalize_at_the_end(self):
+        for token in ("Inc", "LLC", "Co", "Company", "PA", "DBA"):
+            with self.subTest(token=token):
+                self.assertEqual(self.resolve("Atlas", "Atlas " + token).status, resolver.STATUS_RESOLVED)
+                self.assertEqual(self.resolve("Atlas Research", "Atlas " + token + " Research").status,
+                                 resolver.STATUS_ABSTAIN)
+                self.assertEqual(self.resolve("Atlas", token + " Atlas").status, resolver.STATUS_ABSTAIN)
+
+    def test_descriptive_names_keep_trailing_legal_form_compatibility(self):
+        for name in ("Atlas Labs", "Atlas Group", "Atlas Technologies", "Research Atlas"):
+            for suffix in ("Inc.", "LLC", "Ltd.", "Corporation", "Co.", "Company", "PA", "DBA"):
+                with self.subTest(name=name, suffix=suffix):
+                    self.assertEqual(self.resolve(name, name + " " + suffix).status, resolver.STATUS_RESOLVED)
+
+    def test_descriptor_collision_cannot_pass_packet_receipts(self):
+        now = datetime(2026, 11, 11, tzinfo=timezone.utc)
+        value = {"value": "Yes", "scope": "employer:Atlas"}
+        bank = {"answers": {"background_check_consent": value}, "_provenance": {
+            "background_check_consent": packet_contract.answer_receipt(
+                value, "Synthetic assertion for Atlas only", role_id="synthetic-role", now=now)}}
+        for company in ("Atlas Labs", "Atlas Group", "Atlas Technologies"):
+            with self.subTest(company=company):
+                approved, problems = packet_contract.confirmed_answers(
+                    bank, role_id="synthetic-role", employer=company,
+                    role_context={"company": company}, now=now)
+                self.assertEqual(approved, {})
+                self.assertEqual(problems, ["background_check_consent: scoped resolver abstained"])
+
     def test_explicit_global_scope_unchanged(self):
         result = self.resolve("Atlas", "Atlas Robotics", scope="global")
         self.assertEqual(result.status, resolver.STATUS_RESOLVED)
