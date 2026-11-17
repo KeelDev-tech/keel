@@ -348,6 +348,7 @@
   "tests/test_frontier_evaluation.py",
   "tests/test_host_cli.py",
   "tests/test_host_readiness.py",
+  "tests/test_ledger_hold_scan.py",
   "tests/test_muse_supply_recovery.py",
   "tests/test_optimization_efficiency.py",
   "tests/test_optimization_legacy_gates.py",

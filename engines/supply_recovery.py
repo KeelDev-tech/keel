@@ -85,6 +85,7 @@ def _inventory(state, *, host_provider=None, now=None):
     homes = Counter(entry['role_id'] for _, entry in state['entries'])
     posting_counts = Counter(pipeline._key(entry) for _, entry in state['entries'])
     records, by_id = [], {}
+    ledger_scan = ready_gate.LedgerHoldScan(state['ledger'])
     for home, entry in state['entries']:
         rid = entry['role_id']
         if rid in by_id:
@@ -101,7 +102,7 @@ def _inventory(state, *, host_provider=None, now=None):
             reasons.append('rejected_queue')
         if pipeline._held(entry) or entry.get('browser_task_id') or entry.get('attempt_id'):
             reasons.append('active_or_terminal_or_owned')
-        if ready_gate.ledger_holds(entry, state['ledger']):
+        if ledger_scan.holds(entry):
             reasons.append('ledger_hold')
         if key is None:
             reasons.append('posting_identity_missing')
