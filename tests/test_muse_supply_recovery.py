@@ -309,3 +309,30 @@ def test_invalid_modern_preparation_does_not_block_verification_neighbor(home, c
     assert [r['role_id'] for r in result['selected']] == ['role-2']
     assert result['promoted_to_ready'] == 0 and not result['execution_authorized']
     assert all(p.read_bytes() == body for p, body in before.items())
+
+
+def test_cached_inventory_matches_uncached_holds(home):
+    import ready_gate
+    put(home, [row(1), row(2), row(3), row(4, unresolved=['human answer'])])
+    atomic_json(home / 'data/application-ledger.json', [
+        {'role_id': 'role-1', 'status': 'UNKNOWN_OUTCOME'},
+        {'role_id': 'past-2', 'status': 'NEW_STATUS', 'application_url': row(2)['application_url']},
+        {'role_id': 'unrelated', 'status': 'SUBMITTED', 'company': 'Elsewhere', 'title': 'Other'},
+    ])
+    state = bridge.read_state(home)
+    before = copy.deepcopy(state['ledger'])
+    now = utc_now()
+    cached = recovery._inventory(state, host_provider=Host(), now=now)
+
+    class UncachedScan:
+        def __init__(self, ledger):
+            self.ledger = ledger
+
+        def holds(self, entry):
+            return ready_gate.ledger_holds(entry, self.ledger)
+
+    with patch.object(ready_gate, 'LedgerHoldScan', UncachedScan):
+        uncached = recovery._inventory(state, host_provider=Host(), now=now)
+    assert cached == uncached
+    assert state['ledger'] == before
+    assert ['ledger_hold' in item['reason_codes'] for item in cached[0]] == [True, True, False, False]
