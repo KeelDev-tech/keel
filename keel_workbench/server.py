@@ -74,6 +74,11 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass  # Do not log request headers, imported data or URL fragments.
 
+    def send_error(self, code, message=None, explain=None):
+        # Parser errors occur before request guards; never reflect request text.
+        self.send_payload(code, {"error": {"code": "HTTP_REJECTED",
+                                         "message": "HTTP request rejected"}})
+
     def send_payload(self, status, data, content_type="application/json; charset=utf-8"):
         raw = data if isinstance(data, bytes) else json.dumps(data, allow_nan=False, ensure_ascii=True).encode()
         self.send_response(status)
@@ -83,7 +88,10 @@ class Handler(BaseHTTPRequestHandler):
                             "Cross-Origin-Resource-Policy": "same-origin", "Connection": "close",
                             "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"}.items():
             self.send_header(name, value)
-        self.end_headers(); self.wfile.write(raw); self.close_connection = True
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(raw)
+        self.close_connection = True
 
     def handle_api(self):
         try:
