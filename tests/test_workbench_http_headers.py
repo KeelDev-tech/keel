@@ -1,7 +1,7 @@
 """Existing handler response policy, exercised without opening a socket.
 
-Does not qualify browser enforcement or transport-level parser/overload errors
-that do not pass through Handler.send_payload.
+Includes HTTP parser failures and unsupported methods. Does not qualify
+browser enforcement or the connection-slot overload response.
 """
 from http.client import parse_headers
 from io import BytesIO
@@ -102,3 +102,36 @@ def test_application_error_responses_retain_csp(respond, monkeypatch, exception,
     assert_existing_csp(headers)
     assert json.loads(body)['error']['code'] == code
     assert b'PRIVATE_SYNTHETIC_EXCEPTION' not in body
+
+
+@pytest.mark.parametrize('wire,status', [
+    (b'TRACE / HTTP/1.1\r\nHost: 127.0.0.1:8765\r\n\r\n', 501),
+    (b'GET / extra HTTP/1.1\r\n\r\n', 400),
+    (b'GET / HTTP/1.1\r\nX-Test: ' + b'x' * 65536 + b'\r\n\r\n', 431),
+    (b'GET / HTTP/1.1\r\n' + b'X-Test: x\r\n' * 101 + b'\r\n', 431),
+    (b'GET /' + b'x' * 65536 + b' HTTP/1.1\r\n\r\n', 414),
+    (b'HEAD / HTTP/1.1\r\nHost: 127.0.0.1:8765\r\n\r\n', 501),
+], ids=['unsupported-method', 'bad-request-line', 'long-header', 'many-headers',
+        'long-request-line', 'head-no-body'])
+def test_parser_errors_use_private_json_response_policy(wire, status, monkeypatch):
+    def must_not_dispatch(*args):
+        pytest.fail('parser rejection must not reach application dispatch')
+    monkeypatch.setattr(server, 'dispatch', must_not_dispatch)
+    connection = MemoryConnection(wire)
+    server.Handler(connection, ('127.0.0.1', 12345), SimpleNamespace())
+    stream = BytesIO(connection.response)
+    assert int(stream.readline().split()[1]) == status
+    headers = parse_headers(stream)
+    assert_existing_csp(headers)
+    assert headers['Cache-Control'] == 'no-store'
+    assert headers['X-Content-Type-Options'] == 'nosniff'
+    assert headers['Connection'] == 'close'
+    assert headers.get_content_type() == 'application/json'
+    body = stream.read()
+    if wire.startswith(b'HEAD '):
+        assert body == b''
+        assert int(headers['Content-Length']) > 0
+    else:
+        assert int(headers['Content-Length']) == len(body)
+        assert json.loads(body)['error']['code'] == 'HTTP_REJECTED'
+        assert b'X-Test' not in body

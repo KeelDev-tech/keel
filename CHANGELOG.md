@@ -15,6 +15,10 @@
 
 ## Unreleased — Verification, READY admission, and clean source recovery
 
+- Apply the Workbench JSON/no-store/CSP response policy to HTTP parser errors
+  and unsupported methods without reflecting request text; preserve bodyless
+  HEAD errors. This is local-server hardening, not Internet-gateway qualification.
+
 - Render résumé contact separators as ordinary text and give the name adequate
   line spacing. Generated-PDF tests preserve supplied values, escaping and
   reading order; parseability remains advisory and grants no applicant authority.
