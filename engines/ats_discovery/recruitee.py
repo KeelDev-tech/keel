@@ -131,6 +131,13 @@ def normalize(raw, slug, employer):
     else:
         remote = True if raw.get("hybrid") else None
 
+    # Keep malformed feed values inside the per-offer ValueError boundary.
+    # Do not stringify location data or let one row abort discovery.
+    for field in ("city", "country_code", "location"):
+        value = raw.get(field)
+        if value is not None and not isinstance(value, str):
+            raise ValueError("invalid offer location type")
+
     city = raw.get("city") or ""
     country = raw.get("country_code") or ""
     loc_label = raw.get("location") or ""
