@@ -174,6 +174,11 @@ def _compensation(detail):
 
 def normalize(raw, slug, employer):
     """Normalize one fetch_board raw dict into the canonical lead shape."""
+    # Reject malformed feed values inside the sweep adapter-error boundary.
+    title = raw.get("name")
+    if title is not None and not isinstance(title, str):
+        raise ValueError("invalid posting title type")
+
     detail = raw.get("detail") or {}
     uuid = raw.get("uuid")
 
@@ -227,7 +232,7 @@ def normalize(raw, slug, employer):
         "slug": slug,
         "employer": employer,
         "company": employer,
-        "title": raw.get("name") or "",
+        "title": title or "",
         "location": {
             "raw": location_raw,
             "city": "",
