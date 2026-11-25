@@ -292,20 +292,36 @@ def normalize_employer(name) -> str:
         return ""
 
 
+# Machine authority may normalize historical legal-form suffixes only at the
+# end. Descriptive words (Labs, Group, Technologies, etc.) remain identity.
+# Keep normalize_employer unchanged: legacy parsing and blocklists use it.
+_MACHINE_LEGAL_SUFFIXES = frozenset({
+    "llc", "inc", "incorporated", "co", "corp", "corporation", "company",
+    "ltd", "limited", "plc", "gmbh", "pbc", "pa", "llp", "lp", "dba",
+})
+
+
+def _machine_employer_tokens(name):
+    tokens = _NON_ALNUM_RE.sub(" ", str(name or "").strip().lower()).split()
+    while tokens and tokens[-1] in _MACHINE_LEGAL_SUFFIXES:
+        tokens.pop()
+    return tuple(tokens)
+
+
 def employers_match(a, b) -> bool:
     """Conservative employer-name equality (fail-closed on ambiguity).
 
-    Matches on normalized-token equality or a strict word-boundary prefix
-    (so "Samsara Inc." matches "Samsara" but "Code" never matches
-    "CodePath").
+    Requires existing normalized equality AND machine identity equality.
+    Formatting and trailing legal-form suffixes remain compatible, but
+    descriptive/interior words cannot disappear to grant answer authority.
     """
     try:
         x, y = normalize_employer(a), normalize_employer(b)
         if not x or not y or len(x) < 2 or len(y) < 2:
             return False
-        if x == y:
-            return True
-        return x.startswith(y + " ") or y.startswith(x + " ")
+        # The conjunction can only narrow existing authority, never widen it.
+        left, right = _machine_employer_tokens(a), _machine_employer_tokens(b)
+        return bool(x == y and left and left == right)
     except Exception:
         return False
 
@@ -788,8 +804,8 @@ def _resolve(key, entry, employer, role_context, registry=None):
             entry)
     if kind == "employers-exact":
         # Legacy free-text attribution: EXACT normalized equality on both
-        # sides (red-team 2026-09-17). The prefix rule lives only in the
-        # explicit machine "employer:<name>" path; here a text naming
+        # sides (red-team 2026-09-17). Legacy parsing is independent of
+        # the stricter machine-scope matcher; here a text naming
         # "Apple" never authorizes "Apple Pie Inc." — ambiguity abstains.
         names = sorted(payload or set())
         if any(_norm_eq(employer, n) for n in names):
