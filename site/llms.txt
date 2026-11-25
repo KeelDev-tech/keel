@@ -2,7 +2,6 @@
 
 > Tired of looking for a job? Let us do it for you — and we'll never lie on your behalf.
 >
-<<<<<<< HEAD
 > Self host. Reclaim the time.
 >
 > Keel is an open-core job-application autopilot with a truthfulness contract: it only ever claims what you tell it is true. Free and open source (Apache-2.0). 271 verified submissions. Zero lies.
@@ -24,8 +23,6 @@
 - Keel never submits an application. The public loop stops at the launch packet.
 - Proof figure: 55 verified submissions in the private production pipeline's ledger at launch. The public repo makes no submission claims of its own.
 - Brand: Keel — honest automation, end to end. #AIPropaganda.
-=======
-> Keel is an open-core job-application autopilot with a truthfulness contract: it only ever claims what you tell it is true. Free and open source (Apache-2.0). 271 verified submissions. Zero lies.
 
 Repo: https://github.com/KeelDev-tech/keel
 Docs site: https://keeldev-tech.github.io/keel/
@@ -99,4 +96,3 @@ pipeline's ledger; public readers cannot independently rerun the private
 pipeline, and the public repo makes no submission claims of its own. Keel
 claims no user counts, growth rates, revenue, funding status, or
 time-windowed figures.
->>>>>>> fe784621cade437ce6888b6867ec8d16fd9d2b6a

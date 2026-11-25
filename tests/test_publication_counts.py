@@ -10,6 +10,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class PublicationCountTests(unittest.TestCase):
+    def test_llms_publications_have_no_unresolved_merge_markers(self):
+        for name in ('llms.txt', 'llms-full.txt'):
+            with self.subTest(name=name):
+                text = (ROOT / 'site' / name).read_text()
+                self.assertNotRegex(text, r'(?m)^(?:<{7} [^\n]*|={7}[ \t]*|>{7} [^\n]*|\|{7} [^\n]*)$')
+
     def test_current_publications_match_stats(self):
         stats = json.loads((ROOT / 'docs/geo/stats.json').read_text())
         count = stats['verified_submissions_now']
