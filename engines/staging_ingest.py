@@ -1086,6 +1086,17 @@ def run_ingest(files, batch, dry_run=True, pipe=PIPE):
         fresh_ids = {e.get("role_id") for e in queue}
         fresh_by_id = {e.get("role_id"): e for e in queue
                        if e.get("role_id")}
+        # Posting identity also needs a fresh, in-lock check: another writer
+        # may have admitted this exact posting under a different role_id.
+        # Reuse canonical keys; conflicting URLs and employer/title similarity
+        # are not proof of duplication. Never broaden the configured sources.
+        from dedupe_index import keys_for_urls
+        fresh_by_posting = {}
+        for queued in queue:
+            posting_keys, conflict = keys_for_urls(queued)
+            if not conflict:
+                for key in posting_keys:
+                    fresh_by_posting.setdefault(key, queued)
         appended, merge_suppressed = [], []
         seen_ids = set(fresh_ids)
         for e in ingested:
@@ -1101,8 +1112,25 @@ def run_ingest(files, batch, dry_run=True, pipe=PIPE):
                     "delta_vs_queued": _entry_delta(qe, e) if qe else {},
                 })
             else:
+                posting_keys, conflict = keys_for_urls(e)
+                qe = next((fresh_by_posting[key] for key in sorted(posting_keys)
+                           if key in fresh_by_posting), None) if not conflict else None
+                if qe is not None:
+                    merge_suppressed.append({
+                        "role_id": rid,
+                        "queued_role_id": qe.get("role_id"),
+                        "staging_file": e.get("_ingest_staging_file", ""),
+                        "reason": ("duplicate posting identity in queue "
+                                   "(merge-time idempotence: already present; "
+                                   "re-run is a no-op)"),
+                        "delta_vs_queued": _entry_delta(qe, e),
+                    })
+                    continue
                 appended.append(e)
                 seen_ids.add(rid)
+                if not conflict:
+                    for key in posting_keys:
+                        fresh_by_posting.setdefault(key, e)
         new_queue = queue + appended
 
         # No-new-duplicates invariant: the merge must not grow any role_id's
