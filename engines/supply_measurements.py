@@ -58,8 +58,12 @@ def snapshot(workspace, *, key_file, now=None):
         entry=by_id[record['role_id']];attempt=entry.get('verification_attempt')
         refs=[];transport='UNKNOWN';signal='UNKNOWN'
         if isinstance(attempt,dict):
-            transport=attempt.get('transport_class') if attempt.get('transport_class') in TRANSPORTS else 'UNKNOWN'
-            signal=attempt.get('signal') if attempt.get('signal') in {'LIVE','NONE','AMBIGUOUS'} else 'UNKNOWN'
+            transport_value=attempt.get('transport_class')
+            signal_value=attempt.get('signal')
+            if isinstance(transport_value,str) and transport_value in TRANSPORTS:
+                transport=transport_value
+            if isinstance(signal_value,str) and signal_value in {'LIVE','NONE','AMBIGUOUS'}:
+                signal=signal_value
             run=attempt.get('observation_id');evidence=attempt.get('evidence')
             requests=evidence.get('request_attempts') if isinstance(evidence,dict) else None
             if isinstance(run,str) and ':' in run and isinstance(requests,list) and len(requests)<=10:
