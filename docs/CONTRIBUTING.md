@@ -26,10 +26,20 @@ is private.
 
 ## Development
 
-```bash
-python3 -m unittest discover -s tests   # full suite
-python3 -m py_compile engines/*.py      # syntax check
-```
+Unittest discovery covers only the unittest portion of the tests. It does not
+execute function-style pytest tests, including the evidence-based scoring
+contracts. A syntax check is not a test-suite pass.
+
+For configured validation, follow the [root development setup](../CONTRIBUTING.md#dev-setup)
+and the exact commands and environment settings in the [CI workflow](../.github/workflows/ci.yml)
+and [recovery workflow](../.github/workflows/recovery-profile.yml). Use the pinned
+validation environment and temporary `KEEL_HOME` and `RUNNER_TEMP` directories,
+not a live applicant workspace. Report unavailable suites and skips separately.
+
+For suites in `tools/run_tests.py` that request the separately supplied audit
+guard, preserve the missing-guard refusal. The `local_profile` suite does not
+request that guard. Direct workflow commands do not establish verified
+audit-hook isolation.
 
 Keep modules import-safe (no side effects on import), config-driven via
 `KEEL_HOME`, and personal-data-free. New gate vocabulary goes in
