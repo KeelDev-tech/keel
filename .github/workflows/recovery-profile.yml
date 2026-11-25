@@ -32,6 +32,7 @@ jobs:
           tests/test_task_liveness_repair.py
           tests/test_verification_transport_contract.py
           tests/test_ready_admission.py
+          tests/test_ledger_hold_scan.py
           tests/test_staged_admission_recovery.py
           tests/test_pipeline_recovery_contract.py
           tests/test_preparation_identity_guards.py

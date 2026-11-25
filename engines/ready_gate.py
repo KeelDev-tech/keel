@@ -55,20 +55,56 @@ def _posting_key(entry):
 def ledger_holds(entry, ledger_rows):
     """Pure exact identity/twin hold check; raises on malformed ledger rows."""
     from safe_io import rows
-    records = rows(ledger_rows)
+    return _ledger_holds(entry, rows(ledger_rows))
+
+
+class LedgerHoldScan:
+    """Lazy identity cache for one immutable ledger snapshot, never across reads.
+
+    Cache only successfully evaluated fields. Keep row order and short circuits:
+    a malformed later row must not change an earlier exact hold into an error.
+    """
+
+    def __init__(self, ledger_rows):
+        self._source = ledger_rows
+        self._records = None
+        self._labels = {}
+        self._postings = {}
+
+    def holds(self, entry):
+        from safe_io import rows
+        if self._records is None:
+            self._records = rows(self._source)
+        return _ledger_holds(entry, self._records, self)
+
+
+def _ledger_holds(entry, records, cache=None):
     rid = entry.get("role_id")
     company = _identity_label(entry.get("company"))
     title = _identity_label(entry.get("role_title") or entry.get("title"))
     posting = _posting_key(entry)
-    for record in records:
-        status = record.get("status")
-        if not isinstance(status, str) or not status.strip():
-            raise ValueError("ledger outcome is missing or malformed")
-        other_company = _identity_label(record.get("company"))
-        other_title = _identity_label(record.get("role_title") or record.get("title"))
-        exact = (bool(rid and record.get("role_id") == rid)
-                 or posting is not None and posting == _posting_key(record)
-                 or bool(company and title and company == other_company and title == other_title))
+    for index, record in enumerate(records):
+        if cache is not None and index in cache._labels:
+            other_company, other_title = cache._labels[index]
+        else:
+            status = record.get("status")
+            if not isinstance(status, str) or not status.strip():
+                raise ValueError("ledger outcome is missing or malformed")
+            other_company = _identity_label(record.get("company"))
+            other_title = _identity_label(record.get("role_title") or record.get("title"))
+            if cache is not None:
+                cache._labels[index] = (other_company, other_title)
+        exact = bool(rid and record.get("role_id") == rid)
+        if not exact and posting is not None:
+            if cache is not None and index in cache._postings:
+                other_posting = cache._postings[index]
+            else:
+                other_posting = _posting_key(record)
+                if cache is not None:
+                    cache._postings[index] = other_posting
+            exact = posting == other_posting
+        if not exact:
+            exact = bool(company and title and company == other_company and title == other_title)
         # This ledger records application outcomes. An unfamiliar outcome for
         # the same identity is unresolved history, not affirmative clearance.
         if exact:

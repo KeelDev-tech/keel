@@ -116,6 +116,11 @@ def _decode_json(slug, body, which):
 
 def normalize(raw, slug, employer):
     """Normalize one job dict into the canonical lead shape."""
+    # Reject malformed feed values inside the sweep adapter-error boundary.
+    title = raw.get("title")
+    if title is not None and not isinstance(title, str):
+        raise ValueError("invalid posting title type")
+
     shortcode = raw.get("shortcode")
     posting_url = raw.get("url") or raw.get("application_url")
     if not posting_url or not str(posting_url).strip():
@@ -148,7 +153,7 @@ def normalize(raw, slug, employer):
         "slug": slug,
         "employer": employer,
         "company": raw.get("_account_name") or employer,
-        "title": raw.get("title") or "",
+        "title": title or "",
         "location": {
             "raw": location_raw,
             "city": str(raw.get("city") or "").strip(),

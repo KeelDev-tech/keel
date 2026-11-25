@@ -2,6 +2,11 @@
 
 ## Pipeline stages
 
+This diagram covers the core preparation-engine layer, not the whole system.
+For local entry points and host requirements, see the
+[release profile](RELEASE_PROFILE.md), [Muse handoff](MUSE_HANDOFF.md), and
+[host handoff](HOST_HANDOFF.md).
+
 ```
  DISCOVERY            SCORING             MATERIALS            VERIFICATION
  discovery_queries    fit-scoring-model   resume_tailor        verify_retry
@@ -40,11 +45,11 @@
 | `discovery_queries.md` | discovery | Search-query playbooks per lane, with placeholders you fill |
 | `sweep_worker_prompt.md` | discovery | Prompt template for running discovery sweeps |
 | `fit-scoring-model.md` | scoring | The 100-point rubric + banded action policy (source of truth) |
-| `score_roles.py` | scoring | Template scorer: hard-requirement classifier wired, judgment components yours to fill |
+| `score_roles.py` | scoring | Evidence-bounded fit assessment with score bounds, coverage, and explicit holds; emits non-authorizing PARKED output (see [scoring contract](SCORING_CONTRACT.md)) |
 | `resume_tailor.py` | materials | PDF resume from your applicant profile; truthfulness-checked |
 | `cover_letter_generator.md` | materials | Cover-letter prompt template with placeholders |
 | `answer_bank.example.json` | materials | Canonical answers, banded rules, hard gates (copy → personalize) |
-| `verify_retry.py` | verification | Re-verifies parked leads; run singleton, 24h cooldowns, pool cursor, stale-park guard, sync/async parity probe; promotes LIVE, buries dead |
+| `verify_retry.py` | verification | Active entry point delegates to `pipeline_service.verify` for bounded public-board posting-presence checks; presence alone never promotes READY |
 | `verify_retry_async.py` | verification | Async (aiohttp) transport for the verify pool: per-host/global semaphores, jitter; importable without aiohttp (fail-closed) |
 | `verify_cron.py` | verification | Standing cadence tick: PID lockfile, cursor, run records, dry-run by default |
 | `live_cache.py` | verification | Fail-closed 2h liveness cache so the verify pool stops re-fetching known-live postings |
@@ -92,18 +97,27 @@
 | `worker-charter/` | charter | Autonomous-worker prompt template + envelope ingest/validation; the public assembler mines operator exemplars, never a private library |
 | `build_dashboard.py` | dashboard | Self-contained HTML dashboard from ledger + queues |
 
+The retained `_legacy_scan_and_apply` helper in `verify_retry.py` is for
+incident replay, not the operational verification path. Its promotion and
+bulk-write behavior must not be used to describe current READY admission.
+See [pipeline recovery](PIPELINE_RECOVERY.md) for verification and readiness
+contracts.
+
 ## Data flow
 
 1. Discovery produces raw leads → `data/scored.json` via `score_roles.py`
-   (carries `fit_score`, `action_band`, `score_breakdown` — no `status`).
-2. Scored leads enter `data/queues/*.json` with `fit_score`, `action_band`,
-   and `status` (the queue owns status; `score_roles` does not set it).
+   (carries `fit_score`, score bounds, evidence coverage, `action_band`, and
+   `score_breakdown`; always sets `status: PARKED`, `approval_valid: false`,
+   and `execution_authorized: false`).
+2. Canonical queue admission governs entry into `data/queues/*.json` and READY
+   status. Fit eligibility alone grants neither READY nor submission authority;
+   canonical readiness, current policy, and human approval remain separate gates.
 3. `apply_loop.py` picks the highest-fit eligible lead (`status` READY,
    `action_band` APPLY, blocklist/ledger/rate-limit/materials gates, plus a
-   pre-launch live re-verify: HTTP 200 proceeds, 404/410 skips as dead,
-   anything else unverifiable proceeds with a note and the executor
-   re-verifies), runs `form_intel`, builds a generic brief, writes
-   `data/launch-packets/<role_id>.json`, marks the lead IN-FLIGHT.
+   pre-launch live re-verify: dead or unconfirmed posting liveness refuses
+   selection; confirmed liveness does not replace the other gates or the
+   executor's independent verification), runs `form_intel`, builds a generic
+   brief, writes `data/launch-packets/<role_id>.json`, marks the lead IN-FLIGHT.
 4. `prescreen.py` screens every packet first; PARK verdicts park the lead in
    your input queue — the packet never reaches an executor.
 5. Your executor (private layer, or your own) consumes the packet under the

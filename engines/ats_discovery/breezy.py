@@ -190,6 +190,11 @@ def fetch_board(slug, http_get):
 
 def normalize(raw, slug, employer):
     """Map one raw posting dict to the contract shape."""
+    # Reject malformed feed values inside the sweep adapter-error boundary.
+    title = raw.get("name")
+    if title is not None and not isinstance(title, str):
+        raise ValueError("invalid posting title type")
+
     posting_url = raw.get("url") or ""
     if not posting_url:
         raise ValueError("cannot construct posting_url: item has no url")
@@ -213,7 +218,7 @@ def normalize(raw, slug, employer):
         "slug": slug,
         "employer": employer,
         "company": company,
-        "title": raw.get("name") or "",
+        "title": title or "",
         "location": {
             "raw": raw_loc,
             "city": city,

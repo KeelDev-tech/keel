@@ -270,11 +270,25 @@ def score_role(role, profile):
         "scoring_version": VERSION, "display_band": display,
         "action_band": canonical,
         "recommended_action": "APPLY" if eligible else "SKIP" if canonical == "LOW-FIT" else "HOLD",
-        "fit_eligible": eligible, "execution_authorized": False,
+        "fit_eligible": eligible, "execution_authorized": False, "submission_authorized": False,
         "action_eligibility": {"fit_eligible": eligible, "execution_authorized": False,
                                "blocked_reasons": sorted(set(blocks)),
                                "required_gates": ["canonical_readiness", "current_policy", "human_approval"]},
     }
+
+
+def _unique_json_object(pairs):
+    """Reject ambiguous source objects before they can become scored facts.
+
+    Do not include keys or values in the error: applicant inputs may be private.
+    This hook applies to every object, including nested facts and provenance.
+    """
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate JSON object key in scoring input")
+        result[key] = value
+    return result
 
 
 def main():
@@ -284,10 +298,10 @@ def main():
     ap.add_argument("--profile", default="applicant_profile.json")
     args = ap.parse_args()
     with open(args.inp, encoding="utf-8") as handle:
-        roles = json.load(handle)
+        roles = json.load(handle, object_pairs_hook=_unique_json_object)
     _require(type(roles) is list and len(roles) <= 10000, "input must be a list of at most 10000 roles")
     with open(args.profile, encoding="utf-8") as handle:
-        profile = json.load(handle)
+        profile = json.load(handle, object_pairs_hook=_unique_json_object)
     scored = [score_role(role, profile) for role in roles]
     with open(args.out, "w", encoding="utf-8") as handle:
         json.dump(scored, handle, indent=2, allow_nan=False)

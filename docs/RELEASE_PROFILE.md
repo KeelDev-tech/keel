@@ -293,12 +293,12 @@ dependency; direct unittest checks and the extracted core remain standard
 library only. Private integration tests and host-specific browser/kernel checks
 retain their own prerequisites and must be reported separately.
 
-The candidate includes `.github/workflows/recovery-profile.yml`, pinned free
-development tools, all eleven test modules selected by that workflow, and their
-source dependencies. The workflow is configured to run queue, task-liveness,
-transport, READY, staged-admission, preparation-identity, diagnostic, and
-related regression tests with the extracted-profile suite on Python 3.11 and
-3.12, then build and verify the source package. Configuration is not evidence
-of a completed or passing CI run. [PIPELINE_RECOVERY.md](PIPELINE_RECOVERY.md)
-contains the exact local test command for the maintained set. Optional full
-checkout suites remain separate.
+The [recovery workflow](../.github/workflows/recovery-profile.yml) is the
+canonical source for its selected regression modules, pinned validation setup,
+and environment settings. It is configured for Python 3.11 and 3.12, with
+separate steps for pytest regressions, offline supply acceptance, and
+source-package build/verification. Configuration is not evidence of a completed
+or passing CI run, and a pytest pass does not cover those other checks.
+[PIPELINE_RECOVERY.md](PIPELINE_RECOVERY.md) explains local validation using
+temporary state. This recovery set is not the complete repository suite;
+optional full-checkout suites remain separate.

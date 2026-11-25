@@ -92,11 +92,12 @@ PDT = "America/Los_Angeles"
 
 
 def _pdt_now():
-    try:
-        from zoneinfo import ZoneInfo
-        return datetime.now(ZoneInfo(PDT)).strftime("%Y-%m-%d %H:%M PDT")
-    except Exception:
-        return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    """Unambiguous UTC stamp in the existing queue-consumer minute format.
+
+    Keep the historical helper name for callers, including READY rollback;
+    local winter time must never be mislabeled as PDT.
+    """
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
 
 def _utc_now():
@@ -407,7 +408,7 @@ def mark_inflight(role_id, task_id=None, phase="claim", company=None,
                 note = "already marked by us (idempotent)"
             else:
                 e["status"] = "IN-FLIGHT"
-                e["status_updated"] = _pdt_now()
+                e["status_updated"] = _utc_now()
                 e["in_flight_at"] = _utc_now()
                 e["browser_task_id"] = task_id
                 if attempt_id:
@@ -546,7 +547,7 @@ def mark_inflight(role_id, task_id=None, phase="claim", company=None,
                         e, f"terminal prior browser_task_id cleared: "
                         f"{marker_task} (authoritative task state)")
                 e["status"] = "IN-FLIGHT"
-                e["status_updated"] = _pdt_now()
+                e["status_updated"] = _utc_now()
                 e["in_flight_at"] = _utc_now()
                 # A fresh claim may not inherit the previous attempt's
                 # identity. An explicit new attempt is the only join key.
