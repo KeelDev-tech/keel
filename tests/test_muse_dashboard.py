@@ -45,6 +45,43 @@ def report():
     return project_review(snapshot, now=snapshot["captured_at"])
 
 
+@pytest.mark.parametrize("case", ["complete", "incomplete", "partial", "legacy", "unknown", "injection"])
+def test_fit_evidence_whitelist_is_pinned_inert_and_preserves_authority(case):
+    from tests.test_muse_review import fit_snapshot
+    snapshot = fit_snapshot(case)
+    report = project_review(snapshot, now=snapshot["captured_at"])
+    raw = render_dashboard(report)
+    doc = Document(raw)
+    data = doc.data()
+    assert data["schema"] == "keel.muse.review-projection.v2"
+    assert data["applications"][0]["fit_assessment"] == report["applications"][0]["fit_assessment"]
+    assert data["report_sha256"] == digest(report) and "snapshot" not in data
+    assert data["execution_authorized"] is False
+    assert data["applications"][0]["approval_state"] == "STALE"
+    assert not any(tag in ("svg", "iframe", "img", "form") for tag, _ in doc.tags)
+    assert len([b for b in doc.blocks if b["tag"] == "script"]) == 2
+    assert len([a for _, a in doc.tags if a.get("role") == "tab"]) == 4
+    test_csp_pins_exact_static_script_and_style_and_forbids_network(report)
+    test_dynamic_ui_uses_text_nodes_and_download_only(report)
+    if case == "injection":
+        assert "</script><svg" not in raw
+        fit = data["applications"][0]["fit_assessment"]
+        assert fit["score_evidence"]["hard_requirements"]["criteria"][0]["posting_source_ref"] == "javascript:evil()"
+        assert fit["score_evidence"]["employer_quality"]["assessment"]["rationale"].startswith("</script>")
+
+
+def test_malformed_assessment_raw_fields_are_not_embedded_in_html():
+    from tests.test_muse_review import fit_snapshot
+    snapshot = fit_snapshot()
+    snapshot["applications"][0]["fit_assessment"]["raw_posting"] = "UNWANTED_RAW_POSTING"
+    report = project_review(snapshot, now=snapshot["captured_at"])
+    raw = render_dashboard(report)
+    assert "UNWANTED_RAW_POSTING" not in raw
+    view = Document(raw).data()["applications"][0]["fit_assessment"]
+    assert view["availability"] == "UNAVAILABLE" and "score_bounds" not in view
+    assert "UNWANTED_RAW_POSTING" in json.dumps(report["snapshot"])
+
+
 def test_untrusted_html_script_svg_and_reference_are_inert_text():
     attack = '</script><svg onload="globalThis.pwned=true"><script>evil()</script>&\u2028\u2029'
     snapshot = example_snapshot()

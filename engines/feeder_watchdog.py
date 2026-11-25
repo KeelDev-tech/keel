@@ -99,6 +99,24 @@ def load_queue():
     return queue_entries.load_queue_entries(d)
 
 
+class MalformedQueueStatus(ValueError):
+    """Queue status cannot safely establish browser ownership."""
+
+
+def _status_text(status):
+    """Non-text status leaves browser ownership unknown; never coerce it."""
+    if not isinstance(status, str):
+        raise MalformedQueueStatus("malformed queue status; browser ownership unknown")
+    return status.upper()
+
+
+def _checked_queue():
+    items = load_queue()
+    for entry in items:
+        _status_text(entry.get("status"))
+    return items
+
+
 def _blocklist_txt():
     """Operator blocklist as lowercase text; missing file -> empty (no-op)."""
     try:
@@ -114,7 +132,7 @@ def workable(entry):
     this is the honest 'fed' signal. 2026-09-15: 7 of 8 READY leads were
     FIRETEST artifacts with no materials — raw READY count said 'fed'
     while the lane was starving."""
-    if (entry.get("status") or "").upper() not in READY_STATUSES:
+    if _status_text(entry.get("status")) not in READY_STATUSES:
         return False
     if entry.get("action_band") != "APPLY":
         return False
@@ -201,7 +219,7 @@ def is_inflight_status(status):
     IN-FLIGHT-LANE-A / IN-FLIGHT-LANE-B. Both count as in-flight so the
     feeder never mistakes a live lane for an idle one.
     """
-    s = (status or "").upper()
+    s = _status_text(status)
     return s == "IN-FLIGHT" or s.startswith("IN-FLIGHT-LANE-")
 
 
@@ -235,9 +253,13 @@ def classify_inflight(items, now=None):
 
 def main():
     dry_run = "--dry-run" in sys.argv
-    items = load_queue()
+    try:
+        items = _checked_queue()
+    except MalformedQueueStatus:
+        print("BLOCKED: malformed queue status; browser ownership unknown")
+        return 2
     ready = [e for e in items
-             if (e.get("status") or "").upper() in READY_STATUSES]
+             if _status_text(e.get("status")) in READY_STATUSES]
     # Honest fed-signal: READY leads the lane can actually work right now.
     # Raw READY counts test artifacts and material-less leads (2026-09-15:
     # 7/8 READY were FIRETEST rows with no resumes).
@@ -325,8 +347,13 @@ def main():
     except Exception as ex:
         print(f"verify_retry failed to launch: {ex}")
 
-    ready_after = [e for e in load_queue()
-                   if (e.get("status") or "").upper() in READY_STATUSES]
+    try:
+        items_after = _checked_queue()
+    except MalformedQueueStatus:
+        print("BLOCKED: malformed queue status; browser ownership unknown")
+        return 2
+    ready_after = [e for e in items_after
+                   if _status_text(e.get("status")) in READY_STATUSES]
     workable_after = [e for e in ready_after if workable(e)]
     print(f"READY after verify_retry: {len(ready_after)} "
           f"(workable {len(workable_after)})")

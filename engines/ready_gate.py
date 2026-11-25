@@ -174,7 +174,8 @@ def entry_admission(entry, origin="standard", *, require_ready=True, now=None, w
     if not isinstance(entry, dict):
         return {"allowed": False, "reasons": ["invalid queue entry"],
                 "reason_codes": ["invalid_entry"]}
-    if require_ready and entry.get("status") not in READY_STATES:
+    status = entry.get("status")
+    if require_ready and (not isinstance(status, str) or status not in READY_STATES):
         deny("not_ready", "not READY")
     rid = entry.get("role_id")
     if not isinstance(rid, str) or not rid.strip():

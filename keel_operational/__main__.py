@@ -18,7 +18,7 @@ from .common import (FLAGS, OperationalError, atomic_json, clone, digest, load_j
 
 ROOT = Path(__file__).resolve().parents[1]
 TRUSTED_ARGUMENTS = {
-    'now', 'clock', 'captured_at', 'source_sha256', 'source_provider', 'workspace_id',
+    'source_profile', 'now', 'clock', 'captured_at', 'source_sha256', 'source_provider', 'workspace_id',
     'home', 'native_home', 'runtime_home', 'control_home', 'backup_home', 'destination',
     'root', 'source_root', 'host_config', 'qualification_provider', 'manifest',
     'tool_schemas', 'host_snapshot', 'host_snapshot_provider', 'control_gate_provider',
@@ -170,7 +170,7 @@ def _gate_provider(host, config):
     return provide
 
 
-def _runtime(host, operation, arguments, source, output, dispatch):
+def _runtime(host, operation, arguments, source, output, dispatch, source_provider):
     from .runtime import OperationalSession
     config = host.exact({'runtime_home', 'native_home', 'control_home', 'session_id', 'scope_id',
                          'transport_mode', 'native_gate', 'lease_seconds', 'expires_at',
@@ -198,7 +198,7 @@ def _runtime(host, operation, arguments, source, output, dispatch):
     ledger = _ledger(config)
     callbacks = {
         'qualification_provider': lambda: _qualification_bundle(host, config['qualification']),
-        'source_provider': lambda: require_hash(_source_inventory()['sha256']),
+        'source_provider': lambda: require_hash(source_provider()['sha256']),
         'host_snapshot_provider': lambda: host.read('host_snapshot'),
         'control_gate_provider': _gate_provider(host, config),
         'clock': _now,
@@ -344,6 +344,8 @@ def parser():
     }
     for name, description in descriptions.items():
         command = commands.add_parser(name, help=description, description=description)
+        command.add_argument('--source-profile', choices=['current-runtime-v1'],
+                             help='Explicit current installation consistency; default preserves historical verification.')
         command.add_argument('--host-config', required=True, help='Trusted operator configuration outside source.')
         command.add_argument('--input', required=True, help='Bounded strict JSON operation/arguments.')
         command.add_argument('--out', required=True, help='New private JSON report outside source.')
@@ -356,24 +358,28 @@ def parser():
 def main(argv=None):
     options = parser().parse_args(argv)
     output = before = host = None
+    source_provider = _source_inventory
     status, code = 'ERROR', 2
     operation = options.command
     try:
         output = _new_output(options.out)
-        before = _source_inventory()
+        if options.source_profile is not None:
+            from tools.runtime_source_inventory import current_runtime_provider
+            source_provider = current_runtime_provider(ROOT)
+        before = source_provider()
         source = require_hash(before['sha256'])
         host = HostConfig(options.host_config, options.command)
         operation, arguments = _request(load_json(options.input), source)
         if options.command == 'control':
             result = _control(host, operation, arguments, output)
         elif options.command == 'runtime':
-            result = _runtime(host, operation, arguments, source, output, options.dispatch)
+            result = _runtime(host, operation, arguments, source, output, options.dispatch, source_provider)
         elif options.command == 'qualification':
             result = _qualification(host, operation, arguments, source, output)
         else:
             result = _recovery(host, operation, arguments, source, output)
         host.check()
-        unchanged = source == require_hash(_source_inventory()['sha256'])
+        unchanged = source == require_hash(source_provider()['sha256'])
         status, code = _outcome(result) if unchanged else ('QUARANTINED', 4)
         report = {'schema': 'keel.operational.command.v1', 'command': options.command,
                   'operation': operation, 'status': status, 'source_sha256': source,
@@ -384,7 +390,7 @@ def main(argv=None):
         changed = False
         if before is not None:
             try:
-                changed = before['sha256'] != _source_inventory()['sha256']
+                changed = before['sha256'] != source_provider()['sha256']
                 if host is not None:
                     host.check()
             except Exception:

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import math
 
-from keel_loki.common import (LokiError, clone, digest, require_dict, require_hash,
+from keel_loki.common import (LokiError, canonical, clone, digest, require_dict, require_hash,
                               require_id, require_int)
 from keel_loki.questions import plan_questions
 from keel_loki.decision_sessions import plan_decision_session
@@ -40,6 +40,174 @@ def _ids(value, maximum=256, *, nonempty=False):
     for item in value:
         require_id(item)
     _check(len(value) == len(set(value)), "duplicate_id")
+
+
+# Presentation contract for keel-evidence-fit-v1, not a second scoring engine.
+# Values are supplied observations; this module never scores or retrieves facts.
+_FIT_MAXIMA = {"experience_alignment": 25, "transferable_skills": 15,
+    "hard_requirements": 20, "career_upside": 10, "compensation": 10,
+    "founder_advantage": 5, "industry_alignment": 5, "location_work_model": 5,
+    "employer_quality": 5}
+_FIT_SUBJECTIVE = {"career_upside", "founder_advantage", "industry_alignment", "employer_quality"}
+
+
+def _fit_number(value, maximum=100, minimum=0):
+    _check(type(value) in (int, float) and minimum <= value <= maximum and math.isfinite(value),
+           "invalid_fit_number")
+
+
+def _fit_texts(values, *, maximum=128, width=2048, nonempty=False):
+    _check(type(values) is list and len(values) <= maximum and (values or not nonempty), "invalid_fit_list")
+    for value in values:
+        _text(value, width)
+    _check(len(values) == len(set(values)), "duplicate_fit_text")
+
+
+def _fit_criterion(row):
+    _check(type(row) is dict, "invalid_fit_criterion")
+    reason = row.get("reason")
+    keys = {"id", "weight", "mandatory", "status", "fraction", "profile_evidence_refs",
+            "posting_source_ref", "reason"}
+    _check(reason in ("structured_criterion_missing", "applicant_fact_missing", "explicit_fact_comparison"),
+           "invalid_fit_reason")
+    if reason != "structured_criterion_missing":
+        keys.update(("fact", "operator"))
+    if reason == "explicit_fact_comparison":
+        keys.update(("credit_numerator", "credit_denominator"))
+    if "legacy_hold" in row:
+        keys.add("legacy_hold")
+        _check(row["legacy_hold"] in ("MISSING", "PARTIAL"), "invalid_fit_legacy_hold")
+    require_dict(row, keys, "fit_criterion")
+    _text(row["id"], 2048)
+    _fit_number(row["weight"], minimum=.000001)
+    _check(type(row["mandatory"]) is bool, "invalid_fit_mandatory")
+    _fit_texts(row["profile_evidence_refs"], nonempty=reason == "explicit_fact_comparison")
+    if reason == "structured_criterion_missing":
+        _check(row["posting_source_ref"] is None, "invalid_fit_source")
+    else:
+        _text(row["fact"], 2048)
+        _text(row["posting_source_ref"], 2048)
+        _check(row["operator"] in ("eq", "gte", "lte", "contains", "all_of", "any_of"), "invalid_fit_operator")
+    if reason == "explicit_fact_comparison":
+        fraction = row["fraction"]
+        _fit_number(fraction, maximum=1)
+        require_int(row["credit_denominator"], 1, 128, "fit_denominator")
+        require_int(row["credit_numerator"], 0, row["credit_denominator"], "fit_numerator")
+        _check(fraction == row["credit_numerator"] / row["credit_denominator"], "invalid_fit_credit")
+        expected = "VERIFIED" if fraction == 1 else "MISSING" if fraction == 0 else "PARTIAL"
+        _check(row["status"] == expected, "invalid_fit_status")
+    else:
+        _check(row["status"] == "UNKNOWN" and row["fraction"] is None and not row["profile_evidence_refs"],
+               "invalid_fit_unknown")
+
+
+def _fit_evidence(evidence, component, role_id):
+    _check(type(evidence) is dict, "invalid_fit_evidence")
+    method = evidence.get("method")
+    if method == "unknown":
+        require_dict(evidence, ("method", "reason"), "fit_evidence")
+        _check(evidence["reason"] == "no_supported_criteria_or_assessment", "invalid_fit_reason")
+    elif method == "reviewed_no_requirements":
+        require_dict(evidence, ("method", "posting_source_ref"), "fit_evidence")
+        _check(component == "hard_requirements", "invalid_fit_component")
+        _text(evidence["posting_source_ref"], 2048)
+    elif method == "human_assessment":
+        require_dict(evidence, ("method", "assessment"), "fit_evidence")
+        _check(component in _FIT_SUBJECTIVE, "invalid_fit_component")
+        row = evidence["assessment"]
+        require_dict(row, ("role_id", "component", "fraction", "reviewer", "rationale", "evidence_refs"),
+                     "fit_human_assessment")
+        _check(row["role_id"] == role_id and row["component"] == component, "invalid_fit_binding")
+        _fit_number(row["fraction"], maximum=1)
+        require_dict(row["reviewer"], ("kind", "id"), "fit_reviewer")
+        _check(row["reviewer"]["kind"] == "human", "invalid_fit_reviewer")
+        _text(row["reviewer"]["id"], 2048)
+        _text(row["rationale"], 2048)
+        _fit_texts(row["evidence_refs"], nonempty=True)
+    elif method == "explicit_fact_comparison":
+        require_dict(evidence, ("method", "criteria"), "fit_evidence")
+        rows = evidence["criteria"]
+        _check(type(rows) is list and 0 < len(rows) <= 128, "invalid_fit_criteria")
+        for row in rows:
+            _fit_criterion(row)
+        _check(len({row["id"] for row in rows}) == len(rows), "duplicate_fit_criterion")
+    else:
+        raise ReviewError("unsupported_fit_method")
+
+
+def _fit_coherence(assessment):
+    """Reject contradictory display metadata, allowing outward display rounding.
+
+    This does not re-evaluate facts, weighted criteria, thresholds or eligibility.
+    Component bounds round at six decimals; totals round at four.
+    """
+    bounds = assessment["score_bounds"]
+    for component, maximum in _FIT_MAXIMA.items():
+        bound, evidence = bounds[component], assessment["score_evidence"][component]
+        low, high, known = (bound[key] for key in ("lower", "upper", "known_weight"))
+        _check(low <= known and math.isclose(high - low + known, maximum, rel_tol=0, abs_tol=.000002000001),
+               "inconsistent_fit_bounds")
+        method = evidence["method"]
+        if method == "unknown" or (method == "explicit_fact_comparison" and
+                                   all(row["fraction"] is None for row in evidence["criteria"])):
+            _check((low, high, known) == (0, maximum, 0), "inconsistent_fit_unknown")
+        elif method == "reviewed_no_requirements":
+            _check((low, high, known) == (maximum, maximum, maximum), "inconsistent_fit_reviewed")
+        elif method == "human_assessment":
+            points = evidence["assessment"]["fraction"] * maximum
+            _check(known == maximum and all(math.isclose(value, points, rel_tol=0, abs_tol=.000001000001)
+                                           for value in (low, high)), "inconsistent_fit_human")
+        elif method == "explicit_fact_comparison" and all(row["fraction"] is not None for row in evidence["criteria"]):
+            _check(known == maximum, "inconsistent_fit_coverage")
+    for total, component_key in (("fit_score", "lower"), ("fit_score_upper", "upper"),
+                                 ("score_coverage_percent", "known_weight")):
+        _check(math.isclose(assessment[total], sum(bound[component_key] for bound in bounds.values()),
+                            rel_tol=0, abs_tol=.000100000001), "inconsistent_fit_total")
+
+
+def _fit_view(assessment, revision):
+    """Whitelist bounded, versioned evidence. Malformed optional data is unavailable.
+
+    The original snapshot is still retained and pinned. This view does not
+    authenticate assessments or recompute scoring, eligibility or canonical holds.
+    """
+    view = {"schema": "keel.muse.fit-assessment-view.v1", "availability": "UNAVAILABLE",
+            "reason": "not_supplied" if assessment is None else "unsupported_or_malformed",
+            "assessment_sha256": digest(assessment) if assessment is not None else None,
+            "execution_authorized": False}
+    if assessment is None:
+        return view
+    try:
+        _check(len(canonical(assessment)) <= 262144, "fit_assessment_too_large")
+        require_dict(assessment, ("schema", "scoring_version", "role_id", "application_revision_sha256",
+            "fit_score", "fit_score_upper", "score_coverage_percent", "score_bounds", "score_evidence",
+            "blocked_reasons"), "fit_assessment")
+        _check(assessment["schema"] == "keel.muse.fit-assessment.v1" and
+               assessment["scoring_version"] == "keel-evidence-fit-v1", "unsupported_fit_version")
+        _check(assessment["application_revision_sha256"] == revision, "invalid_fit_binding")
+        _text(assessment["role_id"], 2048)
+        for key in ("fit_score", "fit_score_upper", "score_coverage_percent"):
+            _fit_number(assessment[key])
+        _check(assessment["fit_score"] <= assessment["fit_score_upper"], "invalid_fit_bounds")
+        require_dict(assessment["score_bounds"], _FIT_MAXIMA, "fit_bounds")
+        require_dict(assessment["score_evidence"], _FIT_MAXIMA, "fit_evidence")
+        for component, maximum in _FIT_MAXIMA.items():
+            bound = assessment["score_bounds"][component]
+            require_dict(bound, ("lower", "upper", "known_weight"), "fit_bound")
+            for value in bound.values():
+                _fit_number(value, maximum=maximum)
+            _check(bound["lower"] <= bound["upper"], "invalid_fit_bounds")
+            _fit_evidence(assessment["score_evidence"][component], component, assessment["role_id"])
+        _fit_texts(assessment["blocked_reasons"], maximum=131, width=2078)
+        _fit_coherence(assessment)
+    except (LokiError, ValueError, TypeError, KeyError):
+        return view
+    # Copy only the validated contract, never an entire scoring/discovery row.
+    view.update({key: assessment[key] for key in ("scoring_version", "role_id", "application_revision_sha256",
+        "fit_score", "fit_score_upper", "score_coverage_percent", "score_bounds", "score_evidence", "blocked_reasons")})
+    view.update(availability="AVAILABLE" if assessment["score_coverage_percent"] else "UNAVAILABLE",
+                reason="supplied_evidence" if assessment["score_coverage_percent"] else "no_supported_evidence")
+    return view
 
 
 def _packet(packet):
@@ -102,7 +270,8 @@ def _validate(snapshot, now):
     snapshot = clone(snapshot)
     require_dict(snapshot, ("schema", "snapshot_id", "source_sha256", "captured_at", "telemetry_complete",
                             "applications", "events"), "snapshot")
-    _check(snapshot["schema"] == "keel.muse.review-snapshot.v1", "snapshot_version_invalid")
+    _check(snapshot["schema"] in ("keel.muse.review-snapshot.v1", "keel.muse.review-snapshot.v2"),
+           "snapshot_version_invalid")
     require_id(snapshot["snapshot_id"])
     require_hash(snapshot["source_sha256"])
     _stamp(snapshot["captured_at"])
@@ -113,9 +282,11 @@ def _validate(snapshot, now):
            "applications_count_invalid")
     applications, question_definitions = {}, {}
     for app in snapshot["applications"]:
+        fit_keys = ("fit_assessment",) if (snapshot["schema"] == "keel.muse.review-snapshot.v2" and
+                                         type(app) is dict and "fit_assessment" in app) else ()
         require_dict(app, ("application_id", "role", "employer", "created_at", "deadline",
             "application_revision_sha256", "packet", "previous_packet", "holds", "questions", "evidence",
-            "approval_observation"), "application")
+            "approval_observation") + fit_keys, "application")
         identity = require_id(app["application_id"])
         _check(identity not in applications, "duplicate_application")
         applications[identity] = app
@@ -323,6 +494,8 @@ def project_review(snapshot, *, now, expected_snapshot_sha256=None, session_minu
                 "approval_state": approval_state, "approval_stale_reasons": stale_reasons,
                 "submission_status": submission, "verified_receipt_event_ids": receipts,
                 "execution_authorized": False})
+            if snapshot["schema"] == "keel.muse.review-snapshot.v2":
+                projected[-1]["fit_assessment"] = _fit_view(app.get("fit_assessment"), app["application_revision_sha256"])
         question_plan = plan_questions(specs, now)
         latencies = [e["latency_ms"] for e in observed_events if e["kind"] == "model_call"
                      and e["evidence_backed"] and e["latency_ms"] is not None]
@@ -347,7 +520,8 @@ def project_review(snapshot, *, now, expected_snapshot_sha256=None, session_minu
                 "unverified_observations": sum(a["submission_status"] == "UNVERIFIED_OBSERVATION" for a in projected),
                 "unknown": sum(a["submission_status"] == "UNKNOWN" for a in projected),
                 "success_rate": None, "reason": "No verified attempt denominator or complete outcome window."}}
-        report = {"schema": "keel.muse.review-projection.v1", "snapshot_sha256": snapshot_hash,
+        version = snapshot["schema"].rsplit(".", 1)[1]
+        report = {"schema": "keel.muse.review-projection." + version, "snapshot_sha256": snapshot_hash,
             "source_sha256": snapshot["source_sha256"], "snapshot_id": snapshot["snapshot_id"], "as_of": now,
             "captured_at": snapshot["captured_at"], "snapshot_age_seconds": now - snapshot["captured_at"],
             "applications": projected, "question_plan": question_plan, "metrics": metrics, "snapshot": snapshot,
@@ -364,7 +538,8 @@ def project_review(snapshot, *, now, expected_snapshot_sha256=None, session_minu
 
 
 def validate_projection(report):
-    _check(type(report) is dict and report.get("schema") == "keel.muse.review-projection.v1", "projection_schema_invalid")
+    _check(type(report) is dict and report.get("schema") in
+           ("keel.muse.review-projection.v1", "keel.muse.review-projection.v2"), "projection_schema_invalid")
     rebuilt = project_review(report.get("snapshot"), now=report.get("as_of"),
                              expected_snapshot_sha256=report.get("snapshot_sha256"),
                              session_minutes=report.get("decision_session", {}).get("minute_budget")
