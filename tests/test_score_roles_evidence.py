@@ -70,6 +70,36 @@ def test_each_component_cites_applicant_and_posting_evidence():
             assert all(record["profile_evidence_refs"] and record["posting_source_ref"] for record in evidence["criteria"])
 
 
+@pytest.mark.parametrize("incoming", [True, False, None, "approved", 1, {"approved": True}])
+@pytest.mark.parametrize("state", ["supported", "unknown", "held"])
+def test_scoring_never_inherits_submission_authority(incoming, state):
+    import copy
+    role, profile = supported_candidate()
+    if state == "unknown":
+        profile = {}
+    elif state == "held":
+        role["holds"] = ["synthetic-review-required"]
+    expected = score_role(role, profile)
+    role.update(submission_authorized=incoming,
+                research_provenance={"source_ref": "synthetic:research", "limitations": ["unverified"]},
+                usable_for_liveness=False, current_posting_verification="UNKNOWN")
+    original = copy.deepcopy(role)
+    result = score_role(role, profile)
+    assert result["submission_authorized"] is False
+    assert result["execution_authorized"] is False
+    assert result["approval_valid"] is False and result["status"] == "PARKED"
+    for field in ("fit_score", "fit_score_upper", "score_evidence", "score_bounds",
+                  "action_band", "fit_eligible", "action_eligibility"):
+        assert result[field] == expected[field]
+    for field in ("research_provenance", "usable_for_liveness", "current_posting_verification"):
+        assert result[field] == role[field]
+    assert role == original
+
+
+def test_scoring_explicitly_denies_submission_when_field_is_absent():
+    assert score_role({}, {})["submission_authorized"] is False
+
+
 def test_missing_profile_fact_changes_score_and_blocks_mandatory():
     role, profile = supported_candidate()
     del profile["scoring_facts"]["operations_years"]

@@ -12,7 +12,7 @@ MCP pipeline accepts an explicit profile and advances eligible roles to a
 A score is a preparation recommendation, not authorization to apply.
 Canonical policy, holds, posting verification, attempt history, packet
 revisions and a fresh human approval still control execution. Every output
-has `execution_authorized=false`, `status="PARKED"` and
+has `execution_authorized=false`, `submission_authorized=false`, `status="PARKED"` and
 `approval_valid=false`, overriding operational claims in input. Never write
 the entire scoring output over an existing canonical queue row: selectively
 merge assessment fields through the queue's existing guarded write path.

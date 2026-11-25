@@ -48,6 +48,19 @@ def test_score_role_missing_mandatory_caps_band():
     assert not out["fit_eligible"]
 
 
+@pytest.mark.parametrize("supported", [False, True])
+def test_direct_scoring_tool_cannot_echo_submission_authority(supported):
+    role, profile = _supported_scoring_inputs() if supported else ({"role_id": "SYNTHETIC-1"}, {})
+    role["submission_authorized"] = True
+    role["research_provenance"] = {"source_ref": "synthetic:research"}
+    result = scoring.keel_score_role(role, profile)
+    assert result["submission_authorized"] is False
+    assert result["execution_authorized"] is False
+    assert result["approval_valid"] is False and result["status"] == "PARKED"
+    assert result["research_provenance"] == role["research_provenance"]
+    assert role["submission_authorized"] is True
+
+
 def test_score_band_thresholds():
     assert scoring.keel_score_band(95)["band"] == "PRIORITY"
     assert scoring.keel_score_band(85)["band"] == "APPLY"

@@ -270,7 +270,7 @@ def score_role(role, profile):
         "scoring_version": VERSION, "display_band": display,
         "action_band": canonical,
         "recommended_action": "APPLY" if eligible else "SKIP" if canonical == "LOW-FIT" else "HOLD",
-        "fit_eligible": eligible, "execution_authorized": False,
+        "fit_eligible": eligible, "execution_authorized": False, "submission_authorized": False,
         "action_eligibility": {"fit_eligible": eligible, "execution_authorized": False,
                                "blocked_reasons": sorted(set(blocks)),
                                "required_gates": ["canonical_readiness", "current_policy", "human_approval"]},
